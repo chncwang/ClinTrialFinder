@@ -14,13 +14,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
         "ROBOTSTXT_OBEY": False,
         "USER_AGENT": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "LOG_LEVEL": "INFO",
-        "HTTPERROR_ALLOWED_CODES": [
-            400,
-            401,
-            403,
-            404,
-            500,
-        ],  # Allow error codes to be processed
+        "HTTPERROR_ALLOWED_CODES": [400, 401, 403, 404, 500],
     }
 
     def __init__(self, exclude_completed=False, *args, **kwargs):
@@ -29,17 +23,35 @@ class ClinicalTrialsSpider(scrapy.Spider):
         self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
 
     def start_requests(self):
-        # API query parameters based on documentation
+        # Requesting comprehensive set of fields
+        fields = [
+            # Identification
+            "IdentificationModule",
+            # Study Overview
+            "DescriptionModule",
+            # Status and Dates
+            "StatusModule",
+            # Study Design
+            "DesignModule",
+            # Eligibility
+            "EligibilityModule",
+            # Contacts and Locations
+            "ContactsLocationsModule",
+            # Sponsor/Collaborators
+            "SponsorCollaboratorsModule",
+            # Oversight
+            "OversightModule",
+        ]
+
         params = {
             "query.cond": "Nasopharyngeal Carcinoma",
             "format": "json",
             "pageSize": 100,
-            "countTotal": "true",  # Get total count in first response
-            "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
-            "markupFormat": "markdown",  # Specify markup format as per API docs
+            "countTotal": "true",
+            "fields": ",".join(fields),
+            "markupFormat": "markdown",
         }
 
-        # Add status filter if exclude-completed flag is set
         if self.exclude_completed:
             params["filter.overallStatus"] = (
                 "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
@@ -52,55 +64,126 @@ class ClinicalTrialsSpider(scrapy.Spider):
             callback=self.parse,
             headers={"Accept": "application/json", "Content-Type": "application/json"},
             errback=self.handle_error,
-            dont_filter=True,  # Allow duplicate requests if needed
+            dont_filter=True,
         )
+
+    def extract_module_data(self, module_dict, fields):
+        """Helper function to safely extract nested fields"""
+        result = {}
+        for field in fields:
+            value = module_dict.get(field)
+            if isinstance(value, dict):
+                # Handle date structures
+                if "date" in value:
+                    value = value.get("date")
+            result[field] = value
+        return result
 
     def parse(self, response):
         try:
-            # Check if response status is error
             if response.status >= 400:
                 self.logger.error(f"Error response {response.status}: {response.text}")
                 return
 
-            # Parse JSON response
             data = json.loads(response.text)
             studies = data.get("studies", [])
 
-            # Log study count for debugging
             self.logger.info(f"Found {len(studies)} studies on current page")
             if data.get("totalCount"):
                 self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
-            # Extract and yield study information
             for study in studies:
-                # Extract data using proper field paths based on API structure
+                protocol = study.get("protocolSection", {})
+
+                # Extract data from each module
+                identification = protocol.get("identificationModule", {})
+                description = protocol.get("descriptionModule", {})
+                status = protocol.get("statusModule", {})
+                design = protocol.get("designModule", {})
+                eligibility = protocol.get("eligibilityModule", {})
+                contacts_locations = protocol.get("contactsLocationsModule", {})
+                sponsor = protocol.get("sponsorCollaboratorsModule", {})
+                oversight = protocol.get("oversightModule", {})
+
                 yield {
-                    "nct_id": study.get("protocolSection", {})
-                    .get("identificationModule", {})
-                    .get("nctId"),
-                    "brief_title": study.get("protocolSection", {})
-                    .get("identificationModule", {})
-                    .get("briefTitle"),
-                    "official_title": study.get("protocolSection", {})
-                    .get("identificationModule", {})
-                    .get("officialTitle"),
-                    "status": study.get("protocolSection", {})
-                    .get("statusModule", {})
-                    .get("overallStatus"),
-                    "phase": study.get("protocolSection", {})
-                    .get("designModule", {})
-                    .get("phases", []),
-                    "start_date": study.get("protocolSection", {})
-                    .get("statusModule", {})
-                    .get("startDateStruct", {})
-                    .get("date"),
-                    "completion_date": study.get("protocolSection", {})
-                    .get("statusModule", {})
-                    .get("completionDateStruct", {})
-                    .get("date"),
+                    "identification": {
+                        "nct_id": identification.get("nctId"),
+                        "org_study_id": identification.get("orgStudyIdInfo", {}).get(
+                            "id"
+                        ),
+                        "brief_title": identification.get("briefTitle"),
+                        "official_title": identification.get("officialTitle"),
+                        "acronym": identification.get("acronym"),
+                    },
+                    "status_info": {
+                        "status": status.get("overallStatus"),
+                        "start_date": status.get("startDateStruct", {}).get("date"),
+                        "completion_date": status.get("completionDateStruct", {}).get(
+                            "date"
+                        ),
+                        "primary_completion_date": status.get(
+                            "primaryCompletionDateStruct", {}
+                        ).get("date"),
+                        "last_update_date": status.get(
+                            "lastUpdatePostDateStruct", {}
+                        ).get("date"),
+                    },
+                    "study_overview": {
+                        "brief_summary": description.get("briefSummary"),
+                        "detailed_description": description.get("detailedDescription"),
+                        "conditions": description.get("conditions"),
+                        "keywords": description.get("keywords"),
+                    },
+                    "design_info": {
+                        "study_type": design.get("studyType"),
+                        "phases": design.get("phases", []),
+                        "design_info": design.get("designInfo"),
+                        "enrollment_count": design.get("enrollmentInfo", {}).get(
+                            "count"
+                        ),
+                        "arms": [
+                            {
+                                "name": arm.get("name"),
+                                "description": arm.get("description"),
+                                "type": arm.get("type"),
+                                "intervention_names": arm.get("interventionNames", []),
+                            }
+                            for arm in design.get("arms", [])
+                        ],
+                    },
+                    "eligibility_criteria": {
+                        "criteria_text": eligibility.get("eligibilityCriteria"),
+                        "gender": eligibility.get("sex"),
+                        "minimum_age": eligibility.get("minimumAge"),
+                        "maximum_age": eligibility.get("maximumAge"),
+                        "healthy_volunteers": eligibility.get("healthyVolunteers"),
+                    },
+                    "locations": [
+                        {
+                            "facility": loc.get("facility", {}).get("name"),
+                            "city": loc.get("facility", {}).get("city"),
+                            "state": loc.get("facility", {}).get("state"),
+                            "country": loc.get("facility", {}).get("country"),
+                            "status": loc.get("status"),
+                        }
+                        for loc in contacts_locations.get("locations", [])
+                    ],
+                    "sponsor_info": {
+                        "lead_sponsor": sponsor.get("leadSponsor", {}).get("name"),
+                        "collaborators": [
+                            collab.get("name")
+                            for collab in sponsor.get("collaborators", [])
+                        ],
+                    },
+                    "oversight_info": {
+                        "has_dmc": oversight.get("hasDmc"),
+                        "is_fda_regulated": oversight.get("isFdaRegulatedDrug")
+                        or oversight.get("isFdaRegulatedDevice"),
+                        "is_section_801": oversight.get("isUnapprovedDevice"),
+                    },
                 }
 
-            # Handle pagination using nextPageToken
+            # Handle pagination
             next_page_token = data.get("nextPageToken")
             if next_page_token:
                 params = {
@@ -108,11 +191,10 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "format": "json",
                     "pageSize": 100,
                     "pageToken": next_page_token,
-                    "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
+                    "fields": ",".join(fields),
                     "markupFormat": "markdown",
                 }
 
-                # Add status filter if exclude-completed flag is set
                 if self.exclude_completed:
                     params["filter.overallStatus"] = (
                         "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
@@ -120,7 +202,6 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     )
 
                 next_url = f"{self.api_base_url}?{urlencode(params)}"
-
                 yield scrapy.Request(
                     url=next_url,
                     callback=self.parse,
@@ -134,14 +215,11 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to parse JSON response: {e}")
-            self.logger.error(
-                f"Response text: {response.text[:200]}..."
-            )  # Log first 200 chars of response
+            self.logger.error(f"Response text: {response.text[:200]}...")
         except Exception as e:
             self.logger.error(f"Unexpected error while processing response: {e}")
 
     def handle_error(self, failure):
-        """Handle request errors"""
         self.logger.error(f"Request failed: {failure.value}")
 
     def closed(self, reason):
