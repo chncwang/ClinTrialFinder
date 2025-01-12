@@ -21,9 +21,28 @@ class ClinicalTrialsSpider(scrapy.Spider):
         super(ClinicalTrialsSpider, self).__init__(*args, **kwargs)
         self.exclude_completed = exclude_completed
         self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
+        # Define fields as class attribute
+        self.fields = [
+            # Identification
+            "IdentificationModule",
+            # Study Overview
+            "DescriptionModule",
+            # Status and Dates
+            "StatusModule",
+            # Study Design
+            "DesignModule",
+            # Eligibility
+            "EligibilityModule",
+            # Contacts and Locations
+            "ContactsLocationsModule",
+            # Sponsor/Collaborators
+            "SponsorCollaboratorsModule",
+            # Oversight
+            "OversightModule",
+        ]
 
     def start_requests(self):
-        # Requesting comprehensive set of fields
+        # Using fields defined in __init__
         fields = [
             # Identification
             "IdentificationModule",
@@ -48,7 +67,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
             "format": "json",
             "pageSize": 100,
             "countTotal": "true",
-            "fields": ",".join(fields),
+            "fields": ",".join(self.fields),
             "markupFormat": "markdown",
         }
 
@@ -191,7 +210,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "format": "json",
                     "pageSize": 100,
                     "pageToken": next_page_token,
-                    "fields": ",".join(fields),
+                    "fields": ",".join(self.fields),
                     "markupFormat": "markdown",
                 }
 
