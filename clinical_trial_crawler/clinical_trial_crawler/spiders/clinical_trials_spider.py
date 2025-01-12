@@ -2,7 +2,6 @@ import json
 from urllib.parse import urlencode
 
 import scrapy
-from scrapy.utils.project import get_project_settings
 
 
 class ClinicalTrialsSpider(scrapy.Spider):
@@ -21,53 +20,14 @@ class ClinicalTrialsSpider(scrapy.Spider):
         super(ClinicalTrialsSpider, self).__init__(*args, **kwargs)
         self.exclude_completed = exclude_completed
         self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
-        # Define fields as class attribute
-        self.fields = [
-            # Identification
-            "IdentificationModule",
-            # Study Overview
-            "DescriptionModule",
-            # Status and Dates
-            "StatusModule",
-            # Study Design
-            "DesignModule",
-            # Eligibility
-            "EligibilityModule",
-            # Contacts and Locations
-            "ContactsLocationsModule",
-            # Sponsor/Collaborators
-            "SponsorCollaboratorsModule",
-            # Oversight
-            "OversightModule",
-        ]
 
     def start_requests(self):
-        # Using fields defined in __init__
-        fields = [
-            # Identification
-            "IdentificationModule",
-            # Study Overview
-            "DescriptionModule",
-            # Status and Dates
-            "StatusModule",
-            # Study Design
-            "DesignModule",
-            # Eligibility
-            "EligibilityModule",
-            # Contacts and Locations
-            "ContactsLocationsModule",
-            # Sponsor/Collaborators
-            "SponsorCollaboratorsModule",
-            # Oversight
-            "OversightModule",
-        ]
-
         params = {
             "query.cond": "Nasopharyngeal Carcinoma",
             "format": "json",
             "pageSize": 100,
             "countTotal": "true",
-            "fields": ",".join(self.fields),
+            "fields": "ProtocolSection",  # Request entire ProtocolSection
             "markupFormat": "markdown",
         }
 
@@ -86,17 +46,15 @@ class ClinicalTrialsSpider(scrapy.Spider):
             dont_filter=True,
         )
 
-    def extract_module_data(self, module_dict, fields):
-        """Helper function to safely extract nested fields"""
-        result = {}
-        for field in fields:
-            value = module_dict.get(field)
-            if isinstance(value, dict):
-                # Handle date structures
-                if "date" in value:
-                    value = value.get("date")
-            result[field] = value
-        return result
+    def safe_get(self, d, *keys, default=None):
+        """Safely get nested dictionary values"""
+        for key in keys:
+            if not isinstance(d, dict):
+                return default
+            d = d.get(key, default)
+            if d is None:
+                return default
+        return d
 
     def parse(self, response):
         try:
@@ -112,93 +70,129 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             for study in studies:
-                protocol = study.get("protocolSection", {})
-
-                # Extract data from each module
-                identification = protocol.get("identificationModule", {})
-                description = protocol.get("descriptionModule", {})
-                status = protocol.get("statusModule", {})
-                design = protocol.get("designModule", {})
-                eligibility = protocol.get("eligibilityModule", {})
-                contacts_locations = protocol.get("contactsLocationsModule", {})
-                sponsor = protocol.get("sponsorCollaboratorsModule", {})
-                oversight = protocol.get("oversightModule", {})
+                protocol = self.safe_get(study, "protocolSection", default={})
 
                 yield {
                     "identification": {
-                        "nct_id": identification.get("nctId"),
-                        "org_study_id": identification.get("orgStudyIdInfo", {}).get(
-                            "id"
+                        "nct_id": self.safe_get(
+                            protocol, "identificationModule", "nctId"
                         ),
-                        "brief_title": identification.get("briefTitle"),
-                        "official_title": identification.get("officialTitle"),
-                        "acronym": identification.get("acronym"),
-                    },
-                    "status_info": {
-                        "status": status.get("overallStatus"),
-                        "start_date": status.get("startDateStruct", {}).get("date"),
-                        "completion_date": status.get("completionDateStruct", {}).get(
-                            "date"
+                        "brief_title": self.safe_get(
+                            protocol, "identificationModule", "briefTitle"
                         ),
-                        "primary_completion_date": status.get(
-                            "primaryCompletionDateStruct", {}
-                        ).get("date"),
-                        "last_update_date": status.get(
-                            "lastUpdatePostDateStruct", {}
-                        ).get("date"),
+                        "official_title": self.safe_get(
+                            protocol, "identificationModule", "officialTitle"
+                        ),
+                        "acronym": self.safe_get(
+                            protocol, "identificationModule", "acronym"
+                        ),
+                        "org_study_id": self.safe_get(
+                            protocol, "identificationModule", "orgStudyIdInfo", "id"
+                        ),
                     },
-                    "study_overview": {
-                        "brief_summary": description.get("briefSummary"),
-                        "detailed_description": description.get("detailedDescription"),
-                        "conditions": description.get("conditions"),
-                        "keywords": description.get("keywords"),
+                    "status": {
+                        "overall_status": self.safe_get(
+                            protocol, "statusModule", "overallStatus"
+                        ),
+                        "start_date": self.safe_get(
+                            protocol, "statusModule", "startDateStruct", "date"
+                        ),
+                        "completion_date": self.safe_get(
+                            protocol, "statusModule", "completionDateStruct", "date"
+                        ),
+                        "primary_completion_date": self.safe_get(
+                            protocol,
+                            "statusModule",
+                            "primaryCompletionDateStruct",
+                            "date",
+                        ),
                     },
-                    "design_info": {
-                        "study_type": design.get("studyType"),
-                        "phases": design.get("phases", []),
-                        "design_info": design.get("designInfo"),
-                        "enrollment_count": design.get("enrollmentInfo", {}).get(
-                            "count"
+                    "description": {
+                        "brief_summary": self.safe_get(
+                            protocol, "descriptionModule", "briefSummary"
+                        ),
+                        "detailed_description": self.safe_get(
+                            protocol, "descriptionModule", "detailedDescription"
+                        ),
+                        "conditions": self.safe_get(
+                            protocol, "descriptionModule", "conditions"
+                        ),
+                        "keywords": self.safe_get(
+                            protocol, "descriptionModule", "keywords"
+                        ),
+                    },
+                    "design": {
+                        "study_type": self.safe_get(
+                            protocol, "designModule", "studyType"
+                        ),
+                        "phases": self.safe_get(
+                            protocol, "designModule", "phases", default=[]
+                        ),
+                        "enrollment": self.safe_get(
+                            protocol, "designModule", "enrollmentInfo", "count"
                         ),
                         "arms": [
                             {
-                                "name": arm.get("name"),
-                                "description": arm.get("description"),
-                                "type": arm.get("type"),
-                                "intervention_names": arm.get("interventionNames", []),
+                                "name": self.safe_get(arm, "name"),
+                                "type": self.safe_get(arm, "type"),
+                                "description": self.safe_get(arm, "description"),
+                                "interventions": self.safe_get(
+                                    arm, "interventionNames", default=[]
+                                ),
                             }
-                            for arm in design.get("arms", [])
+                            for arm in self.safe_get(
+                                protocol, "designModule", "arms", default=[]
+                            )
                         ],
                     },
-                    "eligibility_criteria": {
-                        "criteria_text": eligibility.get("eligibilityCriteria"),
-                        "gender": eligibility.get("sex"),
-                        "minimum_age": eligibility.get("minimumAge"),
-                        "maximum_age": eligibility.get("maximumAge"),
-                        "healthy_volunteers": eligibility.get("healthyVolunteers"),
+                    "eligibility": {
+                        "criteria": self.safe_get(
+                            protocol, "eligibilityModule", "eligibilityCriteria"
+                        ),
+                        "gender": self.safe_get(protocol, "eligibilityModule", "sex"),
+                        "minimum_age": self.safe_get(
+                            protocol, "eligibilityModule", "minimumAge"
+                        ),
+                        "maximum_age": self.safe_get(
+                            protocol, "eligibilityModule", "maximumAge"
+                        ),
+                        "healthy_volunteers": self.safe_get(
+                            protocol, "eligibilityModule", "healthyVolunteers"
+                        ),
                     },
-                    "locations": [
-                        {
-                            "facility": loc.get("facility", {}).get("name"),
-                            "city": loc.get("facility", {}).get("city"),
-                            "state": loc.get("facility", {}).get("state"),
-                            "country": loc.get("facility", {}).get("country"),
-                            "status": loc.get("status"),
-                        }
-                        for loc in contacts_locations.get("locations", [])
-                    ],
-                    "sponsor_info": {
-                        "lead_sponsor": sponsor.get("leadSponsor", {}).get("name"),
+                    "contacts_locations": {
+                        "locations": [
+                            {
+                                "facility": self.safe_get(loc, "facility", "name"),
+                                "city": self.safe_get(loc, "facility", "city"),
+                                "state": self.safe_get(loc, "facility", "state"),
+                                "country": self.safe_get(loc, "facility", "country"),
+                                "status": self.safe_get(loc, "status"),
+                            }
+                            for loc in self.safe_get(
+                                protocol,
+                                "contactsLocationsModule",
+                                "locations",
+                                default=[],
+                            )
+                        ],
+                    },
+                    "sponsor": {
+                        "lead_sponsor": self.safe_get(
+                            protocol,
+                            "sponsorCollaboratorsModule",
+                            "leadSponsor",
+                            "name",
+                        ),
                         "collaborators": [
-                            collab.get("name")
-                            for collab in sponsor.get("collaborators", [])
+                            self.safe_get(collab, "name", default="")
+                            for collab in self.safe_get(
+                                protocol,
+                                "sponsorCollaboratorsModule",
+                                "collaborators",
+                                default=[],
+                            )
                         ],
-                    },
-                    "oversight_info": {
-                        "has_dmc": oversight.get("hasDmc"),
-                        "is_fda_regulated": oversight.get("isFdaRegulatedDrug")
-                        or oversight.get("isFdaRegulatedDevice"),
-                        "is_section_801": oversight.get("isUnapprovedDevice"),
                     },
                 }
 
@@ -210,7 +204,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "format": "json",
                     "pageSize": 100,
                     "pageToken": next_page_token,
-                    "fields": ",".join(self.fields),
+                    "fields": "ProtocolSection",
                     "markupFormat": "markdown",
                 }
 
@@ -237,6 +231,9 @@ class ClinicalTrialsSpider(scrapy.Spider):
             self.logger.error(f"Response text: {response.text[:200]}...")
         except Exception as e:
             self.logger.error(f"Unexpected error while processing response: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def handle_error(self, failure):
         self.logger.error(f"Request failed: {failure.value}")
