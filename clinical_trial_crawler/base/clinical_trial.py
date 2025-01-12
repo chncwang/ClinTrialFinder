@@ -225,6 +225,6 @@ class ClinicalTrialsParser:
         """Get all trials that are currently recruiting."""
         return [trial for trial in self.trials if trial.is_recruiting]
 
-    def get_trials_by_phase(self, phase: str) -> List[ClinicalTrial]:
+    def get_trials_by_phase(self, phase: int) -> List[ClinicalTrial]:
         """Get all trials for a specific phase."""
         return [trial for trial in self.trials if phase in trial.design.phases]

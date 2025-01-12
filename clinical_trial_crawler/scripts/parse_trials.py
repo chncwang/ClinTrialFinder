@@ -64,13 +64,11 @@ def main():
         logger.info(f"main: Filtering for recruiting trials: {len(trials)} found")
 
     if args.phase:
-        # Convert Arabic numerals to Roman numerals if needed
-        phase_map = {"1": "I", "2": "II", "3": "III", "4": "IV"}
-        phase = phase_map.get(args.phase, args.phase.upper())
-
-        phase_filtered = trials_parser.get_trials_by_phase(phase)
+        phase_filtered = trials_parser.get_trials_by_phase(int(args.phase))
         trials = [t for t in trials if t in phase_filtered]
-        logger.info(f"main: Filtering for phase {phase} trials: {len(trials)} found")
+        logger.info(
+            f"main: Filtering for phase {args.phase} trials: {len(trials)} found"
+        )
 
     # Display results
     if args.nct_id:
@@ -85,6 +83,7 @@ def main():
             logger.info(
                 f"- {trial.identification.nct_id}: {trial.identification.brief_title}"
             )
+        logger.info(f"main: Total number of trials: {len(trials)}")
     else:
         logger.info(f"main: Total number of trials: {len(trials_parser.trials)}")
         logger.info("main: Use --help to see available options")
