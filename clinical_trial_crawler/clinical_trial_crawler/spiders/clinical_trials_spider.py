@@ -29,15 +29,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
             "format": "json",
             "pageSize": 100,
             "countTotal": "true",  # Get total count in first response
-            "fields": [
-                "NCTId",
-                "BriefTitle",
-                "OfficialTitle",
-                "OverallStatus",
-                "Phase",
-                "StartDate",
-                "CompletionDate",
-            ],
+            "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
             "markupFormat": "markdown",  # Specify markup format as per API docs
         }
 
@@ -101,15 +93,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "format": "json",
                     "pageSize": 100,
                     "pageToken": next_page_token,
-                    "fields": [
-                        "NCTId",
-                        "BriefTitle",
-                        "OfficialTitle",
-                        "OverallStatus",
-                        "Phase",
-                        "StartDate",
-                        "CompletionDate",
-                    ],
+                    "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
                     "markupFormat": "markdown",
                 }
                 next_url = f"{self.api_base_url}?{urlencode(params)}"
