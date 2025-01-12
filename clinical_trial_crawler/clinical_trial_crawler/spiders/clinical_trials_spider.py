@@ -2,19 +2,12 @@ import json
 from urllib.parse import urlencode
 
 import scrapy
+from scrapy.utils.project import get_project_settings
 
 
 class ClinicalTrialsSpider(scrapy.Spider):
     name = "clinical_trials"
     api_base_url = "https://clinicaltrials.gov/api/v2/studies"
-
-    def add_arguments(self, parser):
-        """Add custom command line arguments."""
-        parser.add_argument(
-            "--exclude-completed",
-            action="store_true",
-            help="Exclude completed trials from the results",
-        )
 
     custom_settings = {
         "DOWNLOAD_DELAY": 1,
@@ -30,6 +23,11 @@ class ClinicalTrialsSpider(scrapy.Spider):
         ],  # Allow error codes to be processed
     }
 
+    def __init__(self, exclude_completed=False, *args, **kwargs):
+        super(ClinicalTrialsSpider, self).__init__(*args, **kwargs)
+        self.exclude_completed = exclude_completed
+        self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
+
     def start_requests(self):
         # API query parameters based on documentation
         params = {
@@ -42,7 +40,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
         }
 
         # Add status filter if exclude-completed flag is set
-        if getattr(self, "exclude_completed", False):
+        if self.exclude_completed:
             params["filter.overallStatus"] = (
                 "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
                 "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
@@ -70,6 +68,8 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             # Log study count for debugging
             self.logger.info(f"Found {len(studies)} studies on current page")
+            if data.get("totalCount"):
+                self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             # Extract and yield study information
             for study in studies:
@@ -113,11 +113,12 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 }
 
                 # Add status filter if exclude-completed flag is set
-                if getattr(self, "exclude_completed", False):
+                if self.exclude_completed:
                     params["filter.overallStatus"] = (
                         "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
                         "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
                     )
+
                 next_url = f"{self.api_base_url}?{urlencode(params)}"
 
                 yield scrapy.Request(
