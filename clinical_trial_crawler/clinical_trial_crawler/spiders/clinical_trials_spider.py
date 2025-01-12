@@ -8,6 +8,14 @@ class ClinicalTrialsSpider(scrapy.Spider):
     name = "clinical_trials"
     api_base_url = "https://clinicaltrials.gov/api/v2/studies"
 
+    def add_arguments(self, parser):
+        """Add custom command line arguments."""
+        parser.add_argument(
+            "--exclude-completed",
+            action="store_true",
+            help="Exclude completed trials from the results",
+        )
+
     custom_settings = {
         "DOWNLOAD_DELAY": 1,
         "ROBOTSTXT_OBEY": False,
@@ -32,6 +40,13 @@ class ClinicalTrialsSpider(scrapy.Spider):
             "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
             "markupFormat": "markdown",  # Specify markup format as per API docs
         }
+
+        # Add status filter if exclude-completed flag is set
+        if getattr(self, "exclude_completed", False):
+            params["filter.overallStatus"] = (
+                "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
+                "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
+            )
 
         url = f"{self.api_base_url}?{urlencode(params)}"
         yield scrapy.Request(
@@ -96,6 +111,13 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "fields": "NCTId,BriefTitle,OfficialTitle,OverallStatus,Phase,StartDate,CompletionDate",
                     "markupFormat": "markdown",
                 }
+
+                # Add status filter if exclude-completed flag is set
+                if getattr(self, "exclude_completed", False):
+                    params["filter.overallStatus"] = (
+                        "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
+                        "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
+                    )
                 next_url = f"{self.api_base_url}?{urlencode(params)}"
 
                 yield scrapy.Request(
