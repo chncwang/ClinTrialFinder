@@ -105,7 +105,9 @@ Provide your analysis in JSON format with these fields:
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
 
-    def evaluate_trial(self, trial: ClinicalTrial, condition: str) -> Tuple[bool, str]:
+    def evaluate_trial(
+        self, trial: ClinicalTrial, condition: str
+    ) -> Tuple[bool, str, float]:
         """Evaluate a single trial against the given condition using GPT."""
         try:
             prompt = self.create_prompt(trial, condition)
@@ -113,15 +115,16 @@ Example response:
             # Check cache first
             cached_result = self.cache.get(prompt)
             if cached_result is not None:
-                logger.debug("Using cached result")
-                return cached_result["eligible"], cached_result["reason"]
+                logger.debug("GPTTrialFilter.evaluate_trial: Using cached result")
+                return cached_result["eligible"], cached_result["reason"], 0.0
 
+            input_content = "You are a clinical trial analyst. Analyze the trial data and provide clear yes/no decisions with explanations. Your response must be valid JSON."
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a clinical trial analyst. Analyze the trial data and provide clear yes/no decisions with explanations. Your response must be valid JSON.",
+                        "content": input_content,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -130,16 +133,28 @@ Example response:
             )
 
             # Parse the response
-            result = json.loads(response.choices[0].message.content)
+            result_content = response.choices[0].message.content
+            result = json.loads(result_content)
+
+            # Estimate the cost of the request
+            input_string_length = len(prompt) + len(input_content)
+            estimated_input_tokens = input_string_length / 4
+            estimated_output_tokens = len(result_content) / 4
+            estimated_cost = (
+                estimated_input_tokens * 0.00015 + estimated_output_tokens * 0.0006
+            )
+            logger.debug(
+                f"GPTTrialFilter.evaluate_trial: Estimated cost: ${estimated_cost:.6f}"
+            )
 
             # Cache the result
             self.cache.set(prompt, result)
 
-            return result["eligible"], result["reason"]
+            return result["eligible"], result["reason"], estimated_cost
 
         except Exception as e:
             logger.error(
-                f"Error evaluating trial {trial.identification.nct_id}: {str(e)}"
+                f"GPTTrialFilter.evaluate_trial: Error evaluating trial {trial.identification.nct_id}: {str(e)}"
             )
             return False, f"Error during evaluation: {str(e)}"
 
@@ -150,10 +165,10 @@ def load_json_file(file_path: str) -> List[dict]:
         with open(file_path, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        logger.error(f"File '{file_path}' not found.")
+        logger.error(f"load_json_file: File '{file_path}' not found.")
         sys.exit(1)
     except json.JSONDecodeError:
-        logger.error(f"File '{file_path}' is not a valid JSON file.")
+        logger.error(f"load_json_file: File '{file_path}' is not a valid JSON file.")
         sys.exit(1)
 
 
@@ -162,9 +177,9 @@ def save_json_file(data: List[Dict], output_path: str):
     try:
         with open(output_path, "w") as f:
             json.dump(data, f, indent=2)
-        logger.info(f"Results saved to {output_path}")
+        logger.info(f"save_json_file: Results saved to {output_path}")
     except Exception as e:
-        logger.error(f"Error saving results: {str(e)}")
+        logger.error(f"save_json_file: Error saving results: {str(e)}")
         sys.exit(1)
 
 
@@ -202,7 +217,7 @@ def main():
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.error(
-            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+            "main: OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
         )
         sys.exit(1)
 
@@ -217,27 +232,32 @@ def main():
     filtered_trials = []
     total_trials = len(trials_parser.trials)
 
-    logger.info(f"Processing {total_trials} trials...")
+    logger.info(f"main: Processing {total_trials} trials...")
 
+    total_cost = 0.0
     for i, trial in enumerate(trials_parser.trials, 1):
         logger.info(
-            f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            f"main: Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
-        eligible, reason = gpt_filter.evaluate_trial(trial, args.condition)
+        eligible, reason, cost = gpt_filter.evaluate_trial(trial, args.condition)
+        total_cost += cost
+        logger.info(f"main: total cost: ${total_cost:.6f}")
 
         if eligible:
             logger.info(
-                f"Trial {trial.identification.nct_id} matches condition: {reason}"
+                f"main: Trial {trial.identification.nct_id} matches condition: {reason}"
             )
             filtered_trials.append(trial.to_dict())
         else:
             logger.debug(
-                f"Trial {trial.identification.nct_id} does not match condition: {reason}"
+                f"main: Trial {trial.identification.nct_id} does not match condition: {reason}"
             )
 
     # Save results
     save_json_file(filtered_trials, args.output)
-    logger.info(f"Found {len(filtered_trials)} matching trials out of {total_trials}")
+    logger.info(
+        f"main: Found {len(filtered_trials)} matching trials out of {total_trials}"
+    )
 
 
 if __name__ == "__main__":
