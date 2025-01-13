@@ -85,9 +85,12 @@ class GPTTrialFilter:
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
 
-    def create_prompt(self, trial: ClinicalTrial, condition: str) -> str:
-        """Create a prompt for GPT to evaluate the trial against the condition."""
-        return f"""You are evaluating a clinical trial to determine if it meets a specific condition.
+    def create_prompt(self, trial: ClinicalTrial, conditions: str | list[str]) -> str:
+        """Create a prompt for GPT to evaluate the trial against one or more conditions."""
+        conditions_list = conditions if isinstance(conditions, list) else [conditions]
+        conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
+
+        return f"""You are evaluating a clinical trial to determine if it meets specific conditions.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
@@ -95,15 +98,15 @@ Trial Details:
 Detailed Eligibility Criteria:
 {trial.eligibility.criteria}
 
-Condition to Evaluate:
-{condition}
+Conditions to Evaluate:
+{conditions_text}
 
-Analyze the trial title and eligibility criteria to determine if this trial meets the following condition: {condition}. Consider both inclusion and exclusion criteria carefully.
-If you are uncertain whether the trial meets the condition, return eligible as true.
+Analyze the trial title and eligibility criteria to determine if this trial meets ALL of the listed conditions. Consider both inclusion and exclusion criteria carefully.
+If you are uncertain whether the trial meets ANY of the conditions, return eligible as true.
 
 Provide your analysis in JSON format with these fields:
 - "reason": detailed explanation of your decision, citing specific criteria
-- "eligible": boolean indicating if trial meets the condition (true if uncertain)
+- "eligible": boolean indicating if trial meets ALL conditions (true if uncertain)
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
@@ -194,8 +197,9 @@ def main():
         "json_file", help="Path to the JSON file containing clinical trials data"
     )
     parser.add_argument(
-        "condition",
-        help="Condition to filter trials (e.g., 'doesn\\'t have a measurable site')",
+        "conditions",
+        nargs="+",
+        help="One or more conditions to filter trials (e.g., 'doesn\\'t have a measurable site')",
     )
     parser.add_argument(
         "--output",
@@ -236,13 +240,14 @@ def main():
     total_trials = len(trials_parser.trials)
 
     logger.info(f"main: Processing {total_trials} trials...")
+    logger.info(f"main: Evaluating conditions: {args.conditions}")
 
     total_cost = 0.0
     for i, trial in enumerate(trials_parser.trials, 1):
         logger.info(
             f"main: Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
-        eligible, reason, cost = gpt_filter.evaluate_trial(trial, args.condition)
+        eligible, reason, cost = gpt_filter.evaluate_trial(trial, args.conditions)
         total_cost += cost
         logger.info(f"main: total cost: ${total_cost:.6f}")
 
