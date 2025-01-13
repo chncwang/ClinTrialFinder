@@ -40,9 +40,11 @@ Condition to Evaluate:
 {condition}
 
 Analyze the trial title and eligibility criteria to determine if this trial meets the following condition: {condition}. Consider both inclusion and exclusion criteria carefully.
+If you are uncertain whether the trial meets the condition, return eligible as true.
+
 Provide your analysis in JSON format with these fields:
 - "reason": detailed explanation of your decision, citing specific criteria
-- "eligible": boolean indicating if trial meets the condition
+- "eligible": boolean indicating if trial meets the condition (true if uncertain)
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
