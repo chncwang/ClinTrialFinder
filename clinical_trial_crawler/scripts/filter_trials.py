@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 import datetime
+import hashlib
 import json
 import logging
 import os
+import pickle
 import sys
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -22,9 +25,62 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+class PromptCache:
+    def __init__(self, cache_dir: str = ".cache", max_size: int = 1000):
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
+        self.max_size = max_size
+        self.cache_index = OrderedDict()
+        self._load_cache_index()
+
+    def _get_cache_key(self, prompt: str) -> str:
+        """Generate a unique cache key for a prompt."""
+        return hashlib.md5(prompt.encode()).hexdigest()
+
+    def _load_cache_index(self):
+        """Load the cache index from disk."""
+        index_path = self.cache_dir / "cache_index.pkl"
+        if index_path.exists():
+            with open(index_path, "rb") as f:
+                self.cache_index = pickle.load(f)
+
+    def _save_cache_index(self):
+        """Save the cache index to disk."""
+        with open(self.cache_dir / "cache_index.pkl", "wb") as f:
+            pickle.dump(self.cache_index, f)
+
+    def get(self, prompt: str) -> dict | None:
+        """Get cached result for a prompt."""
+        cache_key = self._get_cache_key(prompt)
+        if cache_key in self.cache_index:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            if cache_file.exists():
+                with open(cache_file, "r") as f:
+                    return json.load(f)
+        return None
+
+    def set(self, prompt: str, result: dict):
+        """Cache result for a prompt."""
+        cache_key = self._get_cache_key(prompt)
+
+        # Enforce cache size limit
+        while len(self.cache_index) >= self.max_size:
+            # Remove oldest entry
+            oldest_key, _ = self.cache_index.popitem(last=False)
+            (self.cache_dir / f"{oldest_key}.json").unlink(missing_ok=True)
+
+        # Save new entry
+        with open(self.cache_dir / f"{cache_key}.json", "w") as f:
+            json.dump(result, f)
+
+        self.cache_index[cache_key] = True
+        self._save_cache_index()
+
+
 class GPTTrialFilter:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, cache_size: int = 1000):
         self.client = OpenAI(api_key=api_key)
+        self.cache = PromptCache(max_size=cache_size)
 
     def create_prompt(self, trial: ClinicalTrial, condition: str) -> str:
         """Create a prompt for GPT to evaluate the trial against the condition."""
@@ -54,6 +110,12 @@ Example response:
         try:
             prompt = self.create_prompt(trial, condition)
 
+            # Check cache first
+            cached_result = self.cache.get(prompt)
+            if cached_result is not None:
+                logger.debug("Using cached result")
+                return cached_result["eligible"], cached_result["reason"]
+
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -69,6 +131,10 @@ Example response:
 
             # Parse the response
             result = json.loads(response.choices[0].message.content)
+
+            # Cache the result
+            self.cache.set(prompt, result)
+
             return result["eligible"], result["reason"]
 
         except Exception as e:
@@ -123,6 +189,12 @@ def main():
         "--api-key",
         help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
     )
+    parser.add_argument(
+        "--cache-size",
+        type=int,
+        default=1000,
+        help="Maximum number of cached responses to keep",
+    )
 
     args = parser.parse_args()
 
@@ -134,8 +206,8 @@ def main():
         )
         sys.exit(1)
 
-    # Initialize GPT filter
-    gpt_filter = GPTTrialFilter(api_key)
+    # Initialize GPT filter with cache size
+    gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
 
     # Load and parse trials
     json_data = load_json_file(args.json_file)
