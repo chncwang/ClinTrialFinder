@@ -144,7 +144,7 @@ Example response:
             estimated_input_tokens = input_string_length / 4
             estimated_output_tokens = len(result_content) / 4
             estimated_cost = (
-                estimated_input_tokens * 0.00015 + estimated_output_tokens * 0.0006
+                estimated_input_tokens * 0.15e-6 + estimated_output_tokens * 0.6e-6
             )
             logger.debug(
                 f"GPTTrialFilter.evaluate_trial: Estimated cost: ${estimated_cost:.6f}"
@@ -255,6 +255,7 @@ def main():
             logger.info(
                 f"main: Trial {trial.identification.nct_id} does not match condition: {reason}"
             )
+        logger.info(f"main: trial: {trial.to_dict()}")
 
     # Save results
     save_json_file(filtered_trials, args.output)
