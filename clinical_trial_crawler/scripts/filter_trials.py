@@ -22,7 +22,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class PromptCache:
@@ -249,7 +249,7 @@ def main():
             )
             filtered_trials.append(trial.to_dict())
         else:
-            logger.debug(
+            logger.info(
                 f"main: Trial {trial.identification.nct_id} does not match condition: {reason}"
             )
 
