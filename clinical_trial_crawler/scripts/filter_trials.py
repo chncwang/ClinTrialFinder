@@ -162,7 +162,7 @@ Example response:
             logger.error(
                 f"GPTTrialFilter.evaluate_trial: Error evaluating trial {trial.identification.nct_id}: {str(e)}"
             )
-            return False, f"Error during evaluation: {str(e)}"
+            return False, f"Error during evaluation: {str(e)}", 0.0
 
 
 def load_json_file(file_path: str) -> List[dict]:
@@ -217,6 +217,16 @@ def main():
         default=1000,
         help="Maximum number of cached responses to keep",
     )
+    # Add new arguments from parse_trials.py
+    parser.add_argument(
+        "--recruiting",
+        action="store_true",
+        help="Filter for only recruiting trials",
+    )
+    parser.add_argument(
+        "--phase",
+        help="Filter for trials of a specific phase (accepts both Arabic (1-4) and Roman numerals (I-IV))",
+    )
 
     args = parser.parse_args()
 
@@ -234,16 +244,30 @@ def main():
     # Load and parse trials
     json_data = load_json_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)
+    trials = trials_parser.trials
+
+    # Apply recruiting filter if specified
+    if args.recruiting:
+        trials = trials_parser.get_recruiting_trials()
+        logger.info(f"main: Filtered for recruiting trials: {len(trials)} found")
+
+    # Apply phase filter if specified
+    if args.phase:
+        phase_filtered = trials_parser.get_trials_by_phase(int(args.phase))
+        trials = [t for t in trials if t in phase_filtered]
+        logger.info(
+            f"main: Filtered for phase {args.phase} trials: {len(trials)} found"
+        )
 
     # Filter trials using GPT
     filtered_trials = []
-    total_trials = len(trials_parser.trials)
+    total_trials = len(trials)
 
     logger.info(f"main: Processing {total_trials} trials...")
     logger.info(f"main: Evaluating conditions: {args.conditions}")
 
     total_cost = 0.0
-    for i, trial in enumerate(trials_parser.trials, 1):
+    for i, trial in enumerate(trials, 1):
         logger.info(
             f"main: Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
