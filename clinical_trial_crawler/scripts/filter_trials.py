@@ -255,7 +255,7 @@ def main():
             logger.info(
                 f"main: Trial {trial.identification.nct_id} does not match condition: {reason}"
             )
-        logger.info(f"main: trial: {trial.to_dict()}")
+        logger.debug(f"main: trial: {json.dumps(trial.to_dict(), indent=2)}")
 
     # Save results
     save_json_file(filtered_trials, args.output)
