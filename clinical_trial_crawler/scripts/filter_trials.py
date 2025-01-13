@@ -18,8 +18,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 
 # Configure logging
+log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
