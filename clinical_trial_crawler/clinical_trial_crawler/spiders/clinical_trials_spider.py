@@ -71,11 +71,15 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             for study in studies:
                 protocol = self.safe_get(study, "protocolSection", default={})
+                nct_id = self.safe_get(protocol, "identificationModule", "nctId")
 
                 yield {
                     "identification": {
-                        "nct_id": self.safe_get(
-                            protocol, "identificationModule", "nctId"
+                        "nct_id": nct_id,
+                        "url": (
+                            f"https://clinicaltrials.gov/study/{nct_id}"
+                            if nct_id
+                            else None
                         ),
                         "brief_title": self.safe_get(
                             protocol, "identificationModule", "briefTitle"

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class Identification:
     nct_id: str
+    url: str
     brief_title: str
     official_title: str
     acronym: Optional[str]
@@ -153,6 +154,7 @@ class ClinicalTrial:
                 "official_title": self.identification.official_title,
                 "acronym": self.identification.acronym,
                 "org_study_id": self.identification.org_study_id,
+                "url": self.identification.url,
             },
             "status": {
                 "overall_status": self.status.overall_status,
