@@ -230,3 +230,20 @@ class ClinicalTrialsParser:
     def get_trials_by_phase(self, phase: int) -> List[ClinicalTrial]:
         """Get all trials for a specific phase."""
         return [trial for trial in self.trials if phase in trial.design.phases]
+
+    def get_trials_excluding_study_type(
+        self, excluded_type: str
+    ) -> List[ClinicalTrial]:
+        """Get all trials except those matching the specified study type (case-insensitive).
+
+        Args:
+            excluded_type: The study type to exclude (e.g., 'Observational', 'Interventional')
+
+        Returns:
+            List of trials that don't match the excluded study type
+        """
+        return [
+            trial
+            for trial in self.trials
+            if trial.design.study_type.lower() != excluded_type.lower()
+        ]

@@ -275,6 +275,10 @@ def main():
         "--phase",
         help="Filter for trials of a specific phase (accepts both Arabic (1-4) and Roman numerals (I-IV))",
     )
+    parser.add_argument(
+        "--exclude-study-type",
+        help="Exclude trials of a specific study type (e.g., 'Observational')",
+    )
 
     args = parser.parse_args()
 
@@ -293,6 +297,13 @@ def main():
     json_data = load_json_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
+
+    # Apply study type exclusion if specified
+    if args.exclude_study_type:
+        trials = trials_parser.get_trials_excluding_study_type(args.exclude_study_type)
+        logger.info(
+            f"main: Excluded study type '{args.exclude_study_type}': {len(trials)} trials remaining"
+        )
 
     # Apply recruiting filter if specified
     if args.recruiting:
