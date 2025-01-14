@@ -134,7 +134,7 @@ class GPTTrialFilter:
             )
             raise
 
-        return f"""You are evaluating a clinical trial to determine if it meets specific conditions.
+        return f"""You are evaluating a clinical trial to determine if it meets a patient's conditions.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
@@ -151,7 +151,9 @@ Please analyze if this trial is suitable for the patient with the listed conditi
 
 Respond with a JSON object containing:
 - "reason": An explanation of why the trial is or is not suitable
-- "eligible": true if the patient could potentially qualify, false if either would be disqualifying
+- "eligible": true if the patient could potentially qualify, false if you are certain they would be disqualified.
+
+Note that you should not return false because of unmentioned criteria.
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
