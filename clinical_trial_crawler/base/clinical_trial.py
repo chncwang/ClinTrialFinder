@@ -67,13 +67,17 @@ class Design:
         parsed_phases = []
 
         for phase in raw_phases:
-            phase_str = phase.lower().replace(" ", "")
             try:
-                # Extract any digits from the phase string
-                phase_digits = "".join(c for c in phase_str if c.isdigit())
-                if not phase_digits:
-                    continue
-                phase_num = int(phase_digits)
+                if isinstance(phase, int):
+                    phase_num = phase
+                else:
+                    phase_str = phase.lower().replace(" ", "")
+                    # Extract any digits from the phase string
+                    phase_digits = "".join(c for c in phase_str if c.isdigit())
+                    if not phase_digits:
+                        continue
+                    phase_num = int(phase_digits)
+
                 if 1 <= phase_num <= 4:
                     parsed_phases.append(phase_num)
                 else:
