@@ -80,33 +80,78 @@ class PromptCache:
         self._save_cache_index()
 
 
+class EligibilityCriteriaError(Exception):
+    """Custom exception for eligibility criteria format errors."""
+
+    pass
+
+
 class GPTTrialFilter:
     def __init__(self, api_key: str, cache_size: int = 1000):
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
+
+    def extract_inclusion_criteria(self, criteria: str) -> str:
+        """
+        Extract inclusion criteria from the full eligibility criteria text.
+        """
+        try:
+            parts = criteria.split("Exclusion Criteria:")
+            if len(parts) < 2:
+                raise EligibilityCriteriaError(
+                    "Could not find 'Exclusion Criteria:' section"
+                )
+
+            inclusion_parts = parts[0].split("Inclusion Criteria:")
+            if len(inclusion_parts) < 2:
+                raise EligibilityCriteriaError(
+                    "Could not find 'Inclusion Criteria:' section"
+                )
+
+            inclusion_criteria = inclusion_parts[1].strip()
+            if not inclusion_criteria:
+                raise EligibilityCriteriaError("Inclusion criteria section is empty")
+
+            return inclusion_criteria
+
+        except Exception as e:
+            raise EligibilityCriteriaError(
+                f"Error parsing eligibility criteria: {str(e)}"
+            )
 
     def create_prompt(self, trial: ClinicalTrial, conditions: str | list[str]) -> str:
         """Create a prompt for GPT to evaluate the trial against one or more conditions."""
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
+        try:
+            inclusion_criteria = self.extract_inclusion_criteria(
+                trial.eligibility.criteria
+            )
+        except EligibilityCriteriaError as e:
+            logger.error(
+                f"Error processing trial {trial.identification.nct_id}: {str(e)}"
+            )
+            raise
+
         return f"""You are evaluating a clinical trial to determine if it meets specific conditions.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
 
-Detailed Eligibility Criteria:
-{trial.eligibility.criteria}
+Inclusion Criteria:
+{inclusion_criteria}
 
-Conditions to Evaluate:
+Patient Conditions to Evaluate:
 {conditions_text}
 
-Analyze the trial title and eligibility criteria to determine if this trial meets ALL of the listed conditions. Consider both inclusion and exclusion criteria carefully.
-If you are uncertain whether the trial meets ANY of the conditions, return eligible as true.
+Please analyze if this trial is suitable for the patient with the listed conditions by carefully evaluating:
+1. The trial title - does it align with the conditions being evaluated?
+2. The inclusion criteria - what characteristics the patient should have?
 
-Provide your analysis in JSON format with these fields:
-- "reason": detailed explanation of your decision, citing specific criteria
-- "eligible": boolean indicating if trial meets ALL conditions (true if uncertain)
+Respond with a JSON object containing:
+- "reason": An explanation of why the trial is or is not suitable
+- "eligible": true if the patient could potentially qualify, false if either would be disqualifying
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
@@ -124,7 +169,7 @@ Example response:
                 logger.debug("GPTTrialFilter.evaluate_trial: Using cached result")
                 return cached_result["eligible"], cached_result["reason"], 0.0
 
-            input_content = "You are a clinical trial analyst. Analyze the trial data and provide clear yes/no decisions with explanations. Your response must be valid JSON."
+            input_content = "You are a clinical trial analyst focused on inclusion criteria. Analyze the trial data and provide clear yes/no decisions with explanations. Your response must be valid JSON."
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -158,6 +203,9 @@ Example response:
 
             return result["eligible"], result["reason"], estimated_cost
 
+        except EligibilityCriteriaError as e:
+            logger.error(f"Eligibility criteria format error: {str(e)}")
+            return False, f"Error: Invalid eligibility criteria format - {str(e)}", 0.0
         except Exception as e:
             logger.error(
                 f"GPTTrialFilter.evaluate_trial: Error evaluating trial {trial.identification.nct_id}: {str(e)}"
