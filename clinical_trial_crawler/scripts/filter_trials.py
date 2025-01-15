@@ -126,7 +126,7 @@ class GPTTrialFilter:
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
-        prompt = f"""You are evaluating a clinical trial based on its title.
+        prompt = f"""You are filtering a clinical trials based on patient conditions and trial title.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
@@ -134,13 +134,11 @@ Trial Details:
 Patient Conditions to Evaluate:
 {conditions_text}
 
-Please determine if the trial title aligns with the conditions provided.
+Please determine if the trial is potentially suitable for the patient conditions.
 
 Return a JSON object containing:
 - "reason": An explanation of why the title is or is not suitable
-- "eligible": true if the title is suitable, false if the title contradicts the conditions.
-
-Don't return false just because the title doesn't mention certain conditions.
+- "eligible": true if the trial is suitable for further evaluation, false if the title contradicts the conditions. Return true if unsure.
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
