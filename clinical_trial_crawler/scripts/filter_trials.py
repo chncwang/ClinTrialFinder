@@ -91,93 +91,46 @@ class GPTTrialFilter:
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
 
-    def extract_inclusion_criteria(self, criteria: str) -> str:
+    def evaluate_title(
+        self, trial: ClinicalTrial, conditions: str | list[str]
+    ) -> Tuple[bool, str]:
         """
-        Extract inclusion criteria from the full eligibility criteria text.
+        Evaluate the study title against the conditions.
+        Return true if uncertain (i.e., title is ambiguous), false if the title is incompatible.
         """
-        try:
-            parts = criteria.split("Exclusion Criteria:")
-            if len(parts) < 2:
-                raise EligibilityCriteriaError(
-                    "Could not find 'Exclusion Criteria:' section"
-                )
-
-            inclusion_parts = parts[0].split("Inclusion Criteria:")
-            if len(inclusion_parts) < 2:
-                raise EligibilityCriteriaError(
-                    "Could not find 'Inclusion Criteria:' section"
-                )
-
-            inclusion_criteria = inclusion_parts[1].strip()
-            if not inclusion_criteria:
-                raise EligibilityCriteriaError("Inclusion criteria section is empty")
-
-            return inclusion_criteria
-
-        except Exception as e:
-            raise EligibilityCriteriaError(
-                f"Error parsing eligibility criteria: {str(e)}"
-            )
-
-    def create_prompt(self, trial: ClinicalTrial, conditions: str | list[str]) -> str:
-        """Create a prompt for GPT to evaluate the trial against one or more conditions."""
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
-        try:
-            inclusion_criteria = self.extract_inclusion_criteria(
-                trial.eligibility.criteria
-            )
-        except EligibilityCriteriaError as e:
-            logger.error(
-                f"Error processing trial {trial.identification.nct_id}: {str(e)}"
-            )
-            raise
-
-        return f"""You are evaluating a clinical trial to determine if it meets a patient's conditions.
+        prompt = f"""You are evaluating a clinical trial based on its title.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
 
-Inclusion Criteria:
-{inclusion_criteria}
-
 Patient Conditions to Evaluate:
 {conditions_text}
 
-Please analyze if this trial is suitable for the patient with the listed conditions by carefully evaluating:
-1. The trial title - does it align with the conditions being evaluated?
-2. The inclusion criteria - what characteristics the patient should have?
+Please determine if the trial title aligns with the conditions provided.
 
-Respond with a JSON object containing:
-- "reason": An explanation of why the trial is or is not suitable
-- "eligible": true if the patient could potentially qualify, false if you are certain they would be disqualified.
-
-Note that you should not return false because of unmentioned criteria.
+Return a JSON object containing:
+- "reason": An explanation of why the title is or is not suitable
+- "eligible": true if uncertain, false if the title does not match the conditions.
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
 
-    def evaluate_trial(
-        self, trial: ClinicalTrial, condition: str
-    ) -> Tuple[bool, str, float]:
-        """Evaluate a single trial against the given condition using GPT."""
+        # Check cache first
+        cached_result = self.cache.get(prompt)
+        if cached_result is not None:
+            logger.debug("GPTTrialFilter.evaluate_title: Using cached result")
+            return cached_result["eligible"], cached_result["reason"]
+
         try:
-            prompt = self.create_prompt(trial, condition)
-
-            # Check cache first
-            cached_result = self.cache.get(prompt)
-            if cached_result is not None:
-                logger.debug("GPTTrialFilter.evaluate_trial: Using cached result")
-                return cached_result["eligible"], cached_result["reason"], 0.0
-
-            input_content = "You are a clinical trial analyst focused on inclusion criteria. Analyze the trial data and provide clear yes/no decisions with explanations. Your response must be valid JSON."
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
-                        "content": input_content,
+                        "content": "You are a clinical trial analyst focused on evaluating titles.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -185,32 +138,116 @@ Example response:
                 temperature=0.1,
             )
 
-            # Parse the response
             result_content = response.choices[0].message.content
             result = json.loads(result_content)
 
-            # Estimate the cost of the request
-            input_string_length = len(prompt) + len(input_content)
-            estimated_input_tokens = input_string_length / 4
-            estimated_output_tokens = len(result_content) / 4
-            estimated_cost = (
-                estimated_input_tokens * 0.15e-6 + estimated_output_tokens * 0.6e-6
-            )
-            logger.debug(
-                f"GPTTrialFilter.evaluate_trial: Estimated cost: ${estimated_cost:.6f}"
-            )
-
-            # Cache the result
             self.cache.set(prompt, result)
+            return result["eligible"], result["reason"]
 
-            return result["eligible"], result["reason"], estimated_cost
-
-        except EligibilityCriteriaError as e:
-            logger.error(f"Eligibility criteria format error: {str(e)}")
-            return False, f"Error: Invalid eligibility criteria format - {str(e)}", 0.0
         except Exception as e:
             logger.error(
-                f"GPTTrialFilter.evaluate_trial: Error evaluating trial {trial.identification.nct_id}: {str(e)}"
+                f"GPTTrialFilter.evaluate_title: Error evaluating title: {str(e)}"
+            )
+            return False, f"Error during title evaluation: {str(e)}"
+
+    def split_inclusion_criteria(self, criteria: str) -> List[str]:
+        """Split the inclusion criteria into individual statements."""
+        return [
+            criterion.strip() for criterion in criteria.split("\n") if criterion.strip()
+        ]
+
+    def evaluate_inclusion_criterion(
+        self, criterion: str, conditions: str | list[str]
+    ) -> Tuple[bool, str]:
+        """
+        Evaluate an individual inclusion criterion against the conditions.
+        Return true if it matches or is unrelated, false if it doesn't meet the conditions.
+        """
+        conditions_list = conditions if isinstance(conditions, list) else [conditions]
+        conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
+
+        prompt = f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
+
+Inclusion Criterion:
+{criterion}
+
+Patient Conditions to Evaluate:
+{conditions_text}
+
+Please determine if this inclusion criterion aligns with the conditions provided.
+
+Return a JSON object containing:
+- "reason": An explanation of why the inclusion criterion is or is not suitable
+- "eligible": true if it meets the conditions or is unrelated, false if it does not meet the conditions.
+
+Example response:
+{{"reason": "[specific reasons]", "eligible": true}}"""
+
+        cached_result = self.cache.get(prompt)
+        if cached_result is not None:
+            logger.debug(
+                "GPTTrialFilter.evaluate_inclusion_criterion: Using cached result"
+            )
+            return cached_result["eligible"], cached_result["reason"]
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+
+            result_content = response.choices[0].message.content
+            result = json.loads(result_content)
+
+            self.cache.set(prompt, result)
+            return result["eligible"], result["reason"]
+
+        except Exception as e:
+            logger.error(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Error evaluating inclusion criterion: {str(e)}"
+            )
+            return False, f"Error during inclusion criterion evaluation: {str(e)}"
+
+    def evaluate_trial(
+        self, trial: ClinicalTrial, conditions: str | list[str]
+    ) -> Tuple[bool, str, float]:
+        """Evaluate a single trial against the given conditions using GPT."""
+        try:
+            # Evaluate the title first
+            title_eligible, title_reason = self.evaluate_title(trial, conditions)
+            if not title_eligible:
+                return False, title_reason, 0.0
+
+            # Split and evaluate inclusion criteria
+            inclusion_criteria = self.split_inclusion_criteria(
+                trial.eligibility.criteria
+            )
+
+            all_criteria_eligible = True
+            total_cost = 0.0
+            for criterion in inclusion_criteria:
+                criterion_eligible, criterion_reason = (
+                    self.evaluate_inclusion_criterion(criterion, conditions)
+                )
+                total_cost += 0.0  # Placeholder for cost calculation
+                if not criterion_eligible:
+                    all_criteria_eligible = False
+                    break
+
+            final_eligible = title_eligible and all_criteria_eligible
+            return final_eligible, title_reason, total_cost
+
+        except Exception as e:
+            logger.error(
+                f"Error evaluating trial {trial.identification.nct_id}: {str(e)}"
             )
             return False, f"Error during evaluation: {str(e)}", 0.0
 
