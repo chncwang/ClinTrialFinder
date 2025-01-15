@@ -91,13 +91,13 @@ class GPTTrialFilter:
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
 
-    def _call_gpt(self, prompt: str, system_role: str) -> Tuple[bool, str]:
+    def _call_gpt(self, prompt: str, system_role: str) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
         # Check cache first
         cached_result = self.cache.get(prompt)
         if cached_result is not None:
             logger.debug("GPTTrialFilter._call_gpt: Using cached result")
-            return cached_result["eligible"], cached_result["reason"]
+            return cached_result, 0.0
 
         try:
             response = self.client.chat.completions.create(
@@ -110,11 +110,16 @@ class GPTTrialFilter:
                 temperature=0.1,
             )
 
-            result_content = response.choices[0].message.content
-            result = json.loads(result_content)
-
+            result = response.choices[0].message.content
+            # Move caching responsibility to the cache class
             self.cache.set(prompt, result)
-            return result["eligible"], result["reason"]
+
+            # Calculate cost
+            input_string_length = len(prompt) + len(system_role)
+            estimated_input_tokens = input_string_length * 0.25
+            estimated_output_tokens = len(result) * 0.25
+            cost = estimated_input_tokens * 0.15e-6 + estimated_output_tokens * 0.6e-6
+            return result, cost
 
         except Exception as e:
             logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
@@ -122,7 +127,7 @@ class GPTTrialFilter:
 
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
-    ) -> Tuple[bool, str]:
+    ) -> Tuple[str, str, float]:
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
@@ -138,89 +143,83 @@ Please determine if the trial is potentially suitable for the patient conditions
 
 Return a JSON object containing:
 - "reason": An explanation of why the title is or is not suitable
-- "eligible": true if the trial is suitable for further evaluation, false if the title contradicts the conditions. Return true if unsure.
+- "answer": "suitable" if the trial is potentially suitable, "unsuitable" if it is not, "uncertain" if unsure
 
 Example response:
-{{"reason": "[specific reasons]", "eligible": true}}"""
+{{"reason": "[specific reasons]", "answer": "suitable"}}"""
 
-        return self._call_gpt(
+        response_content, cost = self._call_gpt(
             prompt, "You are a clinical trial analyst focused on evaluating titles."
         )
+        result = json.loads(response_content)
+        return result["answer"], result["reason"], cost
 
     def evaluate_inclusion_criterion(
-        self, criterion: str, conditions: str | list[str]
-    ) -> Tuple[bool, str]:
-        conditions_list = conditions if isinstance(conditions, list) else [conditions]
-        conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
-
+        self, criterion: str, condition: str
+    ) -> Tuple[str, str, float]:
         prompt = f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
 
 Inclusion Criterion:
 {criterion}
 
-Patient Conditions to Evaluate:
-{conditions_text}
+Patient Condition to Evaluate:
+{condition}
 
-Please determine if this inclusion criterion aligns with the conditions provided.
+Please determine if this inclusion criterion aligns with the condition provided.
 
 Return a JSON object containing:
 - "reason": An explanation of why the inclusion criterion is or is not suitable
-- "eligible": true if it meets the conditions or is unrelated, false if it does not meet the conditions.
+- "answer": "suitable" if it meets the condition or is unrelated, "unsuitable" if it does not meet the condition, "uncertain" if unsure
 
 Example response:
-{{"reason": "[specific reasons]", "eligible": true}}"""
+{{"reason": "[specific reasons]", "answer": "suitable"}}"""
 
-        return self._call_gpt(
+        response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on evaluating inclusion criteria.",
         )
+        result = json.loads(response_content)
+        return result["answer"], result["reason"], cost
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
         """Split the inclusion criteria into individual statements."""
         return [
-            criterion.strip() for criterion in criteria.split("\n") if criterion.strip()
+            criterion.strip()
+            for criterion in criteria.split("\n")
+            if criterion.strip() and "inclusion criteria" not in criterion.lower()
         ]
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: str | list[str]
-    ) -> Tuple[bool, str, float]:
+    ) -> Tuple[bool, float]:
         """Evaluate a single trial against the given conditions using GPT."""
-        try:
-            # Evaluate the title first
-            title_eligible, title_reason = self.evaluate_title(trial, conditions)
+        # Evaluate the title first
+        title_eligible, title_reason, total_cost = self.evaluate_title(
+            trial, conditions
+        )
+        logger.info(
+            f"evaluate_trial: title: {trial.identification.brief_title} eligible: {title_eligible}\n reason: {title_reason}"
+        )
+        if title_eligible == "unsuitable":
+            return False, total_cost
+
+        # Split and evaluate inclusion criteria
+        inclusion_criteria = self.split_inclusion_criteria(trial.eligibility.criteria)
+
+        all_criteria_eligible = True
+        for criterion in inclusion_criteria:
+            criterion_eligible, criterion_reason, cost = (
+                self.evaluate_inclusion_criterion(criterion, conditions)
+            )
             logger.info(
-                f"evaluate_trial: title: {trial.identification.brief_title} eligible: {title_eligible}\n reason: {title_reason}"
+                f"evaluate_trial: criterion: {criterion} eligible: {criterion_eligible}\n reason: {criterion_reason}"
             )
-            if not title_eligible:
-                return False, title_reason, 0.0
+            total_cost += cost
+            if criterion_eligible == "unsuitable":
+                all_criteria_eligible = False
+                break
 
-            # Split and evaluate inclusion criteria
-            inclusion_criteria = self.split_inclusion_criteria(
-                trial.eligibility.criteria
-            )
-
-            all_criteria_eligible = True
-            total_cost = 0.0
-            for criterion in inclusion_criteria:
-                criterion_eligible, criterion_reason = (
-                    self.evaluate_inclusion_criterion(criterion, conditions)
-                )
-                logger.info(
-                    f"evaluate_trial: criterion: {criterion} eligible: {criterion_eligible}\n reason: {criterion_reason}"
-                )
-                total_cost += 0.0  # Placeholder for cost calculation
-                if not criterion_eligible:
-                    all_criteria_eligible = False
-                    break
-
-            final_eligible = title_eligible and all_criteria_eligible
-            return final_eligible, title_reason, total_cost
-
-        except Exception as e:
-            logger.error(
-                f"Error evaluating trial {trial.identification.nct_id}: {str(e)}"
-            )
-            return False, f"Error during evaluation: {str(e)}", 0.0
+        return all_criteria_eligible, total_cost
 
 
 def load_json_file(file_path: str) -> List[dict]:
@@ -336,14 +335,14 @@ def main():
         logger.info(
             f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
-        eligible, reason, cost = gpt_filter.evaluate_trial(trial, args.conditions)
+        eligible, cost = gpt_filter.evaluate_trial(trial, args.conditions)
         total_cost += cost
         logger.info(f"Total cost: ${total_cost:.6f}")
 
         if eligible:
             filtered_trials.append(trial.to_dict())
         logger.info(
-            f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url}\nreason: {reason}"
+            f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
         )
 
     # Save results
