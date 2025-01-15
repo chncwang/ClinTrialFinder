@@ -338,12 +338,12 @@ def main():
 
         if eligible:
             logger.info(
-                f"main: eligible: {eligible}, title: {trial.identification.brief_title},\n reason: {reason}"
+                f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url},\n reason: {reason}"
             )
             filtered_trials.append(trial.to_dict())
         else:
             logger.info(
-                f"main: eligible: {eligible}, title: {trial.identification.brief_title},\n reason: {reason}"
+                f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url},\n reason: {reason}"
             )
         logger.debug(f"main: trial: {json.dumps(trial.to_dict(), indent=2)}")
 
