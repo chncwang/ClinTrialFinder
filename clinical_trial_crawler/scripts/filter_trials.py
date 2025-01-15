@@ -29,7 +29,7 @@ logger.setLevel(logging.INFO)
 
 
 class PromptCache:
-    def __init__(self, cache_dir: str = ".cache", max_size: int = 1000):
+    def __init__(self, cache_dir: str = ".cache", max_size: int = 10000):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
@@ -87,17 +87,42 @@ class EligibilityCriteriaError(Exception):
 
 
 class GPTTrialFilter:
-    def __init__(self, api_key: str, cache_size: int = 1000):
+    def __init__(self, api_key: str, cache_size: int = 10000):
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
+
+    def _call_gpt(self, prompt: str, system_role: str) -> Tuple[bool, str]:
+        """Common method for making GPT API calls."""
+        # Check cache first
+        cached_result = self.cache.get(prompt)
+        if cached_result is not None:
+            logger.debug("GPTTrialFilter._call_gpt: Using cached result")
+            return cached_result["eligible"], cached_result["reason"]
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_role},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+
+            result_content = response.choices[0].message.content
+            result = json.loads(result_content)
+
+            self.cache.set(prompt, result)
+            return result["eligible"], result["reason"]
+
+        except Exception as e:
+            logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
+            return False, f"Error during evaluation: {str(e)}"
 
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
     ) -> Tuple[bool, str]:
-        """
-        Evaluate the study title against the conditions.
-        Return true if uncertain (i.e., title is ambiguous), false if the title is incompatible.
-        """
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
@@ -113,56 +138,20 @@ Please determine if the trial title aligns with the conditions provided.
 
 Return a JSON object containing:
 - "reason": An explanation of why the title is or is not suitable
-- "eligible": true if uncertain, false if the title does not match the conditions.
+- "eligible": true if the title is suitable, false if the title contradicts the conditions.
+
+Don't return false just because the title doesn't mention certain conditions.
 
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
 
-        # Check cache first
-        cached_result = self.cache.get(prompt)
-        if cached_result is not None:
-            logger.debug("GPTTrialFilter.evaluate_title: Using cached result")
-            return cached_result["eligible"], cached_result["reason"]
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a clinical trial analyst focused on evaluating titles.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            )
-
-            result_content = response.choices[0].message.content
-            result = json.loads(result_content)
-
-            self.cache.set(prompt, result)
-            return result["eligible"], result["reason"]
-
-        except Exception as e:
-            logger.error(
-                f"GPTTrialFilter.evaluate_title: Error evaluating title: {str(e)}"
-            )
-            return False, f"Error during title evaluation: {str(e)}"
-
-    def split_inclusion_criteria(self, criteria: str) -> List[str]:
-        """Split the inclusion criteria into individual statements."""
-        return [
-            criterion.strip() for criterion in criteria.split("\n") if criterion.strip()
-        ]
+        return self._call_gpt(
+            prompt, "You are a clinical trial analyst focused on evaluating titles."
+        )
 
     def evaluate_inclusion_criterion(
         self, criterion: str, conditions: str | list[str]
     ) -> Tuple[bool, str]:
-        """
-        Evaluate an individual inclusion criterion against the conditions.
-        Return true if it matches or is unrelated, false if it doesn't meet the conditions.
-        """
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
@@ -183,38 +172,16 @@ Return a JSON object containing:
 Example response:
 {{"reason": "[specific reasons]", "eligible": true}}"""
 
-        cached_result = self.cache.get(prompt)
-        if cached_result is not None:
-            logger.debug(
-                "GPTTrialFilter.evaluate_inclusion_criterion: Using cached result"
-            )
-            return cached_result["eligible"], cached_result["reason"]
+        return self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+        )
 
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a clinical trial analyst focused on evaluating inclusion criteria.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            )
-
-            result_content = response.choices[0].message.content
-            result = json.loads(result_content)
-
-            self.cache.set(prompt, result)
-            return result["eligible"], result["reason"]
-
-        except Exception as e:
-            logger.error(
-                f"GPTTrialFilter.evaluate_inclusion_criterion: Error evaluating inclusion criterion: {str(e)}"
-            )
-            return False, f"Error during inclusion criterion evaluation: {str(e)}"
+    def split_inclusion_criteria(self, criteria: str) -> List[str]:
+        """Split the inclusion criteria into individual statements."""
+        return [
+            criterion.strip() for criterion in criteria.split("\n") if criterion.strip()
+        ]
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: str | list[str]
@@ -223,6 +190,9 @@ Example response:
         try:
             # Evaluate the title first
             title_eligible, title_reason = self.evaluate_title(trial, conditions)
+            logger.info(
+                f"evaluate_trial: title: {trial.identification.brief_title} eligible: {title_eligible}\n reason: {title_reason}"
+            )
             if not title_eligible:
                 return False, title_reason, 0.0
 
@@ -236,6 +206,9 @@ Example response:
             for criterion in inclusion_criteria:
                 criterion_eligible, criterion_reason = (
                     self.evaluate_inclusion_criterion(criterion, conditions)
+                )
+                logger.info(
+                    f"evaluate_trial: criterion: {criterion} eligible: {criterion_eligible}\n reason: {criterion_reason}"
                 )
                 total_cost += 0.0  # Placeholder for cost calculation
                 if not criterion_eligible:
@@ -301,7 +274,7 @@ def main():
     parser.add_argument(
         "--cache-size",
         type=int,
-        default=1000,
+        default=10000,
         help="Maximum number of cached responses to keep",
     )
     # Add new arguments from parse_trials.py
@@ -371,13 +344,9 @@ def main():
 
         if eligible:
             filtered_trials.append(trial.to_dict())
-            logger.info(
-                f"Trial {trial.identification.nct_id} is eligible. Reason: {reason}"
-            )
-        else:
-            logger.info(
-                f"Trial {trial.identification.nct_id} is not eligible. Reason: {reason}"
-            )
+        logger.info(
+            f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url}\nreason: {reason}"
+        )
 
     # Save results
     save_json_file(filtered_trials, args.output)
