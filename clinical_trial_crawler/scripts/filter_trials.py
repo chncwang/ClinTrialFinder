@@ -325,14 +325,12 @@ def main():
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.error(
-            "main: OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
         )
         sys.exit(1)
 
-    # Initialize GPT filter with cache size
+    # Initialize GPT filter and load trials
     gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
-
-    # Load and parse trials
     json_data = load_json_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
@@ -357,38 +355,33 @@ def main():
             f"main: Filtered for phase {args.phase} trials: {len(trials)} found"
         )
 
-    # Filter trials using GPT
     filtered_trials = []
     total_trials = len(trials)
-
-    logger.info(f"main: Processing {total_trials} trials...")
-    logger.info(f"main: Evaluating conditions: {args.conditions}")
-
     total_cost = 0.0
+
+    logger.info(f"Processing {total_trials} trials with conditions: {args.conditions}")
+
     for i, trial in enumerate(trials, 1):
         logger.info(
-            f"main: Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
         eligible, reason, cost = gpt_filter.evaluate_trial(trial, args.conditions)
         total_cost += cost
-        logger.info(f"main: total cost: ${total_cost:.6f}")
+        logger.info(f"Total cost: ${total_cost:.6f}")
 
         if eligible:
-            logger.info(
-                f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url},\n reason: {reason}"
-            )
             filtered_trials.append(trial.to_dict())
+            logger.info(
+                f"Trial {trial.identification.nct_id} is eligible. Reason: {reason}"
+            )
         else:
             logger.info(
-                f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url},\n reason: {reason}"
+                f"Trial {trial.identification.nct_id} is not eligible. Reason: {reason}"
             )
-        logger.debug(f"main: trial: {json.dumps(trial.to_dict(), indent=2)}")
 
     # Save results
     save_json_file(filtered_trials, args.output)
-    logger.info(
-        f"main: Found {len(filtered_trials)} matching trials out of {total_trials}"
-    )
+    logger.info(f"Found {len(filtered_trials)} matching trials out of {total_trials}")
 
 
 if __name__ == "__main__":
