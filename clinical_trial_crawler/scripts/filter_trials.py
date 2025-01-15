@@ -163,9 +163,12 @@ Example response:
         return result["answer"], result["reason"], cost
 
     def evaluate_inclusion_criterion(
-        self, criterion: str, condition: str
+        self, criterion: str, condition: str, title: str
     ) -> Tuple[str, str, float]:
         prompt = f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
+
+Study Title:
+{title}
 
 Inclusion Criterion:
 {criterion}
@@ -173,7 +176,7 @@ Inclusion Criterion:
 Patient Condition to Evaluate:
 {condition}
 
-Please determine if this inclusion criterion aligns with the condition provided.
+Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
 
 Return a JSON object containing:
 - "reason": An explanation of why the inclusion criterion is or is not suitable
@@ -217,7 +220,9 @@ Example response:
         all_criteria_eligible = True
         for criterion in inclusion_criteria:
             criterion_eligible, criterion_reason, cost = (
-                self.evaluate_inclusion_criterion(criterion, conditions)
+                self.evaluate_inclusion_criterion(
+                    criterion, conditions, trial.identification.brief_title
+                )
             )
             logger.info(
                 f"evaluate_trial: criterion: {criterion} eligible: {criterion_eligible}\n reason: {criterion_reason}"
