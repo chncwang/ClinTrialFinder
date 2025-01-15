@@ -125,6 +125,14 @@ class GPTTrialFilter:
             logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
             return False, f"Error during evaluation: {str(e)}"
 
+    def _parse_gpt_response(self, response_content: str) -> dict:
+        """Parse GPT response content into JSON, with error handling."""
+        try:
+            return json.loads(response_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse GPT response: {response_content}")
+            raise
+
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
     ) -> Tuple[str, str, float]:
@@ -151,7 +159,7 @@ Example response:
         response_content, cost = self._call_gpt(
             prompt, "You are a clinical trial analyst focused on evaluating titles."
         )
-        result = json.loads(response_content)
+        result = self._parse_gpt_response(response_content)
         return result["answer"], result["reason"], cost
 
     def evaluate_inclusion_criterion(
@@ -178,7 +186,7 @@ Example response:
             prompt,
             "You are a clinical trial analyst focused on evaluating inclusion criteria.",
         )
-        result = json.loads(response_content)
+        result = self._parse_gpt_response(response_content)
         return result["answer"], result["reason"], cost
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
