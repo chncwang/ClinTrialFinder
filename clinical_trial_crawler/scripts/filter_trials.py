@@ -91,7 +91,9 @@ class GPTTrialFilter:
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
 
-    def _call_gpt(self, prompt: str, system_role: str) -> Tuple[str, float]:
+    def _call_gpt(
+        self, prompt: str, system_role: str, temperature: float = 0.1
+    ) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
         # Check cache first
         cached_result = self.cache.get(prompt)
@@ -107,7 +109,7 @@ class GPTTrialFilter:
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1,
+                temperature=temperature,
             )
 
             result = response.choices[0].message.content
@@ -157,7 +159,9 @@ Example response:
 {{"reason": "[specific reasons]", "answer": "suitable"}}"""
 
         response_content, cost = self._call_gpt(
-            prompt, "You are a clinical trial analyst focused on evaluating titles."
+            prompt,
+            "You are a clinical trial analyst focused on evaluating titles.",
+            temperature=0.1,
         )
         result = self._parse_gpt_response(response_content)
         return result["answer"], result["reason"], cost
@@ -177,10 +181,11 @@ Patient Condition to Evaluate:
 {condition}
 
 Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
+If the condition represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
 
 Return a JSON object containing:
 - "reason": An explanation of why the inclusion criterion is or is not suitable
-- "answer": "suitable" if it meets the condition or is unrelated, "unsuitable" if it does not meet the condition, "uncertain" if unsure
+- "answer": "suitable" if it meets the condition, represents a willingness, or is unrelated, "unsuitable" if it does not meet the condition, "uncertain" if unsure
 
 Example response:
 {{"reason": "[specific reasons]", "answer": "suitable"}}"""
@@ -188,6 +193,7 @@ Example response:
         response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+            temperature=0.1,
         )
         result = self._parse_gpt_response(response_content)
         return result["answer"], result["reason"], cost
@@ -210,6 +216,7 @@ Example response:
         response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
+            temperature=0.0,
         )
         result = self._parse_gpt_response(response_content)
         logger.info(
