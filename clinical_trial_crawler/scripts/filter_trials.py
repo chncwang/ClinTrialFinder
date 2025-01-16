@@ -193,12 +193,30 @@ Example response:
         return result["answer"], result["reason"], cost
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
-        """Split the inclusion criteria into individual statements."""
-        return [
-            criterion.strip()
-            for criterion in criteria.split("\n")
-            if criterion.strip() and "inclusion criteria" not in criterion.lower()
-        ]
+        """Split the inclusion criteria into individual statements using GPT."""
+        prompt = f"""You are analyzing clinical trial inclusion criteria text.
+
+Inclusion Criteria Text:
+{criteria}
+
+Please split this text into individual inclusion criterion statements. Each statement should be a single, complete criterion.
+
+Return a JSON object containing:
+- "criteria": A list of individual inclusion criterion statements
+
+Example response:
+{{"criteria": ["criterion 1", "criterion 2", "criterion 3"]}}"""
+
+        response_content, cost = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst focused on parsing inclusion criteria.",
+        )
+        result = self._parse_gpt_response(response_content)
+        logger.info(
+            f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
+        )
+        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
+        return result["criteria"]
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: str | list[str]
