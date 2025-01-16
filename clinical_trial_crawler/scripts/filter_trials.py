@@ -205,13 +205,19 @@ Example response:
 Inclusion Criteria Text:
 {criteria}
 
-Please split this text into individual inclusion criterion statements. Each statement should be a single, complete criterion.
+Please split this text into individual inclusion criterion statements, with the following special handling:
+If multiple disease types (e.g., different cancer types) are listed with their specific requirements, keep each disease type and its associated requirements as a single criterion, combining them with "OR" in natural language
 
 Return a JSON object containing:
 - "criteria": A list of individual inclusion criterion statements
 
 Example response:
-{{"criteria": ["criterion 1", "criterion 2", "criterion 3"]}}"""
+{{"criteria": [
+    "Patient must have one of the following: (a) Triple-negative breast cancer with documented PD-L1 CPS ≥10 and disease progression after at least one prior line of therapy in the metastatic setting; OR (b) Advanced endometrial cancer with MSI-H/dMMR status and progression following platinum-based therapy; OR (c) Metastatic colorectal cancer with RAS wild-type status who have received prior treatment with both EGFR inhibitor and FOLFOX/FOLFIRI regimens",
+    "Adequate organ function defined by laboratory parameters",
+    "No active CNS metastases",
+    "No autoimmune disease requiring systemic treatment within past 2 years"
+]}}"""
 
         response_content, cost = self._call_gpt(
             prompt,
