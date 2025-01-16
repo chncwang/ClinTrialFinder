@@ -215,8 +215,34 @@ Example response:
         logger.info(
             f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
         )
-        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
+        logger.info(
+            f"GPTTrialFilter.split_inclusion_criteria: {len(result['criteria'])} criteria: {result['criteria']}"
+        )
         return result["criteria"]
+
+    def _extract_inclusion_criteria(self, criteria: str) -> str:
+        """Extract and validate inclusion criteria from the full criteria text.
+
+        Args:
+            criteria: Full criteria text containing both inclusion and exclusion criteria
+
+        Returns:
+            str: The inclusion criteria section
+
+        Raises:
+            EligibilityCriteriaError: If the criteria format is invalid
+        """
+        if not criteria or "Inclusion Criteria" not in criteria:
+            raise EligibilityCriteriaError("Missing 'Inclusion Criteria' section")
+
+        sections = criteria.split("Exclusion Criteria")
+        if len(sections) != 2:
+            raise EligibilityCriteriaError(
+                "Invalid criteria format: Missing or multiple 'Exclusion Criteria' sections"
+            )
+
+        inclusion_text = sections[0].split("Inclusion Criteria")[1].strip()
+        return inclusion_text
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: str | list[str]
@@ -232,8 +258,17 @@ Example response:
         if title_eligible == "unsuitable":
             return False, total_cost
 
-        # Split and evaluate inclusion criteria
-        inclusion_criteria = self.split_inclusion_criteria(trial.eligibility.criteria)
+        # Extract and validate inclusion criteria before splitting
+        try:
+            inclusion_text = self._extract_inclusion_criteria(
+                trial.eligibility.criteria
+            )
+            inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
+        except EligibilityCriteriaError as e:
+            logger.error(
+                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
+            )
+            return False, total_cost
 
         all_criteria_eligible = True
         for criterion in inclusion_criteria:
