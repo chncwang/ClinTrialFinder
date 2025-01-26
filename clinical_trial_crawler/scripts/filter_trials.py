@@ -168,7 +168,7 @@ Example response:
 
     def evaluate_inclusion_criterion(
         self, criterion: str, condition: str, title: str
-    ) -> Tuple[str, str, float]:
+    ) -> Tuple[float, str, float]:
         prompt = f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
 
 Study Title:
@@ -185,10 +185,13 @@ If the condition represents a willingness to participate (e.g. "willing to under
 
 Return a JSON object containing:
 - "reason": An explanation of why the inclusion criterion is or is not suitable
-- "answer": "suitable" if it meets the condition, represents a willingness, or is unrelated, "unsuitable" if it does not meet the condition, "uncertain" if unsure
+- "suitability_probability": A float value between 0.0 and 1.0 representing the probability that the inclusion criterion is suitable based on the condition.
+    - 0.0 means "unsuitable"
+    - 1.0 means "suitable"
+    - 0.5 means "uncertain"
 
 Example response:
-{{"reason": "[specific reasons]", "answer": "suitable"}}"""
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
 
         response_content, cost = self._call_gpt(
             prompt,
@@ -196,7 +199,7 @@ Example response:
             temperature=0.1,
         )
         result = self._parse_gpt_response(response_content)
-        return result["answer"], result["reason"], cost
+        return result["suitability_probability"], result["reason"], cost
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
         """Split the inclusion criteria into individual statements using GPT."""
@@ -285,16 +288,14 @@ Example response:
 
         all_criteria_eligible = True
         for criterion in inclusion_criteria:
-            criterion_eligible, criterion_reason, cost = (
-                self.evaluate_inclusion_criterion(
-                    criterion, conditions, trial.identification.brief_title
-                )
+            probability, criterion_reason, cost = self.evaluate_inclusion_criterion(
+                criterion, conditions, trial.identification.brief_title
             )
             logger.info(
-                f"evaluate_trial: criterion: {criterion} eligible: {criterion_eligible}\n reason: {criterion_reason}"
+                f"evaluate_trial: criterion: {criterion} probability: {probability}\n reason: {criterion_reason}"
             )
             total_cost += cost
-            if criterion_eligible == "unsuitable":
+            if probability <= 0.3:  # Using the same threshold as before
                 all_criteria_eligible = False
                 break
 
@@ -384,19 +385,17 @@ def main():
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
 
-    # Apply study type exclusion if specified
+    # Apply filters
     if args.exclude_study_type:
         trials = trials_parser.get_trials_excluding_study_type(args.exclude_study_type)
         logger.info(
             f"main: Excluded study type '{args.exclude_study_type}': {len(trials)} trials remaining"
         )
 
-    # Apply recruiting filter if specified
     if args.recruiting:
         trials = trials_parser.get_recruiting_trials()
         logger.info(f"main: Filtered for recruiting trials: {len(trials)} found")
 
-    # Apply phase filter if specified
     if args.phase:
         phase_filtered = trials_parser.get_trials_by_phase(int(args.phase))
         trials = [t for t in trials if t in phase_filtered]
@@ -414,19 +413,69 @@ def main():
         logger.info(
             f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
-        eligible, cost = gpt_filter.evaluate_trial(trial, args.conditions)
-        total_cost += cost
-        logger.info(f"Total cost: ${total_cost:.6f}")
 
-        if eligible:
+        # Evaluate the title first
+        title_eligible, title_reason, title_cost = gpt_filter.evaluate_title(
+            trial, args.conditions
+        )
+        title_suitability = 0.0 if title_eligible == "unsuitable" else 1.0
+
+        total_cost += title_cost
+
+        if abs(title_suitability) < 1e-10:  # Check if very close to 0.0
+            logger.info(
+                f"main: Trial {trial.identification.nct_id} is ineligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
+            )
+            continue
+        elif abs(title_suitability - 1.0) < 1e-10:  # Check if very close to 1.0
+            logger.info(
+                f"main: Trial {trial.identification.nct_id} is eligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
+            )
+        else:
+            raise ValueError(
+                f"Unexpected title suitability value: {title_suitability} for trial {trial.identification.nct_id}"
+            )
+
+        # Extract and validate inclusion criteria
+        try:
+            inclusion_text = gpt_filter._extract_inclusion_criteria(
+                trial.eligibility.criteria
+            )
+            inclusion_criteria = gpt_filter.split_inclusion_criteria(inclusion_text)
+        except EligibilityCriteriaError as e:
+            logger.error(
+                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
+            )
+            continue
+
+        overall_suitability_probability = title_suitability
+
+        for criterion in inclusion_criteria:
+            criterion_probability, criterion_reason, cost = (
+                gpt_filter.evaluate_inclusion_criterion(
+                    criterion, args.conditions, trial.identification.brief_title
+                )
+            )
+            total_cost += cost
+            logger.info(
+                f"evaluate_trial: criterion: {criterion} eligibility: {criterion_probability}, reason: {criterion_reason}"
+            )
+
+            # Multiply probabilities to get overall suitability probability
+            overall_suitability_probability *= criterion_probability
+
+        # If overall suitability is greater than 0.5, consider the trial eligible
+        if overall_suitability_probability > 0.5:
             filtered_trials.append(trial.to_dict())
+
         logger.info(
-            f"main: eligible: {eligible}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
+            f"main: eligibility: {overall_suitability_probability:.2f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
         )
 
     # Save results
     save_json_file(filtered_trials, args.output)
-    logger.info(f"Found {len(filtered_trials)} matching trials out of {total_trials}")
+    logger.info(f"main: Filtered trials saved to {args.output}")
+    logger.info(f"main: Total API cost: ${total_cost:.2f}")
 
 
 if __name__ == "__main__":
