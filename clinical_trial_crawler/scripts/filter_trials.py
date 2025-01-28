@@ -126,7 +126,7 @@ class GPTTrialFilter:
 
         except Exception as e:
             logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
-            return False, f"Error during evaluation: {str(e)}"
+            raise
 
     def _parse_gpt_response(self, response_content: str) -> dict:
         """Parse GPT response content into JSON, with error handling."""
@@ -182,6 +182,7 @@ Patient Condition to Evaluate:
 {condition}
 
 Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
+If the condition does not provide information related to the criterion, consider it as potentially aligning with the criterion.
 If the condition represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
 
 Return a JSON object containing:
@@ -189,17 +190,24 @@ Return a JSON object containing:
 - "suitability_probability": A float value between 0.0 and 1.0 representing the probability that the inclusion criterion is suitable based on the condition.
     - 0.0 means "unsuitable"
     - 1.0 means "suitable"
-    - 0.5 means "uncertain"
+    - 0.5 means "uncertain" (e.g., when the condition does not provide enough information to determine suitability)
 
-Example response:
-{{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
+Example response 1:
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}
+
+Example response 2:
+{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is potentially suitable.", "suitability_probability": 0.5}}"""
 
         response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on evaluating inclusion criteria.",
             temperature=0.1,
         )
-        result = self._parse_gpt_response(response_content)
+        try:
+            result = self._parse_gpt_response(response_content)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse GPT response. Prompt:\n{prompt}")
+            raise
         return result["suitability_probability"], result["reason"], cost
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
@@ -259,7 +267,7 @@ Example response:
             result = self._parse_gpt_response(response_content)
         except json.JSONDecodeError as e:
             logger.error(
-                f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Prompt was:\n{prompt}"
+                f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
             )
             raise
         logger.info(
