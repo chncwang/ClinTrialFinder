@@ -209,18 +209,45 @@ Example response:
 Inclusion Criteria Text:
 {criteria}
 
-Please split this text into individual inclusion criterion statements, with the following special handling:
-If multiple disease types (e.g., different cancer types) are listed with their specific requirements, keep each disease type and its associated requirements as a single criterion, combining them with "OR" in natural language
+Split this text into individual inclusion criterion statements following these rules:
 
-Return a JSON object containing:
-- "criteria": A list of individual inclusion criterion statements
+1. **Disease-Specific Consolidation**:
+   - Combine ALL disease type requirements into a single criterion using "OR" logic, even if:
+     - They appear as separate bullet points
+     - They have different biomarker/therapy requirements
+     - They have mixed prior therapy rules (naïve vs. treated)
+   - Structure as: "Patients must have one of the following: (a) [Disease A] with [requirements]; OR (b) [Disease B] with [different requirements]..."
+   - Preserve ALL disease-specific details (biomarker thresholds, prior therapy sequences, progression requirements)
+
+2. **Multi-Level Requirements**:
+   - For complex disease requirements, use nested logic:
+     '''
+     Patients must have:
+     a) [Disease 1] with:
+        - [Requirement 1]
+        - [Requirement 2]
+     OR
+     b) [Disease 2] with:
+        - [Requirement 3]
+        - [Requirement 4]
+     '''
+
+3. **Separate Non-Disease Criteria**:
+   - Keep non-disease requirements (organ function, performance status) as distinct criteria
+   - Each requirement will be treated as a separate criterion connected by AND logic
+
+4. **Logical Structure**:
+   - Use clear alphanumeric labeling (a), b), c)) for complex criteria
+   - Employ AND/OR relationships within disease subgroups as needed
+   - Maintain all temporal sequence requirements (e.g., "prior X then Y")
+   - All separate criteria are implicitly connected with AND logic
+
+Return ONLY valid JSON with criteria list.
 
 Example response:
 {{"criteria": [
-    "Patient must have one of the following: (a) Triple-negative breast cancer with documented PD-L1 CPS ≥10 and disease progression after at least one prior line of therapy in the metastatic setting; OR (b) Advanced endometrial cancer with MSI-H/dMMR status and progression following platinum-based therapy; OR (c) Metastatic colorectal cancer with RAS wild-type status who have received prior treatment with both EGFR inhibitor and FOLFOX/FOLFIRI regimens",
-    "Adequate organ function defined by laboratory parameters",
-    "No active CNS metastases",
-    "No autoimmune disease requiring systemic treatment within past 2 years"
+    "Patient must have one of the following: (a) Triple-negative breast cancer with PD-L1 CPS ≥10 and progression after prior therapy; OR (b) Advanced endometrial cancer with MSI-H/dMMR and platinum-therapy failure",
+    "Adequate organ function per laboratory parameters"
 ]}}"""
 
         response_content, cost = self._call_gpt(
@@ -238,9 +265,7 @@ Example response:
         logger.info(
             f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
         )
-        logger.info(
-            f"GPTTrialFilter.split_inclusion_criteria: {len(result['criteria'])} criteria: {result['criteria']}"
-        )
+        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
         return result["criteria"]
 
     def _extract_inclusion_criteria(self, criteria: str) -> str:
