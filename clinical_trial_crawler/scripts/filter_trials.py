@@ -6,7 +6,9 @@ import json
 import logging
 import os
 import pickle
+import re
 import sys
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -93,14 +95,19 @@ class GPTTrialFilter:
         self.cache = PromptCache(max_size=cache_size)
 
     def _call_gpt(
-        self, prompt: str, system_role: str, temperature: float = 0.1
+        self,
+        prompt: str,
+        system_role: str,
+        temperature: float = 0.1,
+        refresh_cache: bool = False,
     ) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
-        # Check cache first
-        cached_result = self.cache.get(prompt, temperature)
-        if cached_result is not None:
-            logger.debug("GPTTrialFilter._call_gpt: Using cached result")
-            return cached_result, 0.0
+        # Check cache first, unless refresh_cache is True
+        if not refresh_cache:
+            cached_result = self.cache.get(prompt, temperature)
+            if cached_result is not None:
+                logger.debug("GPTTrialFilter._call_gpt: Using cached result")
+                return cached_result, 0.0
 
         try:
             response = self.client.chat.completions.create(
@@ -128,6 +135,26 @@ class GPTTrialFilter:
             logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
             raise
 
+    def _call_gpt_with_retry(
+        self, prompt: str, system_role: str, max_retries: int = 3
+    ) -> Tuple[str, float]:
+        for attempt in range(max_retries):
+            try:
+                # Pass refresh_cache=True on retry attempts
+                response, cost = self._call_gpt(
+                    prompt,
+                    system_role,
+                    temperature=0.1,
+                    refresh_cache=(attempt > 0),  # Refresh cache on retry attempts
+                )
+                # Validate JSON before returning
+                json.loads(response)
+                return response, cost
+            except json.JSONDecodeError:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2**attempt)  # Exponential backoff
+
     def _parse_gpt_response(self, response_content: str) -> dict:
         """Parse GPT response content into JSON, with error handling."""
         try:
@@ -135,6 +162,89 @@ class GPTTrialFilter:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse GPT response: {response_content}")
             raise
+
+    def _parse_gpt_response_with_fallback(self, response_content: str) -> dict:
+        try:
+            return json.loads(response_content)
+        except json.JSONDecodeError:
+            # Try to extract probability and reason using regex
+            prob_match = re.search(
+                r'suitability_probability":\s*(0?\.\d+)', response_content
+            )
+            reason_match = re.search(r'reason":\s*"([^"]+)"', response_content)
+
+            if prob_match:
+                return {
+                    "suitability_probability": float(prob_match.group(1)),
+                    "reason": (
+                        reason_match.group(1)
+                        if reason_match
+                        else "Parsing error - no reason available"
+                    ),
+                }
+
+            # If all parsing fails, return a conservative default
+            logger.warning(
+                f"Failed to parse GPT response, using default values: {response_content}"
+            )
+            return {
+                "suitability_probability": 0.5,  # Conservative middle value
+                "reason": "Failed to parse GPT response",
+            }
+
+    def _validate_gpt_response(self, parsed_response: dict) -> dict:
+        """Validate the GPT response has required fields and valid values.
+
+        Args:
+            parsed_response: Dictionary containing the parsed GPT response
+
+        Returns:
+            The validated response dictionary
+
+        Raises:
+            ValueError: If response is missing required fields or has invalid values
+        """
+        required_fields = {"reason", "suitability_probability"}
+        if not all(field in parsed_response for field in required_fields):
+            raise ValueError(
+                f"Missing required fields in GPT response: {parsed_response}"
+            )
+
+        prob = parsed_response["suitability_probability"]
+        if not isinstance(prob, (int, float)) or not 0 <= prob <= 1:
+            raise ValueError(f"Invalid probability value: {prob}")
+
+        return parsed_response
+
+    def _build_criterion_prompt(
+        self, criterion: str, condition: str, title: str
+    ) -> str:
+        """Build the prompt for evaluating an inclusion criterion."""
+        return f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
+
+Study Title:
+{title}
+
+Inclusion Criterion:
+{criterion}
+
+Patient Condition to Evaluate:
+{condition}
+
+Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
+If the condition does not provide information related to the criterion, consider it as potentially aligning with the criterion.
+If the condition represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
+
+IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
+{{"reason": "your explanation here", "suitability_probability": 0.0-1.0}}
+
+Do not include any other text outside the JSON object.
+
+Example response 1:
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}
+
+Example response 2:
+{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is potentially suitable.", "suitability_probability": 0.5}}"""
 
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
@@ -170,45 +280,23 @@ Example response:
     def evaluate_inclusion_criterion(
         self, criterion: str, condition: str, title: str
     ) -> Tuple[float, str, float]:
-        prompt = f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
-
-Study Title:
-{title}
-
-Inclusion Criterion:
-{criterion}
-
-Patient Condition to Evaluate:
-{condition}
-
-Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
-If the condition does not provide information related to the criterion, consider it as potentially aligning with the criterion.
-If the condition represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
-
-Return a JSON object containing:
-- "reason": An explanation of why the inclusion criterion is or is not suitable
-- "suitability_probability": A float value between 0.0 and 1.0 representing the probability that the inclusion criterion is suitable based on the condition.
-    - 0.0 means "unsuitable"
-    - 1.0 means "suitable"
-    - 0.5 means "uncertain" (e.g., when the condition does not provide enough information to determine suitability)
-
-Example response 1:
-{{"reason": "[specific reasons]", "suitability_probability": 0.8}}
-
-Example response 2:
-{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is potentially suitable.", "suitability_probability": 0.5}}"""
-
-        response_content, cost = self._call_gpt(
-            prompt,
-            "You are a clinical trial analyst focused on evaluating inclusion criteria.",
-            temperature=0.1,
-        )
         try:
-            result = self._parse_gpt_response(response_content)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse GPT response. Prompt:\n{prompt}")
-            raise
-        return result["suitability_probability"], result["reason"], cost
+            # Try with retries first
+            response_content, cost = self._call_gpt_with_retry(
+                self._build_criterion_prompt(criterion, condition, title),
+                "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+            )
+            result = self._parse_gpt_response_with_fallback(response_content)
+            validated_result = self._validate_gpt_response(result)
+            return (
+                validated_result["suitability_probability"],
+                validated_result["reason"],
+                cost,
+            )
+        except Exception as e:
+            logger.error(f"Failed to evaluate criterion: {str(e)}")
+            # Last resort fallback
+            return 0.5, f"Evaluation failed: {str(e)}", 0.0
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
         """Split the inclusion criteria into individual statements using GPT."""
