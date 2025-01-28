@@ -36,9 +36,10 @@ class PromptCache:
         self.cache_index = OrderedDict()
         self._load_cache_index()
 
-    def _get_cache_key(self, prompt: str) -> str:
-        """Generate a unique cache key for a prompt."""
-        return hashlib.md5(prompt.encode()).hexdigest()
+    def _get_cache_key(self, prompt: str, temperature: float) -> str:
+        """Generate a unique cache key for a prompt and temperature."""
+        cache_input = f"{prompt}_{temperature}"
+        return hashlib.md5(cache_input.encode()).hexdigest()
 
     def _load_cache_index(self):
         """Load the cache index from disk."""
@@ -52,9 +53,9 @@ class PromptCache:
         with open(self.cache_dir / "cache_index.pkl", "wb") as f:
             pickle.dump(self.cache_index, f)
 
-    def get(self, prompt: str) -> dict | None:
-        """Get cached result for a prompt."""
-        cache_key = self._get_cache_key(prompt)
+    def get(self, prompt: str, temperature: float) -> dict | None:
+        """Get cached result for a prompt and temperature."""
+        cache_key = self._get_cache_key(prompt, temperature)
         if cache_key in self.cache_index:
             cache_file = self.cache_dir / f"{cache_key}.json"
             if cache_file.exists():
@@ -62,9 +63,9 @@ class PromptCache:
                     return json.load(f)
         return None
 
-    def set(self, prompt: str, result: dict):
-        """Cache result for a prompt."""
-        cache_key = self._get_cache_key(prompt)
+    def set(self, prompt: str, temperature: float, result: dict):
+        """Cache result for a prompt and temperature."""
+        cache_key = self._get_cache_key(prompt, temperature)
 
         # Enforce cache size limit
         while len(self.cache_index) >= self.max_size:
@@ -96,7 +97,7 @@ class GPTTrialFilter:
     ) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
         # Check cache first
-        cached_result = self.cache.get(prompt)
+        cached_result = self.cache.get(prompt, temperature)
         if cached_result is not None:
             logger.debug("GPTTrialFilter._call_gpt: Using cached result")
             return cached_result, 0.0
@@ -114,7 +115,7 @@ class GPTTrialFilter:
 
             result = response.choices[0].message.content
             # Move caching responsibility to the cache class
-            self.cache.set(prompt, result)
+            self.cache.set(prompt, temperature, result)
 
             # Calculate cost
             input_string_length = len(prompt) + len(system_role)
@@ -227,7 +228,13 @@ Example response:
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
             temperature=0.0,
         )
-        result = self._parse_gpt_response(response_content)
+        try:
+            result = self._parse_gpt_response(response_content)
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Prompt was:\n{prompt}"
+            )
+            raise
         logger.info(
             f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
         )
@@ -406,6 +413,7 @@ def main():
     filtered_trials = []
     total_trials = len(trials)
     total_cost = 0.0
+    eligible_count = 0  # Add counter for eligible trials
 
     logger.info(f"Processing {total_trials} trials with conditions: {args.conditions}")
 
@@ -422,12 +430,12 @@ def main():
 
         total_cost += title_cost
 
-        if abs(title_suitability) < 1e-10:  # Check if very close to 0.0
+        if abs(title_suitability) < 1e-6:  # Compare with 0.0
             logger.info(
                 f"main: Trial {trial.identification.nct_id} is ineligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
             )
             continue
-        elif abs(title_suitability - 1.0) < 1e-10:  # Check if very close to 1.0
+        elif abs(title_suitability - 1.0) < 1e-6:  # Compare with 1.0
             logger.info(
                 f"main: Trial {trial.identification.nct_id} is eligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
             )
@@ -461,19 +469,29 @@ def main():
                 f"evaluate_trial: criterion: {criterion} eligibility: {criterion_probability}, reason: {criterion_reason}"
             )
 
+            # Break early if probability is very close to zero
+            if abs(criterion_probability) < 1e-6:  # Using epsilon of 1e-6
+                overall_suitability_probability = 0.0
+                break
+
             # Multiply probabilities to get overall suitability probability
             overall_suitability_probability *= criterion_probability
 
-        # If overall suitability is greater than 0.5, consider the trial eligible
-        if overall_suitability_probability > 0.5:
+        # If overall suitability is greater than 0.0, consider the trial eligible
+        if overall_suitability_probability > 0.0:
             filtered_trials.append(trial.to_dict())
+            eligible_count += 1  # Increment counter when trial is eligible
 
         logger.info(
-            f"main: eligibility: {overall_suitability_probability:.2f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
+            f"main: eligibility: {overall_suitability_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
         )
+        logger.info(f"main: Eligible trials so far: {eligible_count}/{i} processed")
 
     # Save results
     save_json_file(filtered_trials, args.output)
+    logger.info(
+        f"main: Final results: {eligible_count}/{total_trials} trials were eligible"
+    )
     logger.info(f"main: Filtered trials saved to {args.output}")
     logger.info(f"main: Total API cost: ${total_cost:.2f}")
 
