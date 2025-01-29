@@ -232,8 +232,8 @@ Patient Condition to Evaluate:
 {condition}
 
 Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
-If the condition does not provide information related to the criterion, consider it as potentially aligning with the criterion.
-If the condition represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
+If the condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
+If the inclusion criterion represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
 {{"reason": "your explanation here", "suitability_probability": 0.0-1.0}}
@@ -244,7 +244,7 @@ Example response 1:
 {{"reason": "[specific reasons]", "suitability_probability": 0.8}}
 
 Example response 2:
-{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is potentially suitable.", "suitability_probability": 0.5}}"""
+{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
 
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
@@ -415,12 +415,30 @@ Example response:
 
         if abs(title_suitability) < 1e-6:  # Compare with 0.0
             logger.info(
-                f"evaluate_trial: Trial {trial.identification.nct_id} is ineligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
+                json.dumps(
+                    {
+                        "message": "evaluate_trial: Trial is ineligible based on title",
+                        "trial_id": trial.identification.nct_id,
+                        "title": trial.identification.brief_title,
+                        "reason": title_reason,
+                        "eligibility": 0.0,
+                    },
+                    indent=2,
+                )
             )
             return False, title_cost
 
         logger.info(
-            f"evaluate_trial: Trial {trial.identification.nct_id} passed title evaluation. Reason: {title_reason}"
+            json.dumps(
+                {
+                    "message": "evaluate_trial: Trial passed title evaluation",
+                    "trial_id": trial.identification.nct_id,
+                    "title": trial.identification.brief_title,
+                    "reason": title_reason,
+                    "eligibility": 1.0,
+                },
+                indent=2,
+            )
         )
 
         # Extract and validate inclusion criteria
@@ -439,15 +457,52 @@ Example response:
         overall_suitability_probability = title_suitability
 
         for criterion in inclusion_criteria:
-            criterion_probability, criterion_reason, cost = (
-                self.evaluate_inclusion_criterion(
-                    criterion, " ".join(conditions), trial.identification.brief_title
+            # Evaluate each condition separately for this criterion
+            criterion_probabilities = []
+            criterion_cost = 0.0
+
+            for condition in conditions:
+                probability, reason, cost = self.evaluate_inclusion_criterion(
+                    criterion, condition, trial.identification.brief_title
                 )
-            )
-            total_cost += cost
-            logger.info(
-                f"evaluate_trial: criterion: {criterion} eligibility: {criterion_probability}, reason: {criterion_reason}"
-            )
+                if abs(probability) < 1e-6:  # If probability is effectively 0
+                    logger.info(
+                        json.dumps(
+                            {
+                                "condition": condition,
+                                "criterion": criterion,
+                                "reason": reason,
+                                "eligibility": probability,
+                                "status": "incompatible",
+                            },
+                            indent=2,
+                        )
+                    )
+                    criterion_probabilities = [0.0]  # Set to 0 and break
+                    criterion_cost += cost
+                    break
+                criterion_probabilities.append(probability)
+                criterion_cost += cost
+                logger.info(
+                    json.dumps(
+                        {
+                            "condition": condition,
+                            "criterion": criterion,
+                            "reason": reason,
+                            "eligibility": probability,
+                            "status": "evaluated",
+                        },
+                        indent=2,
+                    )
+                )
+
+            # Multiply probabilities for all conditions
+            # This ensures the criterion is compatible with ALL conditions
+            criterion_probability = 1.0
+            for prob in criterion_probabilities:
+                criterion_probability *= prob
+
+            total_cost += criterion_cost
 
             # Break early if probability is very close to zero
             if abs(criterion_probability) < 1e-6:
