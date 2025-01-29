@@ -377,15 +377,22 @@ Example response:
             EligibilityCriteriaError: If the criteria format is invalid
         """
         if not criteria or "Inclusion Criteria" not in criteria:
-            raise EligibilityCriteriaError("Missing 'Inclusion Criteria' section")
+            logger.warning(
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria: {criteria}"
+            )
+            return criteria
 
-        sections = criteria.split("Exclusion Criteria")
-        if len(sections) != 2:
-            raise EligibilityCriteriaError(
-                "Invalid criteria format: Missing or multiple 'Exclusion Criteria' sections"
+        # Split by "Inclusion Criteria" and take everything after it
+        inclusion_text = criteria.split("Inclusion Criteria")[1].strip()
+
+        # If there's an "Exclusion Criteria" section, only take the text before it
+        if "Exclusion Criteria" in inclusion_text:
+            inclusion_text = inclusion_text.split("Exclusion Criteria")[0].strip()
+        else:
+            logger.warning(
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria}"
             )
 
-        inclusion_text = sections[0].split("Inclusion Criteria")[1].strip()
         return inclusion_text
 
     def evaluate_trial(
@@ -410,7 +417,7 @@ Example response:
             inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
         except EligibilityCriteriaError as e:
             logger.error(
-                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
+                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}. Original criteria: {trial.eligibility.criteria}"
             )
             return False, total_cost
 
