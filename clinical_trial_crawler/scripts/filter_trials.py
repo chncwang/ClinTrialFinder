@@ -396,20 +396,34 @@ Example response:
         return inclusion_text
 
     def evaluate_trial(
-        self, trial: ClinicalTrial, conditions: str | list[str]
+        self, trial: ClinicalTrial, conditions: list[str]
     ) -> Tuple[bool, float]:
-        """Evaluate a single trial against the given conditions using GPT."""
+        """Evaluate a trial's eligibility based on title and inclusion criteria.
+
+        Args:
+            trial: The clinical trial to evaluate
+            conditions: List of conditions to check against
+
+        Returns:
+            Tuple of (is_eligible: bool, total_cost: float)
+        """
         # Evaluate the title first
-        title_eligible, title_reason, total_cost = self.evaluate_title(
+        title_eligible, title_reason, title_cost = self.evaluate_title(
             trial, conditions
         )
-        logger.info(
-            f"evaluate_trial: title: {trial.identification.brief_title} eligible: {title_eligible}\n reason: {title_reason}"
-        )
-        if title_eligible == "unsuitable":
-            return False, total_cost
+        title_suitability = 0.0 if title_eligible == "unsuitable" else 1.0
 
-        # Extract and validate inclusion criteria before splitting
+        if abs(title_suitability) < 1e-6:  # Compare with 0.0
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} is ineligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
+            )
+            return False, title_cost
+
+        logger.info(
+            f"evaluate_trial: Trial {trial.identification.nct_id} passed title evaluation. Reason: {title_reason}"
+        )
+
+        # Extract and validate inclusion criteria
         try:
             inclusion_text = self._extract_inclusion_criteria(
                 trial.eligibility.criteria
@@ -417,24 +431,38 @@ Example response:
             inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
         except EligibilityCriteriaError as e:
             logger.error(
-                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}. Original criteria: {trial.eligibility.criteria}"
+                f"evaluate_trial: Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
             )
-            return False, total_cost
+            return False, title_cost
 
-        all_criteria_eligible = True
+        total_cost = title_cost
+        overall_suitability_probability = title_suitability
+
         for criterion in inclusion_criteria:
-            probability, criterion_reason, cost = self.evaluate_inclusion_criterion(
-                criterion, conditions, trial.identification.brief_title
-            )
-            logger.info(
-                f"evaluate_trial: criterion: {criterion} probability: {probability}\n reason: {criterion_reason}"
+            criterion_probability, criterion_reason, cost = (
+                self.evaluate_inclusion_criterion(
+                    criterion, " ".join(conditions), trial.identification.brief_title
+                )
             )
             total_cost += cost
-            if probability <= 0.3:  # Using the same threshold as before
-                all_criteria_eligible = False
+            logger.info(
+                f"evaluate_trial: criterion: {criterion} eligibility: {criterion_probability}, reason: {criterion_reason}"
+            )
+
+            # Break early if probability is very close to zero
+            if abs(criterion_probability) < 1e-6:
+                overall_suitability_probability = 0.0
                 break
 
-        return all_criteria_eligible, total_cost
+            # Multiply probabilities to get overall suitability probability
+            overall_suitability_probability *= criterion_probability
+
+        is_eligible = overall_suitability_probability > 0.0
+        logger.info(
+            f"evaluate_trial: Final eligibility: {overall_suitability_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
+        )
+
+        return is_eligible, total_cost
 
 
 def load_json_file(file_path: str) -> List[dict]:
@@ -541,7 +569,7 @@ def main():
     filtered_trials = []
     total_trials = len(trials)
     total_cost = 0.0
-    eligible_count = 0  # Add counter for eligible trials
+    eligible_count = 0
 
     logger.info(f"Processing {total_trials} trials with conditions: {args.conditions}")
 
@@ -550,69 +578,13 @@ def main():
             f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
 
-        # Evaluate the title first
-        title_eligible, title_reason, title_cost = gpt_filter.evaluate_title(
-            trial, args.conditions
-        )
-        title_suitability = 0.0 if title_eligible == "unsuitable" else 1.0
+        is_eligible, cost = gpt_filter.evaluate_trial(trial, args.conditions)
+        total_cost += cost
 
-        total_cost += title_cost
-
-        if abs(title_suitability) < 1e-6:  # Compare with 0.0
-            logger.info(
-                f"main: Trial {trial.identification.nct_id} is ineligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
-            )
-            continue
-        elif abs(title_suitability - 1.0) < 1e-6:  # Compare with 1.0
-            logger.info(
-                f"main: Trial {trial.identification.nct_id} is eligible based on title '{trial.identification.brief_title}'. Reason: {title_reason}"
-            )
-        else:
-            raise ValueError(
-                f"Unexpected title suitability value: {title_suitability} for trial {trial.identification.nct_id}"
-            )
-
-        # Extract and validate inclusion criteria
-        try:
-            inclusion_text = gpt_filter._extract_inclusion_criteria(
-                trial.eligibility.criteria
-            )
-            inclusion_criteria = gpt_filter.split_inclusion_criteria(inclusion_text)
-        except EligibilityCriteriaError as e:
-            logger.error(
-                f"Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
-            )
-            continue
-
-        overall_suitability_probability = title_suitability
-
-        for criterion in inclusion_criteria:
-            criterion_probability, criterion_reason, cost = (
-                gpt_filter.evaluate_inclusion_criterion(
-                    criterion, args.conditions, trial.identification.brief_title
-                )
-            )
-            total_cost += cost
-            logger.info(
-                f"evaluate_trial: criterion: {criterion} eligibility: {criterion_probability}, reason: {criterion_reason}"
-            )
-
-            # Break early if probability is very close to zero
-            if abs(criterion_probability) < 1e-6:  # Using epsilon of 1e-6
-                overall_suitability_probability = 0.0
-                break
-
-            # Multiply probabilities to get overall suitability probability
-            overall_suitability_probability *= criterion_probability
-
-        # If overall suitability is greater than 0.0, consider the trial eligible
-        if overall_suitability_probability > 0.0:
+        if is_eligible:
             filtered_trials.append(trial.to_dict())
-            eligible_count += 1  # Increment counter when trial is eligible
+            eligible_count += 1
 
-        logger.info(
-            f"main: eligibility: {overall_suitability_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
-        )
         logger.info(f"main: Eligible trials so far: {eligible_count}/{i} processed")
 
     # Save results
