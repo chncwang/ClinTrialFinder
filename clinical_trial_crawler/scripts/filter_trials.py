@@ -395,6 +395,79 @@ Example response:
 
         return inclusion_text
 
+    def evaluate_inclusion_criteria(
+        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, float]:
+        """Evaluate a list of inclusion criteria against given conditions.
+
+        Args:
+            inclusion_criteria: List of inclusion criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the trial for context
+
+        Returns:
+            Tuple of (overall_probability: float, total_cost: float)
+        """
+        total_cost = 0.0
+        overall_probability = 1.0
+
+        for criterion in inclusion_criteria:
+            # Evaluate each condition separately for this criterion
+            criterion_probabilities = []
+            criterion_cost = 0.0
+
+            for condition in conditions:
+                probability, reason, cost = self.evaluate_inclusion_criterion(
+                    criterion, condition, trial_title
+                )
+                if abs(probability) < 1e-6:  # If probability is effectively 0
+                    logger.info(
+                        json.dumps(
+                            {
+                                "condition": condition,
+                                "criterion": criterion,
+                                "reason": reason,
+                                "eligibility": probability,
+                                "status": "incompatible",
+                            },
+                            indent=2,
+                        )
+                    )
+                    criterion_probabilities = [0.0]  # Set to 0 and break
+                    criterion_cost += cost
+                    break
+                criterion_probabilities.append(probability)
+                criterion_cost += cost
+                logger.info(
+                    json.dumps(
+                        {
+                            "condition": condition,
+                            "criterion": criterion,
+                            "reason": reason,
+                            "eligibility": probability,
+                            "status": "evaluated",
+                        },
+                        indent=2,
+                    )
+                )
+
+            # Multiply probabilities for all conditions
+            criterion_probability = 1.0
+            for prob in criterion_probabilities:
+                criterion_probability *= prob
+
+            total_cost += criterion_cost
+
+            # Break early if probability is very close to zero
+            if abs(criterion_probability) < 1e-6:
+                overall_probability = 0.0
+                break
+
+            # Multiply probabilities to get overall probability
+            overall_probability *= criterion_probability
+
+        return overall_probability, total_cost
+
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: list[str]
     ) -> Tuple[bool, float]:
@@ -413,7 +486,7 @@ Example response:
         )
         title_suitability = 0.0 if title_eligible == "unsuitable" else 1.0
 
-        if abs(title_suitability) < 1e-6:  # Compare with 0.0
+        if abs(title_suitability) < 1e-6:
             logger.info(
                 json.dumps(
                     {
@@ -453,68 +526,16 @@ Example response:
             )
             return False, title_cost
 
-        total_cost = title_cost
-        overall_suitability_probability = title_suitability
+        # Evaluate inclusion criteria
+        overall_probability, criteria_cost = self.evaluate_inclusion_criteria(
+            inclusion_criteria, conditions, trial.identification.brief_title
+        )
 
-        for criterion in inclusion_criteria:
-            # Evaluate each condition separately for this criterion
-            criterion_probabilities = []
-            criterion_cost = 0.0
+        total_cost = title_cost + criteria_cost
+        is_eligible = overall_probability > 0.0
 
-            for condition in conditions:
-                probability, reason, cost = self.evaluate_inclusion_criterion(
-                    criterion, condition, trial.identification.brief_title
-                )
-                if abs(probability) < 1e-6:  # If probability is effectively 0
-                    logger.info(
-                        json.dumps(
-                            {
-                                "condition": condition,
-                                "criterion": criterion,
-                                "reason": reason,
-                                "eligibility": probability,
-                                "status": "incompatible",
-                            },
-                            indent=2,
-                        )
-                    )
-                    criterion_probabilities = [0.0]  # Set to 0 and break
-                    criterion_cost += cost
-                    break
-                criterion_probabilities.append(probability)
-                criterion_cost += cost
-                logger.info(
-                    json.dumps(
-                        {
-                            "condition": condition,
-                            "criterion": criterion,
-                            "reason": reason,
-                            "eligibility": probability,
-                            "status": "evaluated",
-                        },
-                        indent=2,
-                    )
-                )
-
-            # Multiply probabilities for all conditions
-            # This ensures the criterion is compatible with ALL conditions
-            criterion_probability = 1.0
-            for prob in criterion_probabilities:
-                criterion_probability *= prob
-
-            total_cost += criterion_cost
-
-            # Break early if probability is very close to zero
-            if abs(criterion_probability) < 1e-6:
-                overall_suitability_probability = 0.0
-                break
-
-            # Multiply probabilities to get overall suitability probability
-            overall_suitability_probability *= criterion_probability
-
-        is_eligible = overall_suitability_probability > 0.0
         logger.info(
-            f"evaluate_trial: Final eligibility: {overall_suitability_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
+            f"evaluate_trial: Final eligibility: {overall_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
         )
 
         return is_eligible, total_cost
