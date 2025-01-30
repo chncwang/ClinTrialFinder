@@ -438,6 +438,37 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         result = self._parse_gpt_response(response_content)
         return result.get("branches", [criterion])
 
+    def _evaluate_branch(
+        self, branch: str, conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict]:
+        """Helper method to evaluate a single branch."""
+        branch_prob = 1.0
+        branch_violations_current = {condition: [] for condition in conditions}
+
+        for condition in conditions:
+            probability, reason, cost = self.evaluate_inclusion_criterion(
+                branch, condition, trial_title
+            )
+            logger.info(
+                f"Branch evaluation: {branch}, Condition: {condition}, Probability: {probability}, Cost: {cost}"
+            )
+            branch_prob *= probability
+            if probability <= 0.0:
+                branch_violations_current[condition].append(
+                    {
+                        "branch": branch,
+                        "reason": reason,
+                        "eligibility": probability,
+                        "cost": cost,
+                    }
+                )
+
+            # Early exit if any condition results in zero probability
+            if branch_prob <= 0.0:
+                break
+
+        return branch_prob, branch_violations_current
+
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, float]:
@@ -446,120 +477,78 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         overall_probability = 1.0
 
         for criterion in inclusion_criteria:
-            # Check for OR criterion
+            logger.info(
+                f"GPTTrialFilter.evaluate_inclusion_criteria: Evaluating criterion: {criterion}"
+            )
+            criterion_probabilities = []
+            criterion_cost = 0.0
+
+            # Handle OR criterion
             if self._is_or_criterion(criterion):
-                logger.info(
-                    f"GPTTrialFilter.evaluate_inclusion_criteria: OR criterion detected: {criterion}"
-                )
+                logger.info(f"OR criterion detected: {criterion}")
                 branches = self._split_or_branches(criterion)
                 logger.info(
-                    f"GPTTrialFilter.evaluate_inclusion_criteria: Split branches: {len(branches)}\n"
-                    + json.dumps(
-                        {
-                            "num_branches": len(branches),
-                            "branches": branches,
-                        },
-                        indent=2,
-                    )
+                    f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
                 )
+
                 branch_max_prob = 0.0
                 branch_cost = 0.0
-                branch_violations = {condition: [] for condition in conditions}
+                branch_results = {condition: [] for condition in conditions}
 
                 for branch in branches:
-                    branch_prob = 1.0
-                    branch_violations_current = []
+                    branch_prob, branch_violations_current = self._evaluate_branch(
+                        branch, conditions, trial_title
+                    )
+                    # Sum costs from violations
+                    branch_cost += sum(
+                        violation["cost"]
+                        for condition_violations in branch_violations_current.values()
+                        for violation in condition_violations
+                    )
+                    branch_max_prob = max(branch_max_prob, branch_prob)
 
+                    # Record which conditions met this branch
                     for condition in conditions:
-                        probability, reason, cost = self.evaluate_inclusion_criterion(
-                            branch, condition, trial_title
+                        # Get the individual condition's probability for this branch
+                        condition_violations = branch_violations_current[condition]
+                        condition_prob = (
+                            1.0
+                            if not condition_violations
+                            else min(v["eligibility"] for v in condition_violations)
                         )
+                        if (
+                            condition_prob > 0
+                        ):  # Only record if condition met the branch
+                            branch_results[condition].append(
+                                {"branch": branch, "eligibility": condition_prob}
+                            )
+
+                # Log results for each condition
+                for condition, met_branches in branch_results.items():
+                    if met_branches:  # Condition met at least one branch
                         logger.info(
-                            f"GPTTrialFilter.evaluate_inclusion_criteria: Branch evaluation: {branch}\n"
-                            + json.dumps(
-                                {
-                                    "branch": branch,
-                                    "condition": condition,
-                                    "probability": probability,
-                                    "reason": reason,
-                                    "cost": cost,
-                                },
-                                indent=2,
-                            )
+                            f"Condition met branches in OR criterion: {condition}\n{json.dumps({'condition': condition, 'met_branches': met_branches}, indent=2)}"
                         )
-                        branch_cost += cost
-                        branch_prob *= probability
-
-                        if probability <= 0.0:
-                            branch_violations[condition].append(
-                                {"branch": branch, "reason": reason}
-                            )
-
-                        if branch_prob <= 0.0:
-                            break
-
-                    if branch_prob > branch_max_prob:
-                        branch_max_prob = branch_prob
-
-                    # Early exit if any branch is fully compatible
-                    if branch_max_prob >= 1.0:
+                    else:  # Condition failed all branches
                         logger.info(
-                            f"GPTTrialFilter.evaluate_inclusion_criteria: Found fully compatible branch\n"
-                            + json.dumps(
-                                {
-                                    "branch": branch,
-                                    "probability": branch_prob,
-                                    "early_exit": True,
-                                },
-                                indent=2,
-                            )
+                            f"Condition failed all branches: {condition}\n{json.dumps({'condition': condition, 'violations': branch_violations_current[condition], 'criterion': criterion}, indent=2)}"
                         )
-                        break
-
-                # Log conditions that violated all branches
-                for condition, violations in branch_violations.items():
-                    if len(violations) == len(branches):
-                        logger.info(
-                            f"GPTTrialFilter.evaluate_inclusion_criteria: Condition violated all branches in OR criterion: {condition}\n"
-                            + json.dumps(
-                                {
-                                    "condition": condition,
-                                    "violations": violations,
-                                    "criterion": criterion,
-                                },
-                                indent=2,
-                            )
-                        )
-                    else:
-                        # Log just one met branch since we have early exit
-                        for i, branch in enumerate(branches):
-                            if not any(v["branch"] == branch for v in violations):
-                                logger.info(
-                                    f"GPTTrialFilter.evaluate_inclusion_criteria: Condition met branch in OR criterion: {condition}\n"
-                                    + json.dumps(
-                                        {
-                                            "condition": condition,
-                                            "met_branch": {
-                                                "branch_index": i,
-                                                "branch": branch,
-                                            },
-                                            "criterion": criterion,
-                                        },
-                                        indent=2,
-                                    )
-                                )
-                                break  # Only log the first met branch
+                        branch_max_prob = 0.0  # Set probability to 0
+                        break  # Exit the branch evaluation loop since this condition can't be satisfied
 
                 total_cost += branch_cost
                 criterion_probability = branch_max_prob
-            else:
-                # Original logic for non-OR criteria
-                logger.info(
-                    f"GPTTrialFilter.evaluate_inclusion_criteria: Non-OR criterion detected: {criterion}"
-                )
-                criterion_probabilities = []
-                criterion_cost = 0.0
 
+                # Early exit if any branch is fully compatible
+                if branch_max_prob >= 1.0:
+                    logger.info(
+                        f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                    )
+                    break
+
+            # Handle non-OR criterion
+            else:
+                logger.info(f"Non-OR criterion detected: {criterion}")
                 for condition in conditions:
                     probability, reason, cost = self.evaluate_inclusion_criterion(
                         criterion, condition, trial_title
@@ -578,15 +567,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 total_cost += criterion_cost
 
             logger.info(
-                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result\n"
-                + json.dumps(
-                    {
-                        "condition": condition,
-                        "criterion": criterion,
-                        "eligibility": criterion_probability,
-                    },
-                    indent=2,
-                )
+                f"Criterion evaluation result\n{json.dumps({'criterion': criterion, 'eligibility': criterion_probability}, indent=2)}"
             )
 
             # Update overall probability
