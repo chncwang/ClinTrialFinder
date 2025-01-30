@@ -223,7 +223,7 @@ class GPTTrialFilter:
         self, criterion: str, condition: str, title: str
     ) -> str:
         """Build the prompt for evaluating an inclusion criterion."""
-        return f"""You are evaluating a clinical trial inclusion criterion against patient conditions.
+        return f"""You are evaluating a clinical trial inclusion criterion against one of the patient's conditions.
 
 Study Title:
 {title}
@@ -234,8 +234,9 @@ Inclusion Criterion:
 Patient Condition to Evaluate:
 {condition}
 
-Please determine if this inclusion criterion aligns with the condition provided, considering the context from the study title.
-If the condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
+Please determine if this inclusion criterion aligns with this specific condition provided, considering the context from the study title.
+Focus only on evaluating this single condition, even though the patient may have other conditions.
+If this condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
 If the inclusion criterion represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
@@ -613,9 +614,9 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
         if abs(title_suitability) < 1e-6:
             logger.info(
-                json.dumps(
+                f"GPTTrialFilter.evaluate_trial: Trial is ineligible based on title: {trial.identification.nct_id}, {trial.identification.brief_title}, {title_reason}"
+                + json.dumps(
                     {
-                        "message": "evaluate_trial: Trial is ineligible based on title",
                         "trial_id": trial.identification.nct_id,
                         "title": trial.identification.brief_title,
                         "reason": title_reason,
