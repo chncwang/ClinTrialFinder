@@ -291,6 +291,19 @@ Example response:
             )
             result = self._parse_gpt_response_with_fallback(response_content)
             validated_result = self._validate_gpt_response(result)
+            logger.info(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Evaluated criterion: {criterion} for condition: {condition} with title: {title}"
+                + json.dumps(
+                    {
+                        "criterion": criterion,
+                        "condition": condition,
+                        "eligibility": validated_result["suitability_probability"],
+                        "reason": validated_result["reason"],
+                        "cost": cost,
+                    },
+                    indent=2,
+                )
+            )
             return (
                 validated_result["suitability_probability"],
                 validated_result["reason"],
