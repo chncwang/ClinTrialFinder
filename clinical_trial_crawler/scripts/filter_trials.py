@@ -395,76 +395,180 @@ Example response:
 
         return inclusion_text
 
+    def _is_or_criterion(self, criterion: str) -> bool:
+        """Check if a criterion contains top-level OR logic using GPT."""
+        prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
+
+Criterion: {criterion}
+
+Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
+{{"is_or_criterion": true/false}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in logical structure analysis.",
+            temperature=0.0,
+        )
+        result = self._parse_gpt_response(response_content)
+        return result.get("is_or_criterion", False)
+
+    def _split_or_branches(self, criterion: str) -> List[str]:
+        """Split a criterion with top-level OR logic into individual branches."""
+        prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
+
+Original Criterion:
+{criterion}
+
+Rules:
+1. Split only at TOP-LEVEL OR connections
+2. Maintain nested AND/OR structures within branches
+3. Preserve all original requirements in each branch
+
+Return ONLY JSON with a "branches" list containing the split criteria:
+{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in logical structure analysis.",
+            temperature=0.0,
+        )
+        result = self._parse_gpt_response(response_content)
+        return result.get("branches", [criterion])
+
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, float]:
-        """Evaluate a list of inclusion criteria against given conditions.
-
-        Args:
-            inclusion_criteria: List of inclusion criteria to evaluate
-            conditions: List of conditions to check against
-            trial_title: Title of the trial for context
-
-        Returns:
-            Tuple of (overall_probability: float, total_cost: float)
-        """
+        """Evaluate a list of inclusion criteria against given conditions."""
         total_cost = 0.0
         overall_probability = 1.0
 
         for criterion in inclusion_criteria:
-            # Evaluate each condition separately for this criterion
-            criterion_probabilities = []
-            criterion_cost = 0.0
-
-            for condition in conditions:
-                probability, reason, cost = self.evaluate_inclusion_criterion(
-                    criterion, condition, trial_title
+            # Check for OR criterion
+            if self._is_or_criterion(criterion):
+                logger.info(
+                    f"GPTTrialFilter.evaluate_inclusion_criteria: OR criterion detected: {criterion}"
                 )
-                if abs(probability) < 1e-6:  # If probability is effectively 0
-                    logger.info(
-                        json.dumps(
-                            {
-                                "condition": condition,
-                                "criterion": criterion,
-                                "reason": reason,
-                                "eligibility": probability,
-                                "status": "incompatible",
-                            },
-                            indent=2,
-                        )
-                    )
-                    criterion_probabilities = [0.0]  # Set to 0 and break
-                    criterion_cost += cost
-                    break
-                criterion_probabilities.append(probability)
-                criterion_cost += cost
+                branches = self._split_or_branches(criterion)
                 logger.info(
                     json.dumps(
                         {
-                            "condition": condition,
-                            "criterion": criterion,
-                            "reason": reason,
-                            "eligibility": probability,
-                            "status": "evaluated",
+                            "message": "GPTTrialFilter.evaluate_inclusion_criteria: Split branches",
+                            "num_branches": len(branches),
+                            "branches": branches,
                         },
                         indent=2,
                     )
                 )
+                branch_max_prob = 0.0
+                branch_cost = 0.0
+                branch_violations = {condition: [] for condition in conditions}
 
-            # Multiply probabilities for all conditions
-            criterion_probability = 1.0
-            for prob in criterion_probabilities:
-                criterion_probability *= prob
+                for branch in branches:
+                    branch_prob = 1.0
+                    branch_violations_current = []
 
-            total_cost += criterion_cost
+                    for condition in conditions:
+                        probability, reason, cost = self.evaluate_inclusion_criterion(
+                            branch, condition, trial_title
+                        )
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "message": "GPTTrialFilter.evaluate_inclusion_criteria: Branch evaluation",
+                                    "branch": branch,
+                                    "condition": condition,
+                                    "probability": probability,
+                                    "reason": reason,
+                                    "cost": cost,
+                                }
+                            )
+                        )
+                        branch_cost += cost
+                        branch_prob *= probability
+
+                        if probability <= 0.0:
+                            branch_violations[condition].append(
+                                {"branch": branch, "reason": reason}
+                            )
+
+                        if branch_prob <= 0.0:
+                            break
+
+                    if branch_prob > branch_max_prob:
+                        branch_max_prob = branch_prob
+
+                    # Early exit if any branch is fully compatible
+                    if branch_max_prob >= 1.0:
+                        break
+
+                # Log conditions that violated all branches
+                for condition, violations in branch_violations.items():
+                    if len(violations) == len(branches):
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "message": "Condition violated all branches in OR criterion",
+                                    "condition": condition,
+                                    "violations": violations,
+                                    "criterion": criterion,
+                                }
+                            )
+                        )
+                    else:
+                        # Log which branches were met
+                        met_branches = []
+                        for i, branch in enumerate(branches):
+                            if not any(v["branch"] == branch for v in violations):
+                                met_branches.append(
+                                    {"branch_index": i, "branch": branch}
+                                )
+
+                        if met_branches:
+                            logger.info(
+                                json.dumps(
+                                    {
+                                        "message": "Condition met one or more branches in OR criterion",
+                                        "condition": condition,
+                                        "met_branches": met_branches,
+                                        "criterion": criterion,
+                                    }
+                                )
+                            )
+
+                total_cost += branch_cost
+                criterion_probability = branch_max_prob
+            else:
+                # Original logic for non-OR criteria
+                logger.info(
+                    f"GPTTrialFilter.evaluate_inclusion_criteria: Non-OR criterion detected: {criterion}"
+                )
+                criterion_probabilities = []
+                criterion_cost = 0.0
+
+                for condition in conditions:
+                    probability, reason, cost = self.evaluate_inclusion_criterion(
+                        criterion, condition, trial_title
+                    )
+                    if abs(probability) < 1e-6:
+                        criterion_probabilities = [0.0]
+                        criterion_cost += cost
+                        break
+                    criterion_probabilities.append(probability)
+                    criterion_cost += cost
+
+                criterion_probability = 1.0
+                for prob in criterion_probabilities:
+                    criterion_probability *= prob
+
+                total_cost += criterion_cost
+
+            # Update overall probability
+            overall_probability *= criterion_probability
 
             # Break early if probability is very close to zero
-            if abs(criterion_probability) < 1e-6:
+            if abs(overall_probability) < 1e-6:
                 overall_probability = 0.0
                 break
-
-            # Multiply probabilities to get overall probability
-            overall_probability *= criterion_probability
 
         return overall_probability, total_cost
 
