@@ -531,26 +531,24 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                             )
                         )
                     else:
-                        # Log which branches were met
-                        met_branches = []
+                        # Log just one met branch since we have early exit
                         for i, branch in enumerate(branches):
                             if not any(v["branch"] == branch for v in violations):
-                                met_branches.append(
-                                    {"branch_index": i, "branch": branch}
+                                logger.info(
+                                    f"GPTTrialFilter.evaluate_inclusion_criteria: Condition met branch in OR criterion: {condition}\n"
+                                    + json.dumps(
+                                        {
+                                            "condition": condition,
+                                            "met_branch": {
+                                                "branch_index": i,
+                                                "branch": branch,
+                                            },
+                                            "criterion": criterion,
+                                        },
+                                        indent=2,
+                                    )
                                 )
-
-                        if met_branches:
-                            logger.info(
-                                f"GPTTrialFilter.evaluate_inclusion_criteria: Condition met one or more branches in OR criterion: {condition}\n"
-                                + json.dumps(
-                                    {
-                                        "condition": condition,
-                                        "met_branches": met_branches,
-                                        "criterion": criterion,
-                                    },
-                                    indent=2,
-                                )
-                            )
+                                break  # Only log the first met branch
 
                 total_cost += branch_cost
                 criterion_probability = branch_max_prob
@@ -580,10 +578,10 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 total_cost += criterion_cost
 
             logger.info(
-                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result:"
+                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result\n"
                 + json.dumps(
                     {
-                        "message": "Criterion evaluation result",
+                        "condition": condition,
                         "criterion": criterion,
                         "eligibility": criterion_probability,
                     },
