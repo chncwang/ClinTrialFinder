@@ -152,6 +152,9 @@ class GPTTrialFilter:
                 return response, cost
             except json.JSONDecodeError:
                 if attempt == max_retries - 1:
+                    logger.warning(
+                        f"GPTTrialFilter._call_gpt_with_retry: Failed after {max_retries} attempts"
+                    )
                     raise
                 time.sleep(2**attempt)  # Exponential backoff
 
@@ -450,9 +453,9 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 )
                 branches = self._split_or_branches(criterion)
                 logger.info(
-                    json.dumps(
+                    f"GPTTrialFilter.evaluate_inclusion_criteria: Split branches: {len(branches)}\n"
+                    + json.dumps(
                         {
-                            "message": "GPTTrialFilter.evaluate_inclusion_criteria: Split branches",
                             "num_branches": len(branches),
                             "branches": branches,
                         },
@@ -472,15 +475,16 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                             branch, condition, trial_title
                         )
                         logger.info(
-                            json.dumps(
+                            f"GPTTrialFilter.evaluate_inclusion_criteria: Branch evaluation: {branch}\n"
+                            + json.dumps(
                                 {
-                                    "message": "GPTTrialFilter.evaluate_inclusion_criteria: Branch evaluation",
                                     "branch": branch,
                                     "condition": condition,
                                     "probability": probability,
                                     "reason": reason,
                                     "cost": cost,
-                                }
+                                },
+                                indent=2,
                             )
                         )
                         branch_cost += cost
@@ -499,19 +503,31 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
                     # Early exit if any branch is fully compatible
                     if branch_max_prob >= 1.0:
+                        logger.info(
+                            f"GPTTrialFilter.evaluate_inclusion_criteria: Found fully compatible branch\n"
+                            + json.dumps(
+                                {
+                                    "branch": branch,
+                                    "probability": branch_prob,
+                                    "early_exit": True,
+                                },
+                                indent=2,
+                            )
+                        )
                         break
 
                 # Log conditions that violated all branches
                 for condition, violations in branch_violations.items():
                     if len(violations) == len(branches):
                         logger.info(
-                            json.dumps(
+                            f"GPTTrialFilter.evaluate_inclusion_criteria: Condition violated all branches in OR criterion: {condition}\n"
+                            + json.dumps(
                                 {
-                                    "message": "Condition violated all branches in OR criterion",
                                     "condition": condition,
                                     "violations": violations,
                                     "criterion": criterion,
-                                }
+                                },
+                                indent=2,
                             )
                         )
                     else:
@@ -525,13 +541,14 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
                         if met_branches:
                             logger.info(
-                                json.dumps(
+                                f"GPTTrialFilter.evaluate_inclusion_criteria: Condition met one or more branches in OR criterion: {condition}\n"
+                                + json.dumps(
                                     {
-                                        "message": "Condition met one or more branches in OR criterion",
                                         "condition": condition,
                                         "met_branches": met_branches,
                                         "criterion": criterion,
-                                    }
+                                    },
+                                    indent=2,
                                 )
                             )
 
@@ -561,6 +578,18 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     criterion_probability *= prob
 
                 total_cost += criterion_cost
+
+            logger.info(
+                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result:"
+                + json.dumps(
+                    {
+                        "message": "Criterion evaluation result",
+                        "criterion": criterion,
+                        "eligibility": criterion_probability,
+                    },
+                    indent=2,
+                )
+            )
 
             # Update overall probability
             overall_probability *= criterion_probability
@@ -624,6 +653,18 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 trial.eligibility.criteria
             )
             inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "evaluate_trial: Split inclusion criteria",
+                        "trial_id": trial.identification.nct_id,
+                        "criteria_count": len(inclusion_criteria),
+                        "criteria": inclusion_criteria,
+                    },
+                    indent=2,
+                )
+            )
+
         except EligibilityCriteriaError as e:
             logger.error(
                 f"evaluate_trial: Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
