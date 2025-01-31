@@ -421,13 +421,24 @@ Criterion: {criterion}
 Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
 {{"is_or_criterion": true/false}}"""
 
-        response_content, _ = self._call_gpt(
-            prompt,
-            "You are a clinical trial analyst specializing in logical structure analysis.",
-            temperature=0.0,
-        )
-        result = self._parse_gpt_response(response_content)
-        return result.get("is_or_criterion", False)
+        try:
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                temperature=0.0,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
+        except json.JSONDecodeError:
+            # Retry with cache refresh on parse error
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                temperature=0.0,
+                refresh_cache=True,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
 
     def _split_or_branches(self, criterion: str) -> List[str]:
         """Split a criterion with top-level OR logic into individual branches."""
