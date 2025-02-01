@@ -834,7 +834,9 @@ def main():
             filtered_trials.append(trial.to_dict())
             eligible_count += 1
 
-        logger.info(f"main: Eligible trials so far: {eligible_count}/{i} processed")
+        logger.info(
+            f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+        )
 
     # Save results
     save_json_file(filtered_trials, args.output)
