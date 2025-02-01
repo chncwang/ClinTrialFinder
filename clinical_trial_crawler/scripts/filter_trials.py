@@ -252,11 +252,11 @@ Example response 2:
 
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
-    ) -> Tuple[str, str, float]:
+    ) -> Tuple[float, str, float]:
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
-        prompt = f"""You are filtering a clinical trials based on patient conditions and trial title.
+        prompt = f"""You are filtering clinical trials based on patient conditions and trial title.
 
 Trial Details:
 - Title: {trial.identification.brief_title}
@@ -268,10 +268,13 @@ Please determine if the trial is potentially suitable for the patient conditions
 
 Return a JSON object containing:
 - "reason": An explanation of why the title is or is not suitable
-- "answer": "suitable" if the trial is potentially suitable, "unsuitable" if it is not, "uncertain" if unsure
+- "suitability_probability": A float value between 0.0 and 1.0 representing how suitable the trial is:
+  - 0.0: Completely unsuitable
+  - 0.5: Uncertain
+  - 1.0: Completely suitable
 
 Example response:
-{{"reason": "[specific reasons]", "answer": "suitable"}}"""
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
 
         response_content, cost = self._call_gpt(
             prompt,
@@ -279,7 +282,7 @@ Example response:
             temperature=0.1,
         )
         result = self._parse_gpt_response(response_content)
-        return result["answer"], result["reason"], cost
+        return result["suitability_probability"], result["reason"], cost
 
     def evaluate_inclusion_criterion(
         self, criterion: str, condition: str, title: str
@@ -618,12 +621,11 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             Tuple of (is_eligible: bool, total_cost: float)
         """
         # Evaluate the title first
-        title_eligible, title_reason, title_cost = self.evaluate_title(
+        title_probability, title_reason, title_cost = self.evaluate_title(
             trial, conditions
         )
-        title_suitability = 0.0 if title_eligible == "unsuitable" else 1.0
 
-        if abs(title_suitability) < 1e-6:
+        if abs(title_probability) < 1e-6:
             logger.info(
                 f"GPTTrialFilter.evaluate_trial: Trial is ineligible based on title: {trial.identification.nct_id}, {trial.identification.brief_title}, {title_reason}"
                 + json.dumps(
@@ -639,13 +641,13 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             return False, title_cost
 
         logger.info(
-            json.dumps(
+            f"GPTTrialFilter.evaluate_trial: Trial passed title evaluation: {trial.identification.nct_id}, {trial.identification.brief_title}, {title_reason}, {title_probability}"
+            + json.dumps(
                 {
-                    "message": "evaluate_trial: Trial passed title evaluation",
                     "trial_id": trial.identification.nct_id,
                     "title": trial.identification.brief_title,
                     "reason": title_reason,
-                    "eligibility": 1.0,
+                    "eligibility": title_probability,
                 },
                 indent=2,
             )
@@ -676,9 +678,11 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             return False, title_cost
 
         # Evaluate inclusion criteria
-        overall_probability, criteria_cost = self.evaluate_inclusion_criteria(
+        inclusion_probability, criteria_cost = self.evaluate_inclusion_criteria(
             inclusion_criteria, conditions, trial.identification.brief_title
         )
+
+        overall_probability = title_probability * inclusion_probability
 
         total_cost = title_cost + criteria_cost
         is_eligible = overall_probability > 0.0
