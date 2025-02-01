@@ -11,7 +11,7 @@ import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
@@ -555,10 +555,25 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
-    ) -> Tuple[float, float]:
-        """Evaluate a list of inclusion criteria against given conditions."""
+    ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
+        """
+        Evaluate a list of inclusion criteria against given conditions.
+
+        Args:
+            inclusion_criteria: List of inclusion criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the clinical trial
+
+        Returns:
+            Tuple of (
+                overall_probability: float,
+                failure_reason: Optional[Tuple[str, str, str]],  # (condition, criterion, reason) if failed
+                total_cost: float
+            )
+        """
         total_cost = 0.0
         overall_probability = 1.0
+        failure_reason = None
 
         for criterion in inclusion_criteria:
             logger.info(
@@ -581,18 +596,19 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 total_cost += branch_cost
                 criterion_probability = branch_max_prob
 
-                # Log results for each condition
+                # Check if any condition failed all branches
                 for condition, met_branches in branch_results.items():
-                    if met_branches:  # Condition met at least one branch
-                        logger.info(
-                            f"Condition met branches in OR criterion: {condition}\n{json.dumps({'condition': condition, 'met_branches': met_branches}, indent=2)}"
-                        )
-                    else:  # Condition failed all branches
+                    if not met_branches:  # Condition failed all branches
                         logger.info(
                             f"Condition failed all branches: {condition}\n{json.dumps({'condition': condition, 'criterion': criterion}, indent=2)}"
                         )
-                        branch_max_prob = 0.0  # Set probability to 0
-                        break  # Exit since this condition can't be satisfied
+                        failure_reason = (
+                            condition,
+                            criterion,
+                            "Failed all OR branches",
+                        )
+                        criterion_probability = 0.0
+                        break
 
             # Handle non-OR criterion
             else:
@@ -601,12 +617,13 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     probability, reason, cost = self.evaluate_inclusion_criterion(
                         criterion, condition, trial_title
                     )
+                    criterion_cost += cost
+
                     if abs(probability) < 1e-6:
                         criterion_probabilities = [0.0]
-                        criterion_cost += cost
+                        failure_reason = (condition, criterion, reason)
                         break
                     criterion_probabilities.append(probability)
-                    criterion_cost += cost
 
                 criterion_probability = 1.0
                 for prob in criterion_probabilities:
@@ -626,7 +643,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 overall_probability = 0.0
                 break
 
-        return overall_probability, total_cost
+        return overall_probability, failure_reason, total_cost
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: list[str]
@@ -698,9 +715,26 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             return False, title_cost
 
         # Evaluate inclusion criteria
-        inclusion_probability, criteria_cost = self.evaluate_inclusion_criteria(
-            inclusion_criteria, conditions, trial.identification.brief_title
+        inclusion_probability, failure_reason, criteria_cost = (
+            self.evaluate_inclusion_criteria(
+                inclusion_criteria, conditions, trial.identification.brief_title
+            )
         )
+
+        if failure_reason:
+            condition, criterion, reason = failure_reason
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} failed inclusion criteria"
+                + json.dumps(
+                    {
+                        "trial_id": trial.identification.nct_id,
+                        "failed_condition": condition,
+                        "failed_criterion": criterion,
+                        "failure_reason": reason,
+                    },
+                    indent=2,
+                )
+            )
 
         overall_probability = title_probability * inclusion_probability
 
