@@ -632,17 +632,16 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 total_cost += criterion_cost
 
             logger.info(
-                f"Criterion evaluation result\n{json.dumps({'criterion': criterion, 'eligibility': criterion_probability}, indent=2)}"
+                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result\n{json.dumps({'criterion': criterion, 'eligibility': criterion_probability}, indent=2)}"
             )
 
             # Update overall probability
             overall_probability *= criterion_probability
 
-            # Break early if probability is very close to zero
-            if abs(overall_probability) < 1e-6:
-                overall_probability = 0.0
-                break
-
+        if overall_probability <= 0.0 and failure_reason is None:
+            raise RuntimeError(
+                "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
+            )
         return overall_probability, failure_reason, total_cost
 
     def evaluate_trial(
