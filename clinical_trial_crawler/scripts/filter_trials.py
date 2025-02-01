@@ -497,6 +497,62 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
         return branch_prob, branch_violations_current
 
+    def process_branches(
+        self, branches: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict[str, List[Dict]], float]:
+        """Process multiple branches and return the best probability and results.
+
+        Args:
+            branches: List of branch criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the clinical trial
+
+        Returns:
+            Tuple of (
+                max_probability: float,
+                condition_results: Dict[str, List[Dict]],
+                total_cost: float
+            )
+        """
+        branch_max_prob = 0.0
+        branch_cost = 0.0
+        branch_results = {condition: [] for condition in conditions}
+
+        for branch in branches:
+            branch_prob, branch_violations_current = self._evaluate_branch(
+                branch, conditions, trial_title
+            )
+            # Sum costs from violations
+            branch_cost += sum(
+                violation["cost"]
+                for condition_violations in branch_violations_current.values()
+                for violation in condition_violations
+            )
+            branch_max_prob = max(branch_max_prob, branch_prob)
+
+            # Record which conditions met this branch
+            for condition in conditions:
+                # Get the individual condition's probability for this branch
+                condition_violations = branch_violations_current[condition]
+                condition_prob = (
+                    1.0
+                    if not condition_violations
+                    else min(v["eligibility"] for v in condition_violations)
+                )
+                if condition_prob > 0:  # Only record if condition met the branch
+                    branch_results[condition].append(
+                        {"branch": branch, "eligibility": condition_prob}
+                    )
+
+            # Early exit if we found a fully compatible branch
+            if branch_max_prob >= 1.0:
+                logger.info(
+                    f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                )
+                break
+
+        return branch_max_prob, branch_results, branch_cost
+
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, float]:
@@ -519,37 +575,11 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
                 )
 
-                branch_max_prob = 0.0
-                branch_cost = 0.0
-                branch_results = {condition: [] for condition in conditions}
-
-                for branch in branches:
-                    branch_prob, branch_violations_current = self._evaluate_branch(
-                        branch, conditions, trial_title
-                    )
-                    # Sum costs from violations
-                    branch_cost += sum(
-                        violation["cost"]
-                        for condition_violations in branch_violations_current.values()
-                        for violation in condition_violations
-                    )
-                    branch_max_prob = max(branch_max_prob, branch_prob)
-
-                    # Record which conditions met this branch
-                    for condition in conditions:
-                        # Get the individual condition's probability for this branch
-                        condition_violations = branch_violations_current[condition]
-                        condition_prob = (
-                            1.0
-                            if not condition_violations
-                            else min(v["eligibility"] for v in condition_violations)
-                        )
-                        if (
-                            condition_prob > 0
-                        ):  # Only record if condition met the branch
-                            branch_results[condition].append(
-                                {"branch": branch, "eligibility": condition_prob}
-                            )
+                branch_max_prob, branch_results, branch_cost = self.process_branches(
+                    branches, conditions, trial_title
+                )
+                total_cost += branch_cost
+                criterion_probability = branch_max_prob
 
                 # Log results for each condition
                 for condition, met_branches in branch_results.items():
@@ -559,20 +589,10 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                         )
                     else:  # Condition failed all branches
                         logger.info(
-                            f"Condition failed all branches: {condition}\n{json.dumps({'condition': condition, 'violations': branch_violations_current[condition], 'criterion': criterion}, indent=2)}"
+                            f"Condition failed all branches: {condition}\n{json.dumps({'condition': condition, 'criterion': criterion}, indent=2)}"
                         )
                         branch_max_prob = 0.0  # Set probability to 0
-                        break  # Exit the branch evaluation loop since this condition can't be satisfied
-
-                total_cost += branch_cost
-                criterion_probability = branch_max_prob
-
-                # Early exit if any branch is fully compatible
-                if branch_max_prob >= 1.0:
-                    logger.info(
-                        f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
-                    )
-                    break
+                        break  # Exit since this condition can't be satisfied
 
             # Handle non-OR criterion
             else:
