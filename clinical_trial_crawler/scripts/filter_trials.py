@@ -10,6 +10,7 @@ import re
 import sys
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -87,6 +88,15 @@ class EligibilityCriteriaError(Exception):
     """Custom exception for eligibility criteria format errors."""
 
     pass
+
+
+@dataclass
+class CriterionEvaluation:
+    """Represents the evaluation result of a clinical trial criterion."""
+
+    criterion: str
+    reason: str
+    eligibility: float
 
 
 class GPTTrialFilter:
@@ -196,7 +206,8 @@ class GPTTrialFilter:
             }
 
     def _validate_gpt_response(self, parsed_response: dict) -> dict:
-        """Validate the GPT response has required fields and valid values.
+        """
+        Validate the GPT response has required fields and valid values.
 
         Args:
             parsed_response: Dictionary containing the parsed GPT response
@@ -253,6 +264,19 @@ Example response 2:
     def evaluate_title(
         self, trial: ClinicalTrial, conditions: str | list[str]
     ) -> Tuple[float, str, float]:
+        """
+        Evaluate if a trial title indicates suitability for given conditions.
+
+        Args:
+            trial: The clinical trial to evaluate
+            conditions: Patient condition(s) to check against, either as a single string or list of strings
+
+        Returns:
+            Tuple of:
+                float: Probability of trial suitability (0.0-1.0)
+                str: Explanation of the evaluation
+                float: Cost of the GPT API call
+        """
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
 
@@ -468,39 +492,60 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
     def _evaluate_branch(
         self, branch: str, conditions: List[str], trial_title: str
-    ) -> Tuple[float, Dict]:
-        """Helper method to evaluate a single branch."""
+    ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
+        """
+        Helper method to evaluate a single branch of an inclusion criterion.
+
+        Args:
+            branch: A single branch of an inclusion criterion to evaluate
+            conditions: List of medical conditions to check against the branch
+            trial_title: Title of the clinical trial for context
+
+        Returns:
+            Tuple containing:
+                - float: Probability of eligibility (product of all condition probabilities)
+                - Dict[str,CriterionEvaluation]: Mapping of conditions to their
+                  evaluation results, including reasons
+                - float: Cost of the GPT API call
+        """
         branch_prob = 1.0
-        branch_violations_current = {condition: [] for condition in conditions}
+        branch_condition_evaluations = {}
+        cost_sum = 0.0
 
         for condition in conditions:
             probability, reason, cost = self.evaluate_inclusion_criterion(
                 branch, condition, trial_title
             )
+            cost_sum += cost
             logger.info(
-                f"Branch evaluation: {branch}, Condition: {condition}, Probability: {probability}, Cost: {cost}"
-            )
-            branch_prob *= probability
-            if probability <= 0.0:
-                branch_violations_current[condition].append(
+                f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
+                + json.dumps(
                     {
                         "branch": branch,
-                        "reason": reason,
-                        "eligibility": probability,
+                        "condition": condition,
+                        "probability": probability,
                         "cost": cost,
                     }
                 )
+            )
+            branch_prob *= probability
+            branch_condition_evaluations[condition] = CriterionEvaluation(
+                criterion=branch,
+                reason=reason,
+                eligibility=probability,
+            )
 
             # Early exit if any condition results in zero probability
             if branch_prob <= 0.0:
                 break
 
-        return branch_prob, branch_violations_current
+        return branch_prob, branch_condition_evaluations, cost_sum
 
     def process_branches(
         self, branches: List[str], conditions: List[str], trial_title: str
-    ) -> Tuple[float, Dict[str, List[Dict]], float]:
-        """Process multiple branches and return the best probability and results.
+    ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
+        """
+        Process multiple branches and return the best probability and results.
 
         Args:
             branches: List of branch criteria to evaluate
@@ -510,38 +555,38 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         Returns:
             Tuple of (
                 max_probability: float,
-                condition_results: Dict[str, List[Dict]],
+                condition_results: Dict[str, List[CriterionEvaluation]],
                 total_cost: float
             )
         """
         branch_max_prob = 0.0
-        branch_cost = 0.0
+        branch_cost_sum = 0.0
         branch_results = {condition: [] for condition in conditions}
 
         for branch in branches:
-            branch_prob, branch_violations_current = self._evaluate_branch(
-                branch, conditions, trial_title
+            branch_prob: float
+            branch_condition_evaluations: Dict[
+                str, CriterionEvaluation
+            ]  # Maps condition (str) to evaluation found for that condition
+            branch_prob, branch_condition_evaluations, branch_cost = (
+                self._evaluate_branch(branch, conditions, trial_title)
             )
-            # Sum costs from violations
-            branch_cost += sum(
-                violation["cost"]
-                for condition_violations in branch_violations_current.values()
-                for violation in condition_violations
-            )
+            branch_cost_sum += branch_cost
             branch_max_prob = max(branch_max_prob, branch_prob)
 
             # Record which conditions met this branch
             for condition in conditions:
                 # Get the individual condition's probability for this branch
-                condition_violations = branch_violations_current[condition]
-                condition_prob = (
-                    1.0
-                    if not condition_violations
-                    else min(v["eligibility"] for v in condition_violations)
-                )
-                if condition_prob > 0:  # Only record if condition met the branch
+                if condition in branch_condition_evaluations:
+                    condition_evaluation: CriterionEvaluation = (
+                        branch_condition_evaluations[condition]
+                    )
                     branch_results[condition].append(
-                        {"branch": branch, "eligibility": condition_prob}
+                        CriterionEvaluation(
+                            criterion=branch,
+                            reason=condition_evaluation.reason,
+                            eligibility=condition_evaluation.eligibility,
+                        )
                     )
 
             # Early exit if we found a fully compatible branch
@@ -551,7 +596,44 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 )
                 break
 
-        return branch_max_prob, branch_results, branch_cost
+        return branch_max_prob, branch_results, branch_cost_sum
+
+    def _get_or_criterion_failure_reason(
+        self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
+    ) -> Tuple[str, str, str]:
+        """
+        Find and format the failure reason when all branches of an OR criterion fail.
+
+        Args:
+            branch_results: Dictionary mapping conditions to their branch evaluations
+            criterion: The original OR criterion being evaluated
+
+        Returns:
+            Tuple of (failed_condition, criterion, detailed_reason)
+        """
+        # Find the first condition that failed all branches
+        failed_condition = None
+        failed_branch_evaluations = []
+        for condition, branch_evaluations in branch_results.items():
+            # Check if all branches failed for this condition
+            if all(evaluation.eligibility <= 0.0 for evaluation in branch_evaluations):
+                # Found a condition that failed all branches
+                failed_condition = condition
+                failed_branch_evaluations = branch_evaluations
+                break
+
+        # Format the detailed failure reason
+        branch_reasons = [
+            f"Branch {i+1}: {evaluation.reason}"
+            for i, evaluation in enumerate(failed_branch_evaluations)
+        ]
+        detailed_reason = "Failed all OR branches:\n" + "\n".join(branch_reasons)
+
+        logger.info(
+            f"Condition failed all branches:\n{json.dumps({'condition': failed_condition, 'criterion': criterion, 'detailed_reason': detailed_reason}, indent=2)}"
+        )
+
+        return (failed_condition, criterion, detailed_reason)
 
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
@@ -579,8 +661,6 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criteria: Evaluating criterion: {criterion}"
             )
-            criterion_probabilities = []
-            criterion_cost = 0.0
 
             # Handle OR criterion
             if self._is_or_criterion(criterion):
@@ -590,25 +670,28 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
                 )
 
+                branch_max_prob: float
+                branch_results: Dict[str, List[CriterionEvaluation]]
+                branch_cost: float
+                # Process each branch of the OR criterion, evaluating against all conditions
+                # Returns:
+                # - branch_max_prob: Maximum probability across all branches (0-1)
+                # - branch_results: Dict mapping conditions to list of CriterionEvaluation objects
+                #   The evaluations are ordered to match the input branches, but may be incomplete
+                #   if early exit occurs when a fully compatible branch is found
+                # - branch_cost: Total API cost for evaluating all branches
                 branch_max_prob, branch_results, branch_cost = self.process_branches(
                     branches, conditions, trial_title
                 )
                 total_cost += branch_cost
-                criterion_probability = branch_max_prob
 
                 # Check if any condition failed all branches
-                for condition, met_branches in branch_results.items():
-                    if not met_branches:  # Condition failed all branches
-                        logger.info(
-                            f"Condition failed all branches: {condition}\n{json.dumps({'condition': condition, 'criterion': criterion}, indent=2)}"
-                        )
-                        failure_reason = (
-                            condition,
-                            criterion,
-                            "Failed all OR branches",
-                        )
-                        criterion_probability = 0.0
-                        break
+                if branch_max_prob <= 0.0:
+                    failure_reason = self._get_or_criterion_failure_reason(
+                        branch_results, criterion
+                    )
+                    overall_probability = 0.0
+                    break
 
             # Handle non-OR criterion
             else:
@@ -617,26 +700,12 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     probability, reason, cost = self.evaluate_inclusion_criterion(
                         criterion, condition, trial_title
                     )
-                    criterion_cost += cost
+                    overall_probability *= probability
+                    total_cost += cost
 
-                    if abs(probability) < 1e-6:
-                        criterion_probabilities = [0.0]
+                    if probability <= 0.0:
                         failure_reason = (condition, criterion, reason)
                         break
-                    criterion_probabilities.append(probability)
-
-                criterion_probability = 1.0
-                for prob in criterion_probabilities:
-                    criterion_probability *= prob
-
-                total_cost += criterion_cost
-
-            logger.info(
-                f"GPTTrialFilter.evaluate_inclusion_criteria: Criterion evaluation result\n{json.dumps({'criterion': criterion, 'eligibility': criterion_probability}, indent=2)}"
-            )
-
-            # Update overall probability
-            overall_probability *= criterion_probability
 
         if overall_probability <= 0.0 and failure_reason is None:
             raise RuntimeError(
