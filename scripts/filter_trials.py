@@ -18,7 +18,10 @@ from openai import OpenAI
 
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
-from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from clinical_trial_crawler.base.clinical_trial import (
+    ClinicalTrial,
+    ClinicalTrialsParser,
+)
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
