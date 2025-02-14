@@ -16,14 +16,22 @@ class ClinicalTrialsSpider(scrapy.Spider):
         "HTTPERROR_ALLOWED_CODES": [400, 401, 403, 404, 500],
     }
 
-    def __init__(self, exclude_completed=False, *args, **kwargs):
+    def __init__(
+        self,
+        exclude_completed=False,
+        condition=None,
+        *args,
+        **kwargs,
+    ):
         super(ClinicalTrialsSpider, self).__init__(*args, **kwargs)
         self.exclude_completed = exclude_completed
+        self.condition = condition
         self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
+        self.logger.info(f"Searching for condition: {self.condition}")
 
     def start_requests(self):
         params = {
-            "query.cond": "Nasopharyngeal Carcinoma",
+            "query.cond": self.condition,
             "format": "json",
             "pageSize": 100,
             "countTotal": "true",
@@ -204,7 +212,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
             next_page_token = data.get("nextPageToken")
             if next_page_token:
                 params = {
-                    "query.cond": "Nasopharyngeal Carcinoma",
+                    "query.cond": self.condition,
                     "format": "json",
                     "pageSize": 100,
                     "pageToken": next_page_token,
