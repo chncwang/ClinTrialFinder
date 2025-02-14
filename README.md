@@ -13,8 +13,6 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
   - Trial phase
   - Study type
   - Custom conditions and criteria
-- **Structured Data Model**: Comprehensive data classes for representing clinical trial information
-- **Caching System**: Implements response caching to optimize API usage and reduce costs
 
 ## Installation
 
