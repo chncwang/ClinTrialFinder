@@ -1,6 +1,6 @@
 # ClinTrialFinder
 
-ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4-mini to help researchers and medical professionals find relevant clinical trials based on specific conditions and criteria.
+ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4-mini to help researchers and medical professionals find relevant clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches.
 
 ## Features
 
@@ -57,7 +57,7 @@ Options:
 To filter trials based on specific conditions:
 
 ```bash
-python scripts/filter_trials.py trials.json "stage IV breast cancer" "HER2 positive" \
+python -m scripts.filter_trials trials.json "breast cancer with bone metastases" "HER2 positive" "ECOG score is 1" \
     --recruiting \
     --phase 2 \
     --exclude-study-type Observational \
@@ -72,6 +72,21 @@ Options:
 - `--output`: Specify output file path
 - `--cache-size`: Set maximum number of cached responses (default: 10000)
 - `--api-key`: Provide OpenAI API key (alternatively, use OPENAI_API_KEY environment variable)
+
+The filtering process can be pipelined by using the output file from one filtering operation as the input for the next. For example:
+
+```bash
+# First filter for breast cancer trials with bone metastases
+python -m scripts.filter_trials trials.json "breast cancer with bone metastases" --output bone_metastases_breast_cancer_trials.json
+
+# Then filter those results for HER2 positive
+python -m scripts.filter_trials bone_metastases_breast_cancer_trials.json "HER2 positive" --output her2_positive_trials.json
+
+# Finally filter those results for ECOG score is 1
+python -m scripts.filter_trials her2_positive_trials.json "ECOG score is 1" --output ecog_1_trials.json
+```
+
+This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps.
 
 ## GPT-4-mini Integration
 
@@ -133,7 +148,7 @@ This software is provided for research and informational purposes only. It is no
 
 ### Regulatory Compliance
 
-This tool is not FDA-approved and should not be used as a primary source for medical decision-making.
+This tool should not be used as a primary source for medical decision-making.
 
 BY USING THIS SOFTWARE, YOU ACKNOWLEDGE AND AGREE TO THESE TERMS AND LIMITATIONS.
 
