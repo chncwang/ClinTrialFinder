@@ -43,7 +43,7 @@ To download clinical trials data:
 
 ```bash
 cd clinical_trial_crawler
-scrapy crawl clinical_trials -a condition="cancer" -a exclude_completed=true -o trials.json
+scrapy crawl clinical_trials -a condition="breast cancer" -a exclude_completed=true -o trials.json
 ```
 
 Options:
