@@ -840,6 +840,18 @@ def save_json_file(data: List[Dict], output_path: str):
         sys.exit(1)
 
 
+def save_excluded_trials(excluded_trials: List[Dict], output_path: str):
+    """Save excluded trials with their failure reasons to a JSON file."""
+    excluded_path = output_path.replace(".json", "_excluded.json")
+    try:
+        with open(excluded_path, "w") as f:
+            json.dump(excluded_trials, f, indent=2)
+        logger.info(f"save_excluded_trials: Excluded trials saved to {excluded_path}")
+    except Exception as e:
+        logger.error(f"save_excluded_trials: Error saving excluded trials: {str(e)}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Filter clinical trials using GPT-4 based on custom conditions"
@@ -918,6 +930,7 @@ def main():
         )
 
     filtered_trials = []
+    excluded_trials = []
     total_trials = len(trials)
     total_cost = 0.0
     eligible_count = 0
@@ -932,9 +945,32 @@ def main():
         is_eligible, cost = gpt_filter.evaluate_trial(trial, args.conditions)
         total_cost += cost
 
+        trial_dict = trial.to_dict()
         if is_eligible:
-            filtered_trials.append(trial.to_dict())
+            filtered_trials.append(trial_dict)
             eligible_count += 1
+        else:
+            # Add failure reason to excluded trial
+            failure_info = {
+                "trial": trial_dict,
+                "failure_reason": {
+                    "title_evaluation": (
+                        {"probability": title_probability, "reason": title_reason}
+                        if "title_probability" in locals()
+                        else None
+                    ),
+                    "criteria_evaluation": (
+                        {
+                            "failed_condition": failure_reason[0],
+                            "failed_criterion": failure_reason[1],
+                            "reason": failure_reason[2],
+                        }
+                        if "failure_reason" in locals() and failure_reason
+                        else None
+                    ),
+                },
+            }
+            excluded_trials.append(failure_info)
 
         logger.info(
             f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
@@ -942,10 +978,15 @@ def main():
 
     # Save results
     save_json_file(filtered_trials, args.output)
+    save_excluded_trials(excluded_trials, args.output)
+
     logger.info(
         f"main: Final results: {eligible_count}/{total_trials} trials were eligible"
     )
     logger.info(f"main: Filtered trials saved to {args.output}")
+    logger.info(
+        f"main: Excluded trials saved to {args.output.replace('.json', '_excluded.json')}"
+    )
     logger.info(f"main: Total API cost: ${total_cost:.2f}")
 
 
