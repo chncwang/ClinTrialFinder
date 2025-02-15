@@ -99,6 +99,18 @@ class CriterionEvaluation:
     eligibility: float
 
 
+@dataclass
+class TrialFailureReason:
+    """Represents why a trial was deemed ineligible."""
+
+    type: str  # "title" or "inclusion_criterion"
+    message: str  # General failure message for title failures
+    # Fields specific to inclusion criterion failures
+    failed_condition: Optional[str] = None
+    failed_criterion: Optional[str] = None
+    failure_details: Optional[str] = None
+
+
 class GPTTrialFilter:
     def __init__(self, api_key: str, cache_size: int = 10000):
         self.client = OpenAI(api_key=api_key)
@@ -715,7 +727,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: list[str]
-    ) -> Tuple[bool, float, Optional[str]]:
+    ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
         Evaluate a trial's eligibility based on title and inclusion criteria.
 
@@ -728,8 +740,8 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
             - is_eligible: Whether the trial is eligible.
             - total_cost: Estimated GPT API cost for the calls.
-            - failure_reason: If ineligible, a string describing *why* it failed.
-                              If eligible, None.
+            - failure_reason: If ineligible, a TrialFailureReason object describing why it failed.
+                            If eligible, None.
         """
         # 1) Evaluate the title first
         title_probability, title_reason, title_cost = self.evaluate_title(
@@ -738,12 +750,14 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
         # If the trial fails at the title level
         if title_probability <= 0.0:
-            failure_str = f"Title check failed: {title_reason}"
+            failure = TrialFailureReason(
+                type="title", message=f"Title check failed: {title_reason}"
+            )
             logger.info(
                 f"GPTTrialFilter.evaluate_trial: Title-based ineligibility "
-                f"for {trial.identification.nct_id} | {failure_str}"
+                f"for {trial.identification.nct_id} | {failure.message}"
             )
-            return False, title_cost, failure_str
+            return False, title_cost, failure
 
         # 2) Extract and split the inclusion criteria
         try:
@@ -763,13 +777,14 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 )
             )
         except EligibilityCriteriaError as e:
-            # If the format is invalid, treat as ineligible
-            failure_str = f"Inclusion criteria format error: {str(e)}"
+            failure = TrialFailureReason(
+                type="format", message=f"Inclusion criteria format error: {str(e)}"
+            )
             logger.error(
                 f"evaluate_trial: Invalid criteria format "
-                f"for trial {trial.identification.nct_id}: {failure_str}"
+                f"for trial {trial.identification.nct_id}: {failure.message}"
             )
-            return False, title_cost, failure_str
+            return False, title_cost, failure
 
         # 3) Evaluate the inclusion criteria
         inclusion_probability, inc_failure_reason, criteria_cost = (
@@ -784,16 +799,18 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         # If it failed on an inclusion criterion
         if inc_failure_reason is not None:
             (cond_failed, crit_failed, reason) = inc_failure_reason
-            failure_str = (
-                f"Inclusion criterion failed for condition: <<{cond_failed}>>"
-                f"        Failed criterion: <<{crit_failed}>>"
-                f"        Reason: <<{reason}>>"
+            failure = TrialFailureReason(
+                type="inclusion_criterion",
+                message="Failed inclusion criterion evaluation",
+                failed_condition=cond_failed,
+                failed_criterion=crit_failed,
+                failure_details=reason,
             )
             logger.info(
                 f"evaluate_trial: Trial {trial.identification.nct_id} failed "
-                f"inclusion criteria | {failure_str}"
+                f"inclusion criteria evaluation"
             )
-            return False, total_cost, failure_str
+            return False, total_cost, failure
 
         # If overall probability is zero or near zero but no explicit inc_failure_reason
         if overall_probability <= 0.0:
@@ -931,8 +948,8 @@ def main():
             f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
 
-        # Now we unpack three values: eligibility, cost, and reason
-        is_eligible, cost, failure_reason_str = gpt_filter.evaluate_trial(
+        # Now we unpack three values: eligibility, cost, and failure reason
+        is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
             trial, args.conditions
         )
         total_cost += cost
@@ -943,13 +960,25 @@ def main():
             filtered_trials.append(trial_dict)
             eligible_count += 1
         else:
-            # If the trial is ineligible, we store minimal info plus reason
+            # If the trial is ineligible, store failure details
             excluded_info = {
                 "nct_id": trial.identification.nct_id,
                 "brief_title": trial.identification.brief_title,
                 "eligibility_criteria": trial.eligibility.criteria,
-                "failure_reason": failure_reason_str,
+                "failure_type": failure_reason.type,
+                "failure_message": failure_reason.message,
             }
+
+            # Add additional fields for inclusion criterion failures
+            if failure_reason.type == "inclusion_criterion":
+                excluded_info.update(
+                    {
+                        "failed_condition": failure_reason.failed_condition,
+                        "failed_criterion": failure_reason.failed_criterion,
+                        "failure_details": failure_reason.failure_details,
+                    }
+                )
+
             excluded_trials.append(excluded_info)
 
         logger.info(
