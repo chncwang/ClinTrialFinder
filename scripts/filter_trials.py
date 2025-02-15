@@ -715,50 +715,37 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
     def evaluate_trial(
         self, trial: ClinicalTrial, conditions: list[str]
-    ) -> Tuple[bool, float]:
-        """Evaluate a trial's eligibility based on title and inclusion criteria.
+    ) -> Tuple[bool, float, Optional[str]]:
+        """
+        Evaluate a trial's eligibility based on title and inclusion criteria.
 
         Args:
             trial: The clinical trial to evaluate
             conditions: List of conditions to check against
 
         Returns:
-            Tuple of (is_eligible: bool, total_cost: float)
+            (is_eligible, total_cost, failure_reason)
+
+            - is_eligible: Whether the trial is eligible.
+            - total_cost: Estimated GPT API cost for the calls.
+            - failure_reason: If ineligible, a string describing *why* it failed.
+                              If eligible, None.
         """
-        # Evaluate the title first
+        # 1) Evaluate the title first
         title_probability, title_reason, title_cost = self.evaluate_title(
             trial, conditions
         )
 
-        if abs(title_probability) < 1e-6:
+        # If the trial fails at the title level
+        if title_probability <= 0.0:
+            failure_str = f"Title check failed: {title_reason}"
             logger.info(
-                f"GPTTrialFilter.evaluate_trial: Trial is ineligible based on title: {trial.identification.nct_id}, {trial.identification.brief_title}, {title_reason}"
-                + json.dumps(
-                    {
-                        "trial_id": trial.identification.nct_id,
-                        "title": trial.identification.brief_title,
-                        "reason": title_reason,
-                        "eligibility": 0.0,
-                    },
-                    indent=2,
-                )
+                f"GPTTrialFilter.evaluate_trial: Title-based ineligibility "
+                f"for {trial.identification.nct_id} | {failure_str}"
             )
-            return False, title_cost
+            return False, title_cost, failure_str
 
-        logger.info(
-            f"GPTTrialFilter.evaluate_trial: Trial passed title evaluation: {trial.identification.nct_id}, {trial.identification.brief_title}, {title_reason}, {title_probability}"
-            + json.dumps(
-                {
-                    "trial_id": trial.identification.nct_id,
-                    "title": trial.identification.brief_title,
-                    "reason": title_reason,
-                    "eligibility": title_probability,
-                },
-                indent=2,
-            )
-        )
-
-        # Extract and validate inclusion criteria
+        # 2) Extract and split the inclusion criteria
         try:
             inclusion_text = self._extract_inclusion_criteria(
                 trial.eligibility.criteria
@@ -775,45 +762,47 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                     indent=2,
                 )
             )
-
         except EligibilityCriteriaError as e:
+            # If the format is invalid, treat as ineligible
+            failure_str = f"Inclusion criteria format error: {str(e)}"
             logger.error(
-                f"evaluate_trial: Invalid criteria format for trial {trial.identification.nct_id}: {str(e)}"
+                f"evaluate_trial: Invalid criteria format "
+                f"for trial {trial.identification.nct_id}: {failure_str}"
             )
-            return False, title_cost
+            return False, title_cost, failure_str
 
-        # Evaluate inclusion criteria
-        inclusion_probability, failure_reason, criteria_cost = (
+        # 3) Evaluate the inclusion criteria
+        inclusion_probability, inc_failure_reason, criteria_cost = (
             self.evaluate_inclusion_criteria(
                 inclusion_criteria, conditions, trial.identification.brief_title
             )
         )
 
-        if failure_reason:
-            condition, criterion, reason = failure_reason
-            logger.info(
-                f"evaluate_trial: Trial {trial.identification.nct_id} failed inclusion criteria"
-                + json.dumps(
-                    {
-                        "trial_id": trial.identification.nct_id,
-                        "failed_condition": condition,
-                        "failed_criterion": criterion,
-                        "failure_reason": reason,
-                    },
-                    indent=2,
-                )
-            )
-
+        total_cost = title_cost + criteria_cost
         overall_probability = title_probability * inclusion_probability
 
-        total_cost = title_cost + criteria_cost
-        is_eligible = overall_probability > 0.0
+        # If it failed on an inclusion criterion
+        if inc_failure_reason is not None:
+            (cond_failed, crit_failed, reason) = inc_failure_reason
+            failure_str = (
+                f"Inclusion criterion failed for condition: <<{cond_failed}>>"
+                f"        Failed criterion: <<{crit_failed}>>"
+                f"        Reason: <<{reason}>>"
+            )
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} failed "
+                f"inclusion criteria | {failure_str}"
+            )
+            return False, total_cost, failure_str
 
-        logger.info(
-            f"evaluate_trial: Final eligibility: {overall_probability:.4f}, title: {trial.identification.brief_title}, url: {trial.identification.url}"
-        )
+        # If overall probability is zero or near zero but no explicit inc_failure_reason
+        if overall_probability <= 0.0:
+            raise RuntimeError(
+                "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
+            )
 
-        return is_eligible, total_cost
+        # Otherwise, the trial is eligible
+        return True, total_cost, None
 
 
 def load_json_file(file_path: str) -> List[dict]:
@@ -942,43 +931,43 @@ def main():
             f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
         )
 
-        is_eligible, cost = gpt_filter.evaluate_trial(trial, args.conditions)
+        # Now we unpack three values: eligibility, cost, and reason
+        is_eligible, cost, failure_reason_str = gpt_filter.evaluate_trial(
+            trial, args.conditions
+        )
         total_cost += cost
 
-        trial_dict = trial.to_dict()
         if is_eligible:
+            # If the trial is eligible, we keep the entire record
+            trial_dict = trial.to_dict()
             filtered_trials.append(trial_dict)
             eligible_count += 1
         else:
-            # Add failure reason to excluded trial
-            failure_info = {
-                "trial": trial_dict,
-                "failure_reason": {
-                    "title_evaluation": (
-                        {"probability": title_probability, "reason": title_reason}
-                        if "title_probability" in locals()
-                        else None
-                    ),
-                    "criteria_evaluation": (
-                        {
-                            "failed_condition": failure_reason[0],
-                            "failed_criterion": failure_reason[1],
-                            "reason": failure_reason[2],
-                        }
-                        if "failure_reason" in locals() and failure_reason
-                        else None
-                    ),
-                },
+            # If the trial is ineligible, we store minimal info plus reason
+            excluded_info = {
+                "nct_id": trial.identification.nct_id,
+                "brief_title": trial.identification.brief_title,
+                "eligibility_criteria": trial.eligibility.criteria,
+                "failure_reason": failure_reason_str,
             }
-            excluded_trials.append(failure_info)
+            excluded_trials.append(excluded_info)
 
         logger.info(
             f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
         )
 
-    # Save results
+    # Save the passing (filtered) trials
     save_json_file(filtered_trials, args.output)
-    save_excluded_trials(excluded_trials, args.output)
+
+    # Save the excluded trials
+    excluded_path = args.output.replace(".json", "_excluded.json")
+    try:
+        with open(excluded_path, "w") as f:
+            json.dump(excluded_trials, f, indent=2)
+        logger.info(f"Excluded trials saved to {excluded_path}")
+    except Exception as e:
+        logger.error(f"Error saving excluded trials: {str(e)}")
+        sys.exit(1)
 
     logger.info(
         f"main: Final results: {eligible_count}/{total_trials} trials were eligible"
