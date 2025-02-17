@@ -170,6 +170,15 @@ When executing `scripts/filter_trials.py`, the system maintains detailed logs in
 
 Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log`
 
+## Future Work
+
+Future work will:
+
+1. Add support for exclusion criteria evaluation and reporting, enabling comprehensive trial eligibility assessment
+2. Rank the filtered trials by expected outcome by analyzing metrics like PFS (Progression-Free Survival) and ORR (Objective Response Rate) from previous phases of the same drug/treatment to help prioritize more promising trials
+3. Implement title and criteria vectorization for fast semantic search, enabling rapid trial filtering without repeated GPT API calls
+4. Leverage GPT to generate optimized search keywords from patient conditions, enabling more efficient and targeted trial discovery
+
 ## Contributing
 
 ### Submitting Changes
