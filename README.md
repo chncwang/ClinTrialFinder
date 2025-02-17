@@ -88,6 +88,66 @@ python -m scripts.filter_trials her2_positive_trials.json "ECOG score is 1" --ou
 
 This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps.
 
+## Output File Formats
+
+The filtering process generates two JSON files:
+
+1. **Filtered Trials** (`filtered_trials.json`): Contains the complete trial records that passed all filtering criteria
+2. **Excluded Trials** (`filtered_trials_excluded.json`): Contains information about trials that were excluded and why they failed the filtering criteria
+
+### Filtered Trials Format
+
+The filtered trials JSON file contains the complete trial records that passed all criteria checks. Each trial entry preserves all fields from the original ClinicalTrials.gov data structure.
+
+### Excluded Trials Format
+
+The excluded trials JSON file contains entries for trials that failed the filtering criteria. Each entry includes:
+
+#### Common Fields
+
+- `nct_id`: The ClinicalTrials.gov identifier
+- `brief_title`: The trial's brief title
+- `eligibility_criteria`: The complete eligibility criteria text
+- `failure_type`: The type of failure ("title" or "inclusion_criterion")
+- `failure_message`: A general message about why the trial was excluded
+
+#### Title-Based Exclusion Example
+
+When a trial is excluded based on title evaluation:
+
+```json
+{
+    "nct_id": "NCT05020860",
+    "brief_title": "Correlation of Clinical Response to Pathologic Response in Patients With Early Breast Cancer",
+    "eligibility_criteria": "...",
+    "failure_type": "title",
+    "failure_message": "Title check failed: The trial title focuses on early breast cancer and the correlation of clinical response to pathologic response, which does not specifically address patients with breast cancer that has metastasized to the bone, HER2 positive status, or an ECOG score of 1. Therefore, it is not suitable for the specified patient conditions."
+}
+```
+
+#### Inclusion Criteria-Based Exclusion Example
+
+When a trial is excluded based on inclusion criteria evaluation, additional fields are included:
+
+```json
+{
+    "nct_id": "NCT04561362",
+    "brief_title": "Study BT8009-100 in Subjects With Nectin-4 Expressing Advanced Malignancies",
+    "eligibility_criteria": "...",
+    "failure_type": "inclusion_criterion",
+    "failure_message": "Failed inclusion criterion evaluation",
+    "failed_condition": "HER2 positive",
+    "failed_criterion": "Patients with locally advanced (unresectable) or metastatic, histologically confirmed breast cancer, either TNBC or hormone receptor (HR) positive and HER-2 negative according to ASCO/CAP guidelines and up to 3 prior lines of therapy for advanced (unresectable) or metastatic disease.",
+    "failure_details": "Failed all OR branches:\nBranch 1: The inclusion criterion specifies patients with histologically confirmed breast cancer, specifically mentioning triple-negative breast cancer (TNBC). HER2 positive breast cancer does not fall under the TNBC category, which makes this inclusion criterion incompatible with the patient's condition.\nBranch 2: The inclusion criterion specifies that patients must have breast cancer that is hormone receptor positive and HER-2 negative. Since the patient condition is HER2 positive, it does not meet the inclusion criterion."
+}
+```
+
+For inclusion criteria failures, these additional fields provide detailed information:
+
+- `failed_condition`: The specific condition that failed to meet the criteria
+- `failed_criterion`: The exact criterion that caused the failure
+- `failure_details`: Detailed explanation of why the condition failed to meet the criterion, including analysis of different branches for OR-type criteria
+
 ## GPT-4-mini Integration
 
 The system uses GPT-4-mini to:
@@ -131,7 +191,7 @@ This software is provided for research and informational purposes only. It is no
 ### Important Notes
 
 1. The information retrieved by this tool from ClinicalTrials.gov may be incomplete, outdated, or inaccurate.
-2. The GPT-4 filtering system, while sophisticated, may occasionally:
+2. The GPT-4-mini filtering system, while sophisticated, may occasionally:
    - Miss relevant trials
    - Include irrelevant trials
    - Misinterpret eligibility criteria
