@@ -156,7 +156,6 @@ The system uses GPT-4-mini to:
 2. Parse and split inclusion criteria
 3. Evaluate individual criteria against conditions
 4. Handle complex OR/AND logic in criteria
-Responses are cached to optimize API usage and reduce costs.
 
 ## Logging
 
@@ -166,6 +165,7 @@ When executing `scripts/filter_trials.py`, the system maintains detailed logs in
 - GPT-4 API costs
 - Eligibility decisions and reasons
 - Error messages and debugging information
+
 Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log`
 
 ## Contributing
