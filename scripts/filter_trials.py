@@ -112,7 +112,7 @@ class TrialFailureReason:
 
 
 class GPTTrialFilter:
-    def __init__(self, api_key: str, cache_size: int = 10000):
+    def __init__(self, api_key: str, cache_size: int = 100000):
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(max_size=cache_size)
 
@@ -883,7 +883,7 @@ def main():
     parser.add_argument(
         "--cache-size",
         type=int,
-        default=10000,
+        default=100000,
         help="Maximum number of cached responses to keep",
     )
     # Add new arguments from parse_trials.py
