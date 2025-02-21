@@ -35,35 +35,22 @@ class ClinicalTrialsSpider(scrapy.Spider):
         if specific_trial:
             self.logger.info(f"Fetching specific trial: {specific_trial}")
 
-    def start_requests(self):
-        if self.specific_trial:
-            # If fetching a specific trial, use a different API endpoint
-            params = {
-                "format": "json",
-                "fields": "ProtocolSection",
-                "markupFormat": "markdown",
-            }
-            url = f"{self.api_base_url}/{self.specific_trial}?{urlencode(params)}"
-            yield scrapy.Request(
-                url=url,
-                callback=self.parse_single_trial,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-                errback=self.handle_error,
-                dont_filter=True,
+    def get_base_params(self):
+        """Get common request parameters"""
+        params = {
+            "format": "json",
+            "fields": "ProtocolSection",
+            "markupFormat": "markdown",
+        }
+
+        if not self.specific_trial:
+            params.update(
+                {
+                    "query.cond": self.condition,
+                    "pageSize": 100,
+                    "countTotal": "true",
+                }
             )
-        else:
-            # Original code for condition-based search
-            params = {
-                "query.cond": self.condition,
-                "format": "json",
-                "pageSize": 100,
-                "countTotal": "true",
-                "fields": "ProtocolSection",
-                "markupFormat": "markdown",
-            }
 
             if self.exclude_completed:
                 params["filter.overallStatus"] = (
@@ -71,17 +58,30 @@ class ClinicalTrialsSpider(scrapy.Spider):
                     "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
                 )
 
+        return params
+
+    def create_request(self, url, callback):
+        """Create a standardized request object"""
+        return scrapy.Request(
+            url=url,
+            callback=callback,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            errback=self.handle_error,
+            dont_filter=True,
+        )
+
+    def start_requests(self):
+        params = self.get_base_params()
+
+        if self.specific_trial:
+            url = f"{self.api_base_url}/{self.specific_trial}?{urlencode(params)}"
+            yield self.create_request(url, self.parse_single_trial)
+        else:
             url = f"{self.api_base_url}?{urlencode(params)}"
-            yield scrapy.Request(
-                url=url,
-                callback=self.parse,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-                errback=self.handle_error,
-                dont_filter=True,
-            )
+            yield self.create_request(url, self.parse)
 
     def safe_get(self, d, *keys, default=None):
         """Safely get nested dictionary values"""
@@ -107,165 +107,16 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             for study in studies:
-                protocol = self.safe_get(study, "protocolSection", default={})
-                nct_id = self.safe_get(protocol, "identificationModule", "nctId")
-
-                yield {
-                    "identification": {
-                        "nct_id": nct_id,
-                        "url": (
-                            f"https://clinicaltrials.gov/study/{nct_id}"
-                            if nct_id
-                            else None
-                        ),
-                        "brief_title": self.safe_get(
-                            protocol, "identificationModule", "briefTitle"
-                        ),
-                        "official_title": self.safe_get(
-                            protocol, "identificationModule", "officialTitle"
-                        ),
-                        "acronym": self.safe_get(
-                            protocol, "identificationModule", "acronym"
-                        ),
-                        "org_study_id": self.safe_get(
-                            protocol, "identificationModule", "orgStudyIdInfo", "id"
-                        ),
-                    },
-                    "status": {
-                        "overall_status": self.safe_get(
-                            protocol, "statusModule", "overallStatus"
-                        ),
-                        "start_date": self.safe_get(
-                            protocol, "statusModule", "startDateStruct", "date"
-                        ),
-                        "completion_date": self.safe_get(
-                            protocol, "statusModule", "completionDateStruct", "date"
-                        ),
-                        "primary_completion_date": self.safe_get(
-                            protocol,
-                            "statusModule",
-                            "primaryCompletionDateStruct",
-                            "date",
-                        ),
-                    },
-                    "description": {
-                        "brief_summary": self.safe_get(
-                            protocol, "descriptionModule", "briefSummary"
-                        ),
-                        "detailed_description": self.safe_get(
-                            protocol, "descriptionModule", "detailedDescription"
-                        ),
-                        "conditions": self.safe_get(
-                            protocol, "descriptionModule", "conditions"
-                        ),
-                        "keywords": self.safe_get(
-                            protocol, "descriptionModule", "keywords"
-                        ),
-                    },
-                    "design": {
-                        "study_type": self.safe_get(
-                            protocol, "designModule", "studyType"
-                        ),
-                        "phases": self.safe_get(
-                            protocol, "designModule", "phases", default=[]
-                        ),
-                        "enrollment": self.safe_get(
-                            protocol, "designModule", "enrollmentInfo", "count"
-                        ),
-                        "arms": [
-                            {
-                                "name": self.safe_get(arm, "name"),
-                                "type": self.safe_get(arm, "type"),
-                                "description": self.safe_get(arm, "description"),
-                                "interventions": self.safe_get(
-                                    arm, "interventionNames", default=[]
-                                ),
-                            }
-                            for arm in self.safe_get(
-                                protocol, "designModule", "arms", default=[]
-                            )
-                        ],
-                    },
-                    "eligibility": {
-                        "criteria": self.safe_get(
-                            protocol, "eligibilityModule", "eligibilityCriteria"
-                        ),
-                        "gender": self.safe_get(protocol, "eligibilityModule", "sex"),
-                        "minimum_age": self.safe_get(
-                            protocol, "eligibilityModule", "minimumAge"
-                        ),
-                        "maximum_age": self.safe_get(
-                            protocol, "eligibilityModule", "maximumAge"
-                        ),
-                        "healthy_volunteers": self.safe_get(
-                            protocol, "eligibilityModule", "healthyVolunteers"
-                        ),
-                    },
-                    "contacts_locations": {
-                        "locations": [
-                            {
-                                "facility": self.safe_get(loc, "facility", "name"),
-                                "city": self.safe_get(loc, "facility", "city"),
-                                "state": self.safe_get(loc, "facility", "state"),
-                                "country": self.safe_get(loc, "facility", "country"),
-                                "status": self.safe_get(loc, "status"),
-                            }
-                            for loc in self.safe_get(
-                                protocol,
-                                "contactsLocationsModule",
-                                "locations",
-                                default=[],
-                            )
-                        ],
-                    },
-                    "sponsor": {
-                        "lead_sponsor": self.safe_get(
-                            protocol,
-                            "sponsorCollaboratorsModule",
-                            "leadSponsor",
-                            "name",
-                        ),
-                        "collaborators": [
-                            self.safe_get(collab, "name", default="")
-                            for collab in self.safe_get(
-                                protocol,
-                                "sponsorCollaboratorsModule",
-                                "collaborators",
-                                default=[],
-                            )
-                        ],
-                    },
-                }
+                if "protocolSection" in study:
+                    yield self.extract_trial_data(study["protocolSection"])
 
             # Handle pagination
             next_page_token = data.get("nextPageToken")
             if next_page_token:
-                params = {
-                    "query.cond": self.condition,
-                    "format": "json",
-                    "pageSize": 100,
-                    "pageToken": next_page_token,
-                    "fields": "ProtocolSection",
-                    "markupFormat": "markdown",
-                }
-
-                if self.exclude_completed:
-                    params["filter.overallStatus"] = (
-                        "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
-                        "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
-                    )
-
+                params = self.get_base_params()
+                params["pageToken"] = next_page_token
                 next_url = f"{self.api_base_url}?{urlencode(params)}"
-                yield scrapy.Request(
-                    url=next_url,
-                    callback=self.parse,
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    errback=self.handle_error,
-                    dont_filter=True,
-                )
+                yield self.create_request(next_url, self.parse)
 
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to parse JSON response: {e}")
@@ -289,19 +140,11 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 self.logger.error(f"Error response {response.status}: {response.text}")
                 return
 
-            # Debug: Log the raw response
-            self.logger.info(f"Response text: {response.text[:200]}...")
-
             data = json.loads(response.text)
 
-            # Debug: Log the parsed data structure
-            self.logger.info(f"Parsed data keys: {list(data.keys())}")
-
-            # The API v2 response structure is different - it doesn't have a 'study' wrapper
             if "protocolSection" in data:
                 trial_data = self.extract_trial_data(data["protocolSection"])
-                # Write directly to the output file
-                if hasattr(self, "output_file") and self.output_file:
+                if self.output_file:
                     with open(self.output_file, "w") as f:
                         json.dump([trial_data], f)
                 return trial_data
