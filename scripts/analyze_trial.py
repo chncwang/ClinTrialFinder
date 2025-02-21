@@ -24,6 +24,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Ensure logger is set to INFO level
 
 
 def fetch_trial_data(nct_id: str) -> list[dict]:
@@ -109,62 +110,62 @@ def log_trial_info(trial: ClinicalTrial):
         logger.info(f"Acronym: {trial.identification.acronym}")
 
     # Status Information
-    logger.info("\n=== Status ===")
-    logger.info(f"Current Status: {trial.status.overall_status}")
+    logger.debug("\n=== Status ===")
+    logger.debug(f"Current Status: {trial.status.overall_status}")
     if trial.status.start_date:
-        logger.info(f"Start Date: {trial.status.start_date.strftime('%Y-%m-%d')}")
+        logger.debug(f"Start Date: {trial.status.start_date.strftime('%Y-%m-%d')}")
     if trial.status.completion_date:
-        logger.info(
+        logger.debug(
             f"Completion Date: {trial.status.completion_date.strftime('%Y-%m-%d')}"
         )
     if trial.study_duration_days is not None:
-        logger.info(f"Study Duration: {format_duration(trial.study_duration_days)}")
+        logger.debug(f"Study Duration: {format_duration(trial.study_duration_days)}")
 
     # Description
-    logger.info("\n=== Description ===")
-    logger.info("Brief Summary:")
-    logger.info(trial.description.brief_summary)
+    logger.debug("\n=== Description ===")
+    logger.debug("Brief Summary:")
+    logger.debug(trial.description.brief_summary)
     if trial.description.conditions:
-        logger.info("\nConditions:")
+        logger.debug("\nConditions:")
         for condition in trial.description.conditions:
-            logger.info(f"- {condition}")
+            logger.debug(f"- {condition}")
     if trial.description.keywords:
-        logger.info("\nKeywords:")
+        logger.debug("\nKeywords:")
         for keyword in trial.description.keywords:
-            logger.info(f"- {keyword}")
+            logger.debug(f"- {keyword}")
 
     # Design
-    logger.info("\n=== Study Design ===")
-    logger.info(f"Study Type: {trial.design.study_type}")
+    logger.debug("\n=== Study Design ===")
+    logger.debug(f"Study Type: {trial.design.study_type}")
     if trial.design.phases:
-        logger.info(
+        logger.debug(
             f"Phase{'s' if len(trial.design.phases) > 1 else ''}: {', '.join(map(str, trial.design.phases))}"
         )
-    logger.info(f"Enrollment: {trial.design.enrollment} participants")
+    logger.debug(f"Enrollment: {trial.design.enrollment} participants")
 
     if trial.design.arms:
-        logger.info("\nStudy Arms:")
+        logger.debug("\nStudy Arms:")
         for arm in trial.design.arms:
-            logger.info(f"\n- Name: {arm.get('name', 'Not specified')}")
-            logger.info(f"  Type: {arm.get('type', 'Not specified')}")
+            logger.debug(f"\n- Name: {arm.get('name', 'Not specified')}")
+            logger.debug(f"  Type: {arm.get('type', 'Not specified')}")
             if arm.get("description"):
-                logger.info(f"  Description: {arm['description']}")
+                logger.debug(f"  Description: {arm['description']}")
             if arm.get("interventions"):
-                logger.info(f"  Interventions: {', '.join(arm['interventions'])}")
+                logger.debug(f"  Interventions: {', '.join(arm['interventions'])}")
 
     # Eligibility
-    logger.info("\n=== Eligibility Criteria ===")
-    logger.info(trial.eligibility.criteria)
-    logger.info(f"\nGender: {trial.eligibility.gender}")
-    logger.info(
+    logger.debug("\n=== Eligibility Criteria ===")
+    logger.debug(trial.eligibility.criteria)
+    logger.debug(f"\nGender: {trial.eligibility.gender}")
+    logger.debug(
         f"Age Range: {trial.eligibility.minimum_age} to {trial.eligibility.maximum_age}"
     )
-    logger.info(
+    logger.debug(
         f"Healthy Volunteers: {'Accepted' if trial.eligibility.healthy_volunteers else 'Not accepted'}"
     )
 
     # Locations
-    logger.info("\n=== Study Locations ===")
+    logger.debug("\n=== Study Locations ===")
     for location in trial.contacts_locations.locations:
         location_parts = []
         if location.facility:
@@ -178,15 +179,15 @@ def log_trial_info(trial: ClinicalTrial):
 
         location_str = " - ".join(location_parts)
         status_str = f" ({location.status})" if location.status else ""
-        logger.info(f"- {location_str}{status_str}")
+        logger.debug(f"- {location_str}{status_str}")
 
     # Sponsor Information
-    logger.info("\n=== Sponsorship ===")
-    logger.info(f"Lead Sponsor: {trial.sponsor.lead_sponsor}")
+    logger.debug("\n=== Sponsorship ===")
+    logger.debug(f"Lead Sponsor: {trial.sponsor.lead_sponsor}")
     if trial.sponsor.collaborators:
-        logger.info("Collaborators:")
+        logger.debug("Collaborators:")
         for collaborator in trial.sponsor.collaborators:
-            logger.info(f"- {collaborator}")
+            logger.debug(f"- {collaborator}")
 
 
 def main():
