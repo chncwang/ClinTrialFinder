@@ -76,6 +76,29 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
             logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
 
 
+def build_drug_keywords_prompt(trial: ClinicalTrial) -> str:
+    """
+    Build a prompt to generate drug name keywords for web search based on the trial's brief title.
+
+    Args:
+        trial: ClinicalTrial object containing the trial information
+
+    Returns:
+        str: A formatted prompt for generating drug name keywords
+    """
+    prompt = (
+        "Please analyze the following clinical trial title and return a JSON list of drug names and compounds:\n\n"
+        f"Trial Title: {trial.identification.brief_title}\n\n"
+        "Return a JSON array containing:\n"
+        "- Drug names explicitly mentioned in the title\n"
+        "- Relevant drug classes or therapeutic categories if no specific drugs are named\n\n"
+        "Example response:\n"
+        '["rituximab", "cyclophosphamide", "doxorubicin", "vincristine"]\n\n'
+        "Return only the JSON array with no other text."
+    )
+    return prompt
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
@@ -113,11 +136,14 @@ def main():
         logger.error(f"Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
-    # Build the prompt
+    # Build the prompts
+    drug_keywords_prompt = build_drug_keywords_prompt(trial)
+    logger.info(f"Drug Keywords Prompt:\n{drug_keywords_prompt}")
+
     prompt = build_recommendation_prompt(clinical_record, trial)
     logger.info(f"Recommendation Prompt:\n{prompt}")
 
-    # TODO: Call the AI API with the prompt
+    # TODO: Call the AI API with the prompts
 
 
 if __name__ == "__main__":
