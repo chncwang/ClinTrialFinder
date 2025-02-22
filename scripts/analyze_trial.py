@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.pricing import OpenAITokenPricing
 from base.prompt_cache import PromptCache
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
@@ -147,10 +148,8 @@ def analyze_drug_keywords(
         # Cache the result
         cache.set(prompt, temperature=0.1, result=result)
 
-        # Calculate approximate cost
-        input_tokens = len(prompt) * 0.25
-        output_tokens = len(result) * 0.25
-        cost = input_tokens * 0.15e-6 + output_tokens * 0.6e-6
+        # Calculate cost using the pricing utility
+        cost = OpenAITokenPricing.calculate_cost(prompt, result)
 
         return json.loads(result), cost
 
