@@ -19,6 +19,7 @@ from openai import OpenAI
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.gpt_client import GPTClient
 from base.pricing import OpenAITokenPricing
 from base.prompt_cache import PromptCache
 
@@ -62,8 +63,13 @@ class TrialFailureReason:
 
 class GPTTrialFilter:
     def __init__(self, api_key: str, cache_size: int = 100000):
-        self.client = OpenAI(api_key=api_key)
-        self.cache = PromptCache(max_size=cache_size)
+        self.gpt_client = GPTClient(
+            api_key=api_key,
+            model="gpt-4o-mini",
+            cache_size=cache_size,
+            temperature=0.1,
+            max_retries=3,
+        )
 
     def _call_gpt(
         self,
@@ -73,58 +79,23 @@ class GPTTrialFilter:
         refresh_cache: bool = False,
     ) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
-        # Check cache first, unless refresh_cache is True
-        if not refresh_cache:
-            cached_result = self.cache.get(prompt, temperature)
-            if cached_result is not None:
-                logger.debug("GPTTrialFilter._call_gpt: Using cached result")
-                return cached_result, 0.0
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_role},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=temperature,
-            )
-
-            result = response.choices[0].message.content
-            # Move caching responsibility to the cache class
-            self.cache.set(prompt, temperature, result)
-
-            # Calculate cost using OpenAITokenPricing
-            cost = OpenAITokenPricing.calculate_cost(prompt + system_role, result)
-            return result, cost
-
-        except Exception as e:
-            logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
-            raise
+        return self.gpt_client.call_gpt(
+            prompt,
+            system_role,
+            temperature=temperature,
+            refresh_cache=refresh_cache,
+            response_format={"type": "json_object"},
+        )
 
     def _call_gpt_with_retry(
         self, prompt: str, system_role: str, max_retries: int = 3
     ) -> Tuple[str, float]:
-        for attempt in range(max_retries):
-            try:
-                # Pass refresh_cache=True on retry attempts
-                response, cost = self._call_gpt(
-                    prompt,
-                    system_role,
-                    temperature=0.1,
-                    refresh_cache=(attempt > 0),  # Refresh cache on retry attempts
-                )
-                # Validate JSON before returning
-                json.loads(response)
-                return response, cost
-            except json.JSONDecodeError:
-                if attempt == max_retries - 1:
-                    logger.warning(
-                        f"GPTTrialFilter._call_gpt_with_retry: Failed after {max_retries} attempts"
-                    )
-                    raise
-                time.sleep(2**attempt)  # Exponential backoff
+        return self.gpt_client.call_with_retry(
+            prompt,
+            system_role,
+            response_format={"type": "json_object"},
+            validate_json=True,
+        )
 
     def _parse_gpt_response(self, response_content: str) -> dict:
         """Parse GPT response content into JSON, with error handling."""
