@@ -2,6 +2,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -9,10 +10,12 @@ from typing import Any, Dict, Optional
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
+from openai import OpenAI
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.prompt_cache import PromptCache
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
@@ -99,6 +102,63 @@ def build_drug_keywords_prompt(trial: ClinicalTrial) -> str:
     return prompt
 
 
+def analyze_drug_keywords(
+    trial: ClinicalTrial, api_key: str, cache_size: int = 10000
+) -> tuple[list[str], float]:
+    """
+    Analyze trial title to extract drug names and compounds using GPT with caching.
+
+    Args:
+        trial: ClinicalTrial object containing trial information
+        api_key: OpenAI API key
+        cache_size: Maximum number of cached responses to keep
+
+    Returns:
+        Tuple of (list of drug keywords, API cost)
+    """
+    client = OpenAI(api_key=api_key)
+    cache = PromptCache(max_size=cache_size)
+
+    # Build the prompt
+    prompt = build_drug_keywords_prompt(trial)
+
+    # Check cache first
+    cached_result = cache.get(prompt, temperature=0.1)
+    if cached_result is not None:
+        return json.loads(cached_result), 0.0
+
+    try:
+        # Make API call if not cached
+        response = client.chat.completions.create(
+            model="gpt-4-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a clinical trial analyst focused on identifying drug names and compounds.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+
+        result = response.choices[0].message.content
+
+        # Cache the result
+        cache.set(prompt, temperature=0.1, result=result)
+
+        # Calculate approximate cost
+        input_tokens = len(prompt) * 0.25
+        output_tokens = len(result) * 0.25
+        cost = input_tokens * 0.15e-6 + output_tokens * 0.6e-6
+
+        return json.loads(result), cost
+
+    except Exception as e:
+        logger.error(f"Error in GPT drug keyword analysis: {str(e)}")
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
@@ -107,7 +167,25 @@ def main():
     parser.add_argument(
         "--input_file", help="Path to the input text file containing clinical record"
     )
+    parser.add_argument(
+        "--api-key",
+        help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
+    )
+    parser.add_argument(
+        "--cache-size",
+        type=int,
+        default=10000,
+        help="Maximum number of cached responses to keep",
+    )
     args = parser.parse_args()
+
+    # Get API key from arguments or environment
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error(
+            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+        )
+        sys.exit(1)
 
     # Read clinical record from input file if specified
     if args.input_file:
@@ -136,11 +214,16 @@ def main():
         logger.error(f"Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
-    # Build the prompts
-    drug_keywords_prompt = build_drug_keywords_prompt(trial)
-    logger.info(f"Drug Keywords Prompt:\n{drug_keywords_prompt}")
-
-    # TODO: Call the AI API with the prompts
+    # Get drug keywords with caching
+    try:
+        drug_keywords, cost = analyze_drug_keywords(
+            trial, api_key, cache_size=args.cache_size
+        )
+        logger.info(f"Identified drug keywords: {drug_keywords}")
+        logger.info(f"API cost: ${cost:.4f}")
+    except Exception as e:
+        logger.error(f"Failed to analyze drug keywords: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
