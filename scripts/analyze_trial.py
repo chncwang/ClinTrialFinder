@@ -190,36 +190,38 @@ def log_trial_info(trial: ClinicalTrial):
             logger.debug(f"- {collaborator}")
 
 
-def build_recommendation_prompt(information: str) -> str:
+def build_recommendation_prompt(clinical_record: str, trial_info: str) -> str:
     """
-    Constructs a prompt for an AI to evaluate information and return a recommendation level.
+    Constructs a prompt for an AI to evaluate patient clinical record against trial information
+    and return a recommendation level based on potential benefit to the patient.
 
     Parameters:
-    - information (str): The information to be evaluated by the AI.
+    - clinical_record (str): The patient's clinical record to be evaluated
+    - trial_info (str): The clinical trial information to compare against
 
     Returns:
     - str: A formatted prompt string for the AI.
     """
     prompt = (
-        "You are an AI designed to evaluate and provide recommendations based on given criteria. "
-        "Your task is to assess the provided information and return a recommendation level. "
+        "You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care. "
+        "Your task is to assess if a clinical trial would be beneficial for a patient. "
+        "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
         "The possible recommendation levels are:\n\n"
         "- Strongly Recommended\n"
         "- Recommended\n"
         "- Neutral\n"
         "- Not Recommended\n\n"
         "Instructions:\n"
-        "1. Carefully analyze the provided information.\n"
-        "2. Consider the relevance, quality, and impact of the information.\n"
-        "3. Based on your analysis, choose the most appropriate recommendation level from the list above.\n"
-        "4. Provide a brief explanation for your choice.\n\n"
-        "Example:\n\n"
-        'Information: "The product has received excellent reviews for its durability and performance, '
-        'but it is slightly more expensive than its competitors."\n'
-        "Recommendation Level: Strongly Recommended\n"
-        "Explanation: The product's excellent reviews for durability and performance outweigh the higher cost, "
-        "making it a strong choice.\n\n"
-        f'Information: "{information}"\n'
+        "1. Carefully analyze the patient's clinical record and trial details.\n"
+        "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
+        "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
+        "4. Evaluate risks vs potential benefits for the patient's condition.\n"
+        "5. Factor in alternative treatment options available to the patient.\n"
+        "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
+        "7. Provide an explanation that includes relevant research findings on similar treatments.\n\n"
+        f'Clinical Record:\n"{clinical_record}"\n'
+        f'Trial Information:\n"{trial_info}"\n'
+        "Please search for and analyze published research on similar treatments, then provide:\n"
         "Recommendation Level: "
     )
     return prompt
