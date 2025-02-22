@@ -195,7 +195,26 @@ def main():
         description="Analyze and display clinical trial information"
     )
     parser.add_argument("nct_id", help="NCT ID of the trial to analyze")
+    parser.add_argument(
+        "--input_file", help="Path to the input text file containing clinical record"
+    )
     args = parser.parse_args()
+
+    # Read clinical record from input file if specified
+    if args.input_file:
+        try:
+            with open(args.input_file, "r") as file:
+                clinical_record = file.read().strip()
+                logger.info(f"Read clinical record from {args.input_file}")
+                # Process the clinical record as needed
+                # For example, you might parse it or log it
+                logger.info(f"Clinical Record Content: {clinical_record[:200]}...")
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {args.input_file}")
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"Error reading input file: {e}")
+            sys.exit(1)
 
     # Fetch and parse the trial data
     json_data = fetch_trial_data(args.nct_id)
