@@ -19,6 +19,7 @@ from openai import OpenAI
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.pricing import OpenAITokenPricing
 from base.prompt_cache import PromptCache
 
 # Configure logging
@@ -94,11 +95,8 @@ class GPTTrialFilter:
             # Move caching responsibility to the cache class
             self.cache.set(prompt, temperature, result)
 
-            # Calculate cost
-            input_string_length = len(prompt) + len(system_role)
-            estimated_input_tokens = input_string_length * 0.25
-            estimated_output_tokens = len(result) * 0.25
-            cost = estimated_input_tokens * 0.15e-6 + estimated_output_tokens * 0.6e-6
+            # Calculate cost using OpenAITokenPricing
+            cost = OpenAITokenPricing.calculate_cost(prompt + system_role, result)
             return result, cost
 
         except Exception as e:
