@@ -76,56 +76,6 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
             logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
 
 
-def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial) -> str:
-    """
-    Constructs a prompt for an AI to evaluate patient clinical record against trial information
-    and return a recommendation level based on potential benefit to the patient.
-
-    Parameters:
-    - clinical_record (str): The patient's clinical record to be evaluated
-    - trial_info (ClinicalTrial): The clinical trial information to compare against
-
-    Returns:
-    - str: A formatted prompt string for the AI.
-    """
-    trial_info_str = (
-        f"NCT ID: {trial_info.identification.nct_id}\n"
-        f"URL: {trial_info.identification.url}\n"
-        f"Brief Title: {trial_info.identification.brief_title}\n"
-        f"Official Title: {trial_info.identification.official_title}\n"
-        f"Overall Status: {trial_info.status.overall_status}\n"
-        f"Brief Summary: {trial_info.description.brief_summary}\n"
-        f"Detailed Description: {trial_info.description.detailed_description}\n"
-        f"Study Type: {trial_info.design.study_type}\n"
-        f"Phases: {', '.join(map(str, trial_info.design.phases))}\n"
-        f"Arms: {json.dumps(trial_info.design.arms, indent=2)}\n"
-        f"Lead Sponsor: {trial_info.sponsor.lead_sponsor}\n"
-        f"Collaborators: {', '.join(trial_info.sponsor.collaborators)}"
-    )
-    prompt = (
-        "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
-        "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
-        "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation.</task>\n\n"
-        "<recommendation_levels>The possible recommendation levels are:\n\n"
-        "- Strongly Recommended\n"
-        "- Recommended\n"
-        "- Neutral\n"
-        "- Not Recommended</recommendation_levels>\n\n"
-        "<instructions>Instructions:\n"
-        "1. Carefully analyze the patient's clinical record and trial details.\n"
-        "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
-        "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
-        "4. Evaluate risks vs potential benefits for the patient's condition.\n"
-        "5. Factor in alternative treatment options available to the patient.\n"
-        "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
-        "7. Provide an explanation that includes relevant research findings on similar treatments.</instructions>\n\n"
-        f'<clinical_record>Clinical Record:\n"{clinical_record}"</clinical_record>\n\n'
-        f'<trial_info>Trial Information:\n"{trial_info_str}"</trial_info>\n\n'
-        "<output_request>Please search for and analyze published research on similar treatments, then provide your explanation and recommendation level."
-    )
-    return prompt
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
