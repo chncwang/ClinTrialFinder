@@ -130,7 +130,7 @@ def analyze_drug_keywords(
     try:
         # Make API call if not cached
         response = client.chat.completions.create(
-            model="gpt-4-mini",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
