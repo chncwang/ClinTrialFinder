@@ -190,18 +190,32 @@ def log_trial_info(trial: ClinicalTrial):
             logger.debug(f"- {collaborator}")
 
 
-def build_recommendation_prompt(clinical_record: str, trial_info: str) -> str:
+def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial) -> str:
     """
     Constructs a prompt for an AI to evaluate patient clinical record against trial information
     and return a recommendation level based on potential benefit to the patient.
 
     Parameters:
     - clinical_record (str): The patient's clinical record to be evaluated
-    - trial_info (str): The clinical trial information to compare against
+    - trial_info (ClinicalTrial): The clinical trial information to compare against
 
     Returns:
     - str: A formatted prompt string for the AI.
     """
+    trial_info_str = (
+        f"NCT ID: {trial_info.identification.nct_id}\n"
+        f"URL: {trial_info.identification.url}\n"
+        f"Brief Title: {trial_info.identification.brief_title}\n"
+        f"Official Title: {trial_info.identification.official_title}\n"
+        f"Overall Status: {trial_info.status.overall_status}\n"
+        f"Brief Summary: {trial_info.description.brief_summary}\n"
+        f"Detailed Description: {trial_info.description.detailed_description}\n"
+        f"Study Type: {trial_info.design.study_type}\n"
+        f"Phases: {', '.join(map(str, trial_info.design.phases))}\n"
+        f"Arms: {json.dumps(trial_info.design.arms, indent=2)}\n"
+        f"Lead Sponsor: {trial_info.sponsor.lead_sponsor}\n"
+        f"Collaborators: {', '.join(trial_info.sponsor.collaborators)}"
+    )
     prompt = (
         "You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care. "
         "Your task is to assess if a clinical trial would be beneficial for a patient. "
@@ -220,7 +234,7 @@ def build_recommendation_prompt(clinical_record: str, trial_info: str) -> str:
         "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
         "7. Provide an explanation that includes relevant research findings on similar treatments.\n\n"
         f'Clinical Record:\n"{clinical_record}"\n'
-        f'Trial Information:\n"{trial_info}"\n'
+        f'Trial Information:\n"{trial_info_str}"\n'
         "Please search for and analyze published research on similar treatments, then provide:\n"
         "Recommendation Level: "
     )
@@ -265,6 +279,12 @@ def main():
 
     # Log the trial information
     log_trial_info(trial)
+
+    # Build the prompt
+    prompt = build_recommendation_prompt(clinical_record, trial)
+    logger.info(f"Recommendation Prompt:\n{prompt}")
+
+    # TODO: Call the AI API with the prompt
 
 
 if __name__ == "__main__":

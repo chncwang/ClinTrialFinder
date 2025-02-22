@@ -215,6 +215,45 @@ class ClinicalTrial:
             },
         }
 
+    def __str__(self) -> str:
+        """Provide a user-friendly string representation of the ClinicalTrial object."""
+        return (
+            f"ClinicalTrial(nct_id={self.identification.nct_id}, "
+            f"brief_title={self.identification.brief_title}, "
+            f"overall_status={self.status.overall_status})"
+        )
+
+    def __repr__(self) -> str:
+        """Provide a detailed string representation of the ClinicalTrial object."""
+        return (
+            f"ClinicalTrial(nct_id={self.identification.nct_id}, "
+            f"url={self.identification.url}, "
+            f"brief_title={self.identification.brief_title}, "
+            f"official_title={self.identification.official_title}, "
+            f"acronym={self.identification.acronym}, "
+            f"org_study_id={self.identification.org_study_id}, "
+            f"overall_status={self.status.overall_status}, "
+            f"start_date={self.status.start_date}, "
+            f"completion_date={self.status.completion_date}, "
+            f"primary_completion_date={self.status.primary_completion_date}, "
+            f"brief_summary={self.description.brief_summary}, "
+            f"detailed_description={self.description.detailed_description}, "
+            f"conditions={self.description.conditions}, "
+            f"keywords={self.description.keywords}, "
+            f"study_type={self.design.study_type}, "
+            f"phases={self.design.phases}, "
+            f"enrollment={self.design.enrollment}, "
+            f"arms={self.design.arms}, "
+            f"criteria={self.eligibility.criteria}, "
+            f"gender={self.eligibility.gender}, "
+            f"minimum_age={self.eligibility.minimum_age}, "
+            f"maximum_age={self.eligibility.maximum_age}, "
+            f"healthy_volunteers={self.eligibility.healthy_volunteers}, "
+            f"locations={self.contacts_locations.locations}, "
+            f"lead_sponsor={self.sponsor.lead_sponsor}, "
+            f"collaborators={self.sponsor.collaborators})"
+        )
+
 
 class ClinicalTrialsParser:
     def __init__(self, json_data: List[Dict[str, Any]]):
