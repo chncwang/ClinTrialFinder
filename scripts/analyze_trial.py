@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.gpt_client import GPTClient
 from base.pricing import OpenAITokenPricing
 from base.prompt_cache import PromptCache
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
@@ -117,41 +118,25 @@ def analyze_drug_keywords(
     Returns:
         Tuple of (list of drug keywords, API cost)
     """
-    client = OpenAI(api_key=api_key)
-    cache = PromptCache(max_size=cache_size)
+    gpt_client = GPTClient(
+        api_key=api_key,
+        model="gpt-4o-mini",
+        cache_size=cache_size,
+        temperature=0.1,
+    )
 
     # Build the prompt
     prompt = build_drug_keywords_prompt(trial)
 
-    # Check cache first
-    cached_result = cache.get(prompt, temperature=0.1)
-    if cached_result is not None:
-        return json.loads(cached_result), 0.0
-
     try:
-        # Make API call if not cached
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a clinical trial analyst focused on identifying drug names and compounds.",
-                },
-                {"role": "user", "content": prompt},
-            ],
+        # Make API call with retry logic and JSON validation
+        result, cost = gpt_client.call_with_retry(
+            prompt=prompt,
+            system_role="You are a clinical trial analyst focused on identifying drug names and compounds.",
             response_format={"type": "json_object"},
-            temperature=0.1,
+            validate_json=True,
         )
-
-        result = response.choices[0].message.content
-
-        # Cache the result
-        cache.set(prompt, temperature=0.1, result=result)
-
-        # Calculate cost using the pricing utility
-        cost = OpenAITokenPricing.calculate_cost(prompt, result)
-
-        return json.loads(result), cost
+        return result, cost
 
     except Exception as e:
         logger.error(f"Error in GPT drug keyword analysis: {str(e)}")
