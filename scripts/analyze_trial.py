@@ -2,10 +2,13 @@
 import argparse
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+import requests
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -97,97 +100,25 @@ def format_duration(days: Optional[int]) -> str:
     return ", ".join(parts) if parts else "0 days"
 
 
-def log_trial_info(trial: ClinicalTrial):
-    """Log detailed information about a clinical trial."""
-    # Basic Information
-    logger.info("\n=== Trial Information ===")
-    logger.info(f"NCT ID: {trial.identification.nct_id}")
-    logger.info(f"URL: {trial.identification.url}")
-    logger.info(f"\nTitle: {trial.identification.brief_title}")
-    if trial.identification.official_title:
-        logger.info(f"Official Title: {trial.identification.official_title}")
-    if trial.identification.acronym:
-        logger.info(f"Acronym: {trial.identification.acronym}")
-
-    # Status Information
-    logger.debug("\n=== Status ===")
-    logger.debug(f"Current Status: {trial.status.overall_status}")
-    if trial.status.start_date:
-        logger.debug(f"Start Date: {trial.status.start_date.strftime('%Y-%m-%d')}")
-    if trial.status.completion_date:
-        logger.debug(
-            f"Completion Date: {trial.status.completion_date.strftime('%Y-%m-%d')}"
-        )
-    if trial.study_duration_days is not None:
-        logger.debug(f"Study Duration: {format_duration(trial.study_duration_days)}")
-
-    # Description
-    logger.debug("\n=== Description ===")
-    logger.debug("Brief Summary:")
-    logger.debug(trial.description.brief_summary)
-    if trial.description.conditions:
-        logger.debug("\nConditions:")
-        for condition in trial.description.conditions:
-            logger.debug(f"- {condition}")
-    if trial.description.keywords:
-        logger.debug("\nKeywords:")
-        for keyword in trial.description.keywords:
-            logger.debug(f"- {keyword}")
-
-    # Design
-    logger.debug("\n=== Study Design ===")
-    logger.debug(f"Study Type: {trial.design.study_type}")
-    if trial.design.phases:
-        logger.debug(
-            f"Phase{'s' if len(trial.design.phases) > 1 else ''}: {', '.join(map(str, trial.design.phases))}"
-        )
-    logger.debug(f"Enrollment: {trial.design.enrollment} participants")
-
-    if trial.design.arms:
-        logger.debug("\nStudy Arms:")
-        for arm in trial.design.arms:
-            logger.debug(f"\n- Name: {arm.get('name', 'Not specified')}")
-            logger.debug(f"  Type: {arm.get('type', 'Not specified')}")
-            if arm.get("description"):
-                logger.debug(f"  Description: {arm['description']}")
-            if arm.get("interventions"):
-                logger.debug(f"  Interventions: {', '.join(arm['interventions'])}")
-
-    # Eligibility
-    logger.debug("\n=== Eligibility Criteria ===")
-    logger.debug(trial.eligibility.criteria)
-    logger.debug(f"\nGender: {trial.eligibility.gender}")
-    logger.debug(
-        f"Age Range: {trial.eligibility.minimum_age} to {trial.eligibility.maximum_age}"
-    )
-    logger.debug(
-        f"Healthy Volunteers: {'Accepted' if trial.eligibility.healthy_volunteers else 'Not accepted'}"
-    )
-
-    # Locations
-    logger.debug("\n=== Study Locations ===")
-    for location in trial.contacts_locations.locations:
-        location_parts = []
-        if location.facility:
-            location_parts.append(location.facility)
-        if location.city:
-            location_parts.append(location.city)
-        if location.state:
-            location_parts.append(location.state)
-        if location.country:
-            location_parts.append(location.country)
-
-        location_str = " - ".join(location_parts)
-        status_str = f" ({location.status})" if location.status else ""
-        logger.debug(f"- {location_str}{status_str}")
-
-    # Sponsor Information
-    logger.debug("\n=== Sponsorship ===")
-    logger.debug(f"Lead Sponsor: {trial.sponsor.lead_sponsor}")
-    if trial.sponsor.collaborators:
-        logger.debug("Collaborators:")
-        for collaborator in trial.sponsor.collaborators:
-            logger.debug(f"- {collaborator}")
+CLINICAL_TRIAL_SYSTEM_PROMPT = (
+    "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
+    "Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
+    "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
+    "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation.</task>\n\n"
+    "<recommendation_levels>The possible recommendation levels are:\n\n"
+    "- Strongly Recommended\n"
+    "- Recommended\n"
+    "- Neutral\n"
+    "- Not Recommended</recommendation_levels>\n\n"
+    "<instructions>Instructions:\n"
+    "1. Carefully analyze the patient's clinical record and trial details.\n"
+    "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
+    "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
+    "4. Evaluate risks vs potential benefits for the patient's condition.\n"
+    "5. Factor in alternative treatment options available to the patient.\n"
+    "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
+    "7. Provide an explanation that includes relevant research findings on similar treatments.</instructions>"
+)
 
 
 def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial) -> str:
@@ -216,28 +147,12 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
         f"Lead Sponsor: {trial_info.sponsor.lead_sponsor}\n"
         f"Collaborators: {', '.join(trial_info.sponsor.collaborators)}"
     )
-    prompt = (
-        "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
-        "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
-        "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation.</task>\n\n"
-        "<recommendation_levels>The possible recommendation levels are:\n\n"
-        "- Strongly Recommended\n"
-        "- Recommended\n"
-        "- Neutral\n"
-        "- Not Recommended</recommendation_levels>\n\n"
-        "<instructions>Instructions:\n"
-        "1. Carefully analyze the patient's clinical record and trial details.\n"
-        "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
-        "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
-        "4. Evaluate risks vs potential benefits for the patient's condition.\n"
-        "5. Factor in alternative treatment options available to the patient.\n"
-        "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
-        "7. Provide an explanation that includes relevant research findings on similar treatments.</instructions>\n\n"
+
+    return (
         f'<clinical_record>Clinical Record:\n"{clinical_record}"</clinical_record>\n\n'
         f'<trial_info>Trial Information:\n"{trial_info_str}"</trial_info>\n\n'
         "<output_request>Please search for and analyze published research on similar treatments, then provide your explanation and recommendation level."
     )
-    return prompt
 
 
 def main():
@@ -276,14 +191,44 @@ def main():
         logger.error(f"Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
-    # Log the trial information
-    log_trial_info(trial)
-
     # Build the prompt
     prompt = build_recommendation_prompt(clinical_record, trial)
     logger.info(f"Recommendation Prompt:\n{prompt}")
 
-    # TODO: Call the AI API with the prompt
+    # Call the Perplexity AI API
+    url = "https://api.perplexity.ai/chat/completions"
+
+    payload = {
+        "model": "sonar",
+        "messages": [
+            {
+                "role": "system",
+                "content": CLINICAL_TRIAL_SYSTEM_PROMPT,
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 1000,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "return_images": False,
+        "return_related_questions": False,
+        "stream": False,
+    }
+
+    headers = {
+        "Authorization": "Bearer " + os.getenv("PERPLEXITY_API_KEY"),
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        result = response.json()
+        logger.info("Successfully received AI analysis")
+        logger.info(result["choices"][0]["message"]["content"])
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error calling Perplexity AI API: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
