@@ -140,9 +140,6 @@ def main():
     drug_keywords_prompt = build_drug_keywords_prompt(trial)
     logger.info(f"Drug Keywords Prompt:\n{drug_keywords_prompt}")
 
-    prompt = build_recommendation_prompt(clinical_record, trial)
-    logger.info(f"Recommendation Prompt:\n{prompt}")
-
     # TODO: Call the AI API with the prompts
 
 
