@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
+from firecrawl.firecrawl import FirecrawlApp
 from openai import OpenAI
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
@@ -143,6 +144,35 @@ def analyze_drug_keywords(
         raise
 
 
+def search_google(api_key: str, query: str) -> list[dict]:
+    """
+    Search Google using Firecrawl's search endpoint.
+
+    Args:
+        api_key: Firecrawl API key
+        query: Search query
+
+    Returns:
+        List of search results containing URLs, titles, and descriptions
+    """
+    try:
+        # Initialize Firecrawl client
+        app = FirecrawlApp(api_key=api_key)
+
+        # Make search request
+        search_results = app.search(query=query)
+
+        if not search_results.get("success"):
+            logger.error("Search request failed")
+            return []
+
+        return search_results.get("data", [])
+
+    except Exception as e:
+        logger.error(f"Error performing search: {str(e)}")
+        return []
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
@@ -156,6 +186,10 @@ def main():
         help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
     )
     parser.add_argument(
+        "--firecrawl-api-key",
+        help="Firecrawl API key (alternatively, set FIRECRAWL_API_KEY environment variable)",
+    )
+    parser.add_argument(
         "--cache-size",
         type=int,
         default=10000,
@@ -163,11 +197,19 @@ def main():
     )
     args = parser.parse_args()
 
-    # Get API key from arguments or environment
+    # Get API keys from arguments or environment
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    firecrawl_api_key = args.firecrawl_api_key or os.getenv("FIRECRAWL_API_KEY")
+
     if not api_key:
         logger.error(
             "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+        )
+        sys.exit(1)
+
+    if not firecrawl_api_key:
+        logger.error(
+            "Firecrawl API key must be provided via --firecrawl-api-key or FIRECRAWL_API_KEY environment variable"
         )
         sys.exit(1)
 
@@ -205,6 +247,24 @@ def main():
         )
         logger.info(f"Identified drug keywords: {drug_keywords}")
         logger.info(f"API cost: ${cost:.4f}")
+
+        # Search for each drug keyword
+        for drug in drug_keywords:
+            logger.info(f"\nSearching for drug: {drug}")
+            search_query = f"{drug} clinical trials research"
+            results = search_google(firecrawl_api_key, search_query)
+
+            if results:
+                logger.info(f"Found {len(results)} results for {drug}:")
+                for idx, result in enumerate(results, 1):
+                    logger.info(f"{idx}. {result.get('title', 'No title')}")
+                    logger.info(f"   URL: {result.get('url', 'No URL')}")
+                    logger.info(
+                        f"   Description: {result.get('description', 'No description')}\n"
+                    )
+            else:
+                logger.info(f"No results found for {drug}")
+
     except Exception as e:
         logger.error(f"Failed to analyze drug keywords: {str(e)}")
         sys.exit(1)
