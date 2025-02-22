@@ -217,26 +217,25 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
         f"Collaborators: {', '.join(trial_info.sponsor.collaborators)}"
     )
     prompt = (
-        "You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care. "
-        "Your task is to assess if a clinical trial would be beneficial for a patient. "
-        "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
-        "The possible recommendation levels are:\n\n"
+        "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
+        "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
+        "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation.</task>\n\n"
+        "<recommendation_levels>The possible recommendation levels are:\n\n"
         "- Strongly Recommended\n"
         "- Recommended\n"
         "- Neutral\n"
-        "- Not Recommended\n\n"
-        "Instructions:\n"
+        "- Not Recommended</recommendation_levels>\n\n"
+        "<instructions>Instructions:\n"
         "1. Carefully analyze the patient's clinical record and trial details.\n"
         "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
         "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
         "4. Evaluate risks vs potential benefits for the patient's condition.\n"
         "5. Factor in alternative treatment options available to the patient.\n"
         "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
-        "7. Provide an explanation that includes relevant research findings on similar treatments.\n\n"
-        f'Clinical Record:\n"{clinical_record}"\n'
-        f'Trial Information:\n"{trial_info_str}"\n'
-        "Please search for and analyze published research on similar treatments, then provide:\n"
-        "Recommendation Level: "
+        "7. Provide an explanation that includes relevant research findings on similar treatments.</instructions>\n\n"
+        f'<clinical_record>Clinical Record:\n"{clinical_record}"</clinical_record>\n\n'
+        f'<trial_info>Trial Information:\n"{trial_info_str}"</trial_info>\n\n'
+        "<output_request>Please search for and analyze published research on similar treatments, then provide your explanation and recommendation level."
     )
     return prompt
 
