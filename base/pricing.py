@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Dict, Tuple, Union
 
 
 class AITokenPricing:
@@ -7,9 +7,11 @@ class AITokenPricing:
     # Token estimation ratio (characters to tokens)
     CHAR_TO_TOKEN_RATIO = 0.25
 
-    # Cost per 1K tokens in USD
-    GPT4_INPUT_COST = 0.15e-3  # $0.15 per 1K tokens
-    GPT4_OUTPUT_COST = 0.60e-3  # $0.60 per 1K tokens
+    # Cost per 1K tokens in USD for different models
+    MODEL_COSTS: Dict[str, Tuple[float, float]] = {
+        "gpt-4o-mini": (0.15e-3, 0.60e-3),  # $0.15 input, $0.60 output per 1K tokens
+        "sonar-pro": (0.3e-3, 1.5e-3),  # $0.30 input, $1.50 output per 1K tokens
+    }
 
     @classmethod
     def estimate_tokens(cls, text: Union[str, bytes]) -> float:
@@ -19,9 +21,29 @@ class AITokenPricing:
         return len(text) * cls.CHAR_TO_TOKEN_RATIO
 
     @classmethod
-    def calculate_cost(cls, prompt: str, response: str) -> float:
-        """Calculate the approximate cost for GPT-4 API usage."""
+    def calculate_cost(
+        cls, prompt: str, response: str, model: str = "gpt-4o-mini"
+    ) -> float:
+        """Calculate the approximate cost for API usage.
+
+        Args:
+            prompt: Input text
+            response: Output text
+            model: Model name (defaults to gpt-4o-mini)
+
+        Returns:
+            float: Estimated cost in USD
+
+        Raises:
+            ValueError: If model is not found in MODEL_COSTS
+        """
+        if model not in cls.MODEL_COSTS:
+            raise ValueError(
+                f"Unknown model: {model}. Available models: {list(cls.MODEL_COSTS.keys())}"
+            )
+
         input_tokens = cls.estimate_tokens(prompt)
         output_tokens = cls.estimate_tokens(response)
 
-        return input_tokens * cls.GPT4_INPUT_COST + output_tokens * cls.GPT4_OUTPUT_COST
+        input_cost, output_cost = cls.MODEL_COSTS[model]
+        return input_tokens * input_cost + output_tokens * output_cost

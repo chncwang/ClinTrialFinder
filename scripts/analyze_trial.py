@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.pricing import AITokenPricing
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
@@ -137,6 +138,28 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
     return prompt
 
 
+def log_cost_breakdown(
+    prompt: str, response_content: str, model: str = "sonar-pro"
+) -> None:
+    """Print a detailed breakdown of API usage costs.
+
+    Args:
+        prompt: The input prompt text
+        response_content: The API response content
+        model: The AI model used (default: sonar-pro)
+    """
+    # Calculate token counts
+    input_tokens = AITokenPricing.estimate_tokens(prompt)
+    output_tokens = AITokenPricing.estimate_tokens(response_content)
+
+    # Calculate costs
+    total_cost = AITokenPricing.calculate_cost(prompt, response_content, model=model)
+
+    # Display breakdown
+    logger.info("Cost Breakdown:")
+    logger.info(f"Total cost:    {' ':>8} ${total_cost:.6f}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
@@ -203,7 +226,7 @@ def main():
     url = "https://api.perplexity.ai/chat/completions"
 
     payload = {
-        "model": "sonar",
+        "model": "sonar-pro",
         "messages": [
             {
                 "role": "system",
@@ -233,6 +256,12 @@ def main():
     except requests.exceptions.RequestException as e:
         logger.error(f"main: Error calling Perplexity AI API: {e}")
         sys.exit(1)
+
+    # Calculate and display costs
+    log_cost_breakdown(
+        prompt + CLINICAL_TRIAL_SYSTEM_PROMPT,
+        result["choices"][0]["message"]["content"],
+    )
 
 
 if __name__ == "__main__":
