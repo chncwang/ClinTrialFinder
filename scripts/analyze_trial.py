@@ -177,8 +177,12 @@ def main():
         "--input_file", help="Path to the input text file containing clinical record"
     )
     parser.add_argument(
-        "--api-key",
+        "--openai-api-key",
         help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
+    )
+    parser.add_argument(
+        "--perplexity-api-key",
+        help="Perplexity API key (alternatively, set PERPLEXITY_API_KEY environment variable)",
     )
     parser.add_argument(
         "--cache-size",
@@ -189,11 +193,18 @@ def main():
     args = parser.parse_args()
 
     # Get API keys from arguments or environment
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    api_key = args.openai_api_key or os.getenv("OPENAI_API_KEY")
+    perplexity_api_key = args.perplexity_api_key or os.getenv("PERPLEXITY_API_KEY")
 
     if not api_key:
         logger.error(
-            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+            "OpenAI API key must be provided via --openai-api-key or OPENAI_API_KEY environment variable"
+        )
+        sys.exit(1)
+
+    if not perplexity_api_key:
+        logger.error(
+            "Perplexity API key must be provided via --perplexity-api-key or PERPLEXITY_API_KEY environment variable"
         )
         sys.exit(1)
 
@@ -251,7 +262,7 @@ def main():
     }
 
     headers = {
-        "Authorization": "Bearer " + os.getenv("PERPLEXITY_API_KEY"),
+        "Authorization": "Bearer " + perplexity_api_key,
         "Content-Type": "application/json",
     }
 
