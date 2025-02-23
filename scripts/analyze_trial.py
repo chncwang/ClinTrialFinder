@@ -23,6 +23,7 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Set logger level to INFO
+logger.propagate = False  # Prevent propagation to parent loggers
 
 # Configure handler only once
 handler = logging.StreamHandler()
