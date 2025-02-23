@@ -321,6 +321,25 @@ def main():
     # Initialize Perplexity client
     perplexity_client = PerplexityClient(perplexity_api_key)
 
+    # Use a dictionary to store the analysis for each drug
+    drug_analyses: dict[str, str] = {}
+
+    # Analyze drug effectiveness if novel drugs were found
+    if novel_drugs and disease:
+        for drug in novel_drugs:
+            logger.info(f"main: Analyzing effectiveness of {drug} for {disease}")
+            analysis, citations, cost = analyze_drug_effectiveness(
+                drug, disease, perplexity_client
+            )
+            if analysis:
+                drug_analyses[drug] = analysis
+                logger.info(f"main: Drug Analysis: {analysis}")
+                if citations:
+                    logger.info(f"main: Citations ({len(citations)}):")
+                    for i, citation in enumerate(citations, 1):
+                        logger.info(f"main: Citation {i}: {citation}")
+                logger.info(f"main: Cost: ${cost:.6f}")
+
     # Build the prompt
     prompt = build_recommendation_prompt(clinical_record, trial)
     logger.info(f"main: Recommendation Prompt:\n{prompt}")
@@ -348,21 +367,6 @@ def main():
         for i, citation in enumerate(citations, 1):
             logger.info(f"main: Citation {i}: {citation}")
     logger.info(f"main: Cost: ${cost:.6f}")
-
-    # Analyze drug effectiveness if novel drugs were found
-    if novel_drugs and disease:
-        for drug in novel_drugs:
-            logger.info(f"main: Analyzing effectiveness of {drug} for {disease}")
-            analysis, citations, cost = analyze_drug_effectiveness(
-                drug, disease, perplexity_client
-            )
-            if analysis:
-                logger.info(f"main: Drug Analysis: {analysis}")
-                if citations:
-                    logger.info(f"main: Citations ({len(citations)}):")
-                    for i, citation in enumerate(citations, 1):
-                        logger.info(f"main: Citation {i}: {citation}")
-                logger.info(f"main: Cost: ${cost:.6f}")
 
 
 if __name__ == "__main__":
