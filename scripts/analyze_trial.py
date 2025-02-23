@@ -156,16 +156,11 @@ def log_cost_breakdown(
         response_content: The API response content
         model: The AI model used (default: sonar-pro)
     """
-    # Calculate token counts
-    input_tokens = AITokenPricing.estimate_tokens(prompt)
-    output_tokens = AITokenPricing.estimate_tokens(response_content)
-
     # Calculate costs
     total_cost = AITokenPricing.calculate_cost(prompt, response_content, model=model)
 
     # Display breakdown
-    logger.info("Cost Breakdown:")
-    logger.info(f"Total cost:    {' ':>8} ${total_cost:.6f}")
+    logger.info(f"log_cost_breakdown: Total cost:    {' ':>8} ${total_cost:.6f}")
 
 
 def main():
