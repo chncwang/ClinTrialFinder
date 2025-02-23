@@ -147,23 +147,6 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
     return prompt
 
 
-def log_cost_breakdown(
-    prompt: str, response_content: str, model: str = "sonar-pro"
-) -> None:
-    """Print a detailed breakdown of API usage costs.
-
-    Args:
-        prompt: The input prompt text
-        response_content: The API response content
-        model: The AI model used (default: sonar-pro)
-    """
-    # Calculate costs
-    total_cost = AITokenPricing.calculate_cost(prompt, response_content, model=model)
-
-    # Display breakdown
-    logger.info(f"log_cost_breakdown: Total cost:    {' ':>8} ${total_cost:.6f}")
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and display clinical trial information"
@@ -249,7 +232,7 @@ def main():
         {"role": "user", "content": prompt},
     ]
 
-    completion = perplexity_client.get_completion(messages)
+    completion, cost = perplexity_client.get_completion(messages)
     if completion is None:
         logger.error("main: Failed to get AI analysis")
         sys.exit(1)
@@ -257,11 +240,7 @@ def main():
     logger.info("main: Successfully received AI analysis")
     logger.info(f"main: AI Analysis: {completion}")
 
-    # Calculate and display costs
-    log_cost_breakdown(
-        prompt + CLINICAL_TRIAL_SYSTEM_PROMPT,
-        completion,
-    )
+    logger.info(f"main: Cost: ${cost:.6f}")
 
 
 if __name__ == "__main__":
