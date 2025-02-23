@@ -21,13 +21,15 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
 )
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",  # Simplified format for readability
-    handlers=[logging.StreamHandler()],
-)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Ensure logger is set to INFO level
+logger.setLevel(logging.INFO)  # Set logger level to INFO
+
+# Configure handler only once
+handler = logging.StreamHandler()
+handler.setFormatter(
+    logging.Formatter("%(message)s")
+)  # Simplified format for readability
+logger.addHandler(handler)
 
 
 def fetch_trial_data(nct_id: str) -> list[dict]:
@@ -170,15 +172,17 @@ def main():
         try:
             with open(args.input_file, "r") as file:
                 clinical_record = file.read().strip()
-                logger.info(f"Read clinical record from {args.input_file}")
+                logger.info(f"main: Read clinical record from {args.input_file}")
                 # Process the clinical record as needed
                 # For example, you might parse it or log it
-                logger.info(f"Clinical Record Content: {clinical_record[:200]}...")
+                logger.info(
+                    f"main: Clinical Record Content: {clinical_record[:200]}..."
+                )
         except FileNotFoundError:
-            logger.error(f"Input file not found: {args.input_file}")
+            logger.error(f"main: Input file not found: {args.input_file}")
             sys.exit(1)
         except Exception as e:
-            logger.error(f"Error reading input file: {e}")
+            logger.error(f"main: Error reading input file: {e}")
             sys.exit(1)
 
     # Fetch and parse the trial data
@@ -188,12 +192,12 @@ def main():
     # Find the specific trial
     trial = trials_parser.get_trial_by_nct_id(args.nct_id)
     if trial is None:
-        logger.error(f"Trial with NCT ID {args.nct_id} not found")
+        logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
     # Build the prompt
     prompt = build_recommendation_prompt(clinical_record, trial)
-    logger.info(f"Recommendation Prompt:\n{prompt}")
+    logger.info(f"main: Recommendation Prompt:\n{prompt}")
 
     # Call the Perplexity AI API
     url = "https://api.perplexity.ai/chat/completions"
@@ -224,10 +228,10 @@ def main():
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         result = response.json()
-        logger.info("Successfully received AI analysis")
-        logger.info(result["choices"][0]["message"]["content"])
+        logger.info("main: Successfully received AI analysis")
+        logger.info(f"main: AI Analysis: {result['choices'][0]['message']['content']}")
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error calling Perplexity AI API: {e}")
+        logger.error(f"main: Error calling Perplexity AI API: {e}")
         sys.exit(1)
 
 
