@@ -51,4 +51,4 @@ class AITokenPricing:
         logger.debug(f"calculate_cost: Estimated output tokens: {output_tokens:.1f}")
 
         input_cost, output_cost = cls.MODEL_COSTS[model]
-        return input_tokens * input_cost + output_tokens * output_cost
+        return (input_tokens * input_cost + output_tokens * output_cost) * 1e-3

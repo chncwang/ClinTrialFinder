@@ -25,12 +25,20 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Set logger level to INFO
 logger.propagate = False  # Prevent propagation to parent loggers
 
+# Configure base.pricing logger
+pricing_logger = logging.getLogger("base.pricing")
+pricing_logger.setLevel(logging.DEBUG)
+pricing_logger.propagate = False  # Prevent propagation to parent loggers
+
 # Configure handler only once
 handler = logging.StreamHandler()
 handler.setFormatter(
     logging.Formatter("%(message)s")
 )  # Simplified format for readability
+
+# Add handler to both loggers
 logger.addHandler(handler)
+pricing_logger.addHandler(handler)
 
 
 def fetch_trial_data(nct_id: str) -> list[dict]:
