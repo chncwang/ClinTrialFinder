@@ -20,7 +20,7 @@ from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.pricing import AITokenPricing
-from base.prompts import (
+from base.trial_analyzer import (
     CLINICAL_TRIAL_SYSTEM_PROMPT,
     analyze_drugs_and_get_recommendation,
     build_recommendation_prompt,
