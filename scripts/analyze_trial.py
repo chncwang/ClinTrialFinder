@@ -102,12 +102,16 @@ CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
     "Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
     "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
-    "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation.</task>\n\n"
+    "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
+    "You must provide your assessment in a JSON format with a recommendation level and detailed reasoning.</task>\n\n"
     "<recommendation_levels>The possible recommendation levels are:\n\n"
     "- Strongly Recommended\n"
     "- Recommended\n"
     "- Neutral\n"
     "- Not Recommended</recommendation_levels>\n\n"
+    "<output_format>You must respond with a JSON object containing:\n"
+    "- reason: A detailed explanation of your recommendation based on the evidence provided\n"
+    "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
 )
 
 
@@ -154,8 +158,13 @@ def build_recommendation_prompt(
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>'
         f"{drug_analysis_str}\n\n"
+        "<output_format>\nProvide your response as a JSON object with the following structure:\n"
+        "{\n"
+        '  "reason": "detailed explanation of your recommendation based on the clinical record, trial information, and drug analyses",\n'
+        '  "recommendation": "one of: Strongly Recommended, Recommended, Neutral, Not Recommended"\n'
+        "}\n</output_format>\n\n"
         "<output_request>\nBased on the clinical record, trial information, and drug effectiveness analysis (if available), "
-        "provide your explanation and recommendation level. Consider both the patient's condition and the evidence "
+        "evaluate if this trial would be beneficial for the patient. Consider both the patient's condition and the evidence "
         "regarding the trial's treatment approach.</output_request>"
     )
 
@@ -358,17 +367,11 @@ def main():
     prompt = build_recommendation_prompt(clinical_record, trial, drug_analyses)
     logger.info(f"main: Recommendation Prompt:\n{prompt}")
 
-    # Call the Perplexity AI API using the client
-    messages = [
-        {
-            "role": "system",
-            "content": CLINICAL_TRIAL_SYSTEM_PROMPT,
-        },
-        {"role": "user", "content": prompt},
-    ]
-
-    completion, citations, cost = perplexity_client.get_completion(
-        messages, max_tokens=2000
+    # Call GPT API using the client
+    completion, cost = gpt_client.call_gpt(
+        prompt=prompt,
+        system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
+        temperature=0.7,
     )
     if completion is None:
         logger.error("main: Failed to get AI analysis")
@@ -376,10 +379,6 @@ def main():
 
     logger.info("main: Successfully received AI analysis")
     logger.info(f"main: AI Analysis: {completion}")
-    if citations:
-        logger.info(f"main: Citations ({len(citations)}):")
-        for i, citation in enumerate(citations, 1):
-            logger.info(f"main: Citation {i}: {citation}")
     logger.info(f"main: Cost: ${cost:.6f}")
 
 
