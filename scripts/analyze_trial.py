@@ -26,6 +26,7 @@ from base.trial_analyzer import (
     build_recommendation_prompt,
     parse_recommendation_response,
 )
+from base.utils import read_input_file
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
@@ -154,21 +155,7 @@ def main():
 
     # Read clinical record from input file if specified
     if args.input_file:
-        try:
-            with open(args.input_file, "r") as file:
-                clinical_record = file.read().strip()
-                logger.info(f"main: Read clinical record from {args.input_file}")
-                # Process the clinical record as needed
-                # For example, you might parse it or log it
-                logger.info(
-                    f"main: Clinical Record Content: {clinical_record[:200]}..."
-                )
-        except FileNotFoundError:
-            logger.error(f"main: Input file not found: {args.input_file}")
-            sys.exit(1)
-        except Exception as e:
-            logger.error(f"main: Error reading input file: {e}")
-            sys.exit(1)
+        clinical_record = read_input_file(args.input_file)
 
     # Fetch and parse the trial data
     nct_id: str = args.nct_id
