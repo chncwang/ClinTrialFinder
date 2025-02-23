@@ -39,8 +39,8 @@ perplexity_logger.propagate = False  # Prevent propagation to parent loggers
 # Configure handler only once
 handler = logging.StreamHandler()
 handler.setFormatter(
-    logging.Formatter("%(message)s")
-)  # Simplified format for readability
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)  # Standard format with timestamp, logger name, and level
 
 # Add handler to all loggers
 logger.addHandler(handler)
