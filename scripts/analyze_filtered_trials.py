@@ -55,8 +55,13 @@ if __name__ == "__main__":
         description="Process clinical trials from a JSON file."
     )
     parser.add_argument(
-        "input_file", help="Path to the input JSON file containing trial data"
+        "trials_json_file", help="Path to the input JSON file containing trial data"
+    )
+    parser.add_argument(
+        "clinical_record_file", help="Path to the input clinical record file"
     )
     args = parser.parse_args()
 
-    process_trials_file(args.input_file)
+    process_trials_file(args.trials_json_file)
+    # You can add a function to process the clinical record file if needed
+    # process_clinical_record_file(args.clinical_record_file)
