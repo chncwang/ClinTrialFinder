@@ -8,6 +8,7 @@ from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_analyzer import analyze_drugs_and_get_recommendation
+from base.utils import read_input_file
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -47,10 +48,13 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
 
     except FileNotFoundError:
         logger.error(f"File not found: {filename}")
+        raise
     except json.JSONDecodeError:
         logger.error(f"Error decoding JSON from {filename}")
+        raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":
@@ -79,9 +83,7 @@ if __name__ == "__main__":
     gpt_client = GPTClient(api_key=args.openai_api_key)
     perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
 
-    clinical_record = load_clinical_record(
-        args.clinical_record_file
-    )  # Assuming a function to load the clinical record
+    clinical_record = read_input_file(args.clinical_record_file)
     process_trials_file(
         args.trials_json_file, gpt_client, perplexity_client, clinical_record
     )

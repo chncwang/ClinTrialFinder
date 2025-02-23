@@ -56,4 +56,4 @@ def analyze_drug_effectiveness(
         return completion, citations, cost
     except Exception as e:
         logger.error(f"Error analyzing drug effectiveness: {e}")
-        return None, [], 0.0
+        raise
