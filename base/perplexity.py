@@ -62,6 +62,7 @@ class PerplexityClient:
             response = requests.post(self.BASE_URL, json=payload, headers=self.headers)
             response.raise_for_status()
             result = response.json()
+            logger.debug(f"get_completion: Number of choices: {len(result['choices'])}")
             completion_text = result["choices"][0]["message"]["content"]
 
             # Calculate cost based on input and output tokens
