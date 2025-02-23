@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.disease_extractor import extract_disease_from_record
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.pricing import AITokenPricing
@@ -97,44 +98,6 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
             Path(temp_output).unlink(missing_ok=True)
         except Exception as e:
             logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
-
-
-def extract_disease_from_record(
-    clinical_record: str, gpt_client: GPTClient
-) -> tuple[str | None, float]:
-    """
-    Extracts the primary disease or condition from a clinical record using GPT.
-
-    Parameters:
-    - clinical_record (str): The patient's clinical record text
-    - gpt_client (GPTClient): Initialized GPT client for making API calls
-
-    Returns:
-    - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found)
-                               and the cost of the API call
-    """
-    prompt = (
-        "Extract the primary disease or medical condition from the following clinical record. "
-        "Return only the disease name without any additional text or explanation.\n\n"
-        f"Clinical Record:\n{clinical_record}"
-    )
-
-    try:
-        completion, cost = gpt_client.call_gpt(
-            prompt=prompt,
-            system_role="You are a medical expert focused on identifying primary medical conditions.",
-            temperature=0.1,
-        )
-        if completion is None:
-            logger.error("Failed to extract disease from clinical record")
-            return None, cost
-
-        disease_name = completion.strip()
-        logger.info(f"Extracted disease name: {disease_name}")
-        return disease_name, cost
-    except Exception as e:
-        logger.error(f"Error extracting disease from clinical record: {e}")
-        return None, 0.0
 
 
 def analyze_drug_effectiveness(
