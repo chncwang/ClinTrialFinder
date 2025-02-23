@@ -12,10 +12,15 @@ import requests
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
+from firecrawl.firecrawl import FirecrawlApp
+from openai import OpenAI
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.gpt_client import GPTClient
+from base.pricing import OpenAITokenPricing
+from base.prompt_cache import PromptCache
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
@@ -156,6 +161,7 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
         f'<trial_info>Trial Information:\n"{trial_info_str}"</trial_info>\n\n'
         "<output_request>Please search for and analyze published research on similar treatments, then provide your explanation and recommendation level."
     )
+    return prompt
 
 
 def main():
@@ -166,7 +172,37 @@ def main():
     parser.add_argument(
         "--input_file", help="Path to the input text file containing clinical record"
     )
+    parser.add_argument(
+        "--api-key",
+        help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
+    )
+    parser.add_argument(
+        "--firecrawl-api-key",
+        help="Firecrawl API key (alternatively, set FIRECRAWL_API_KEY environment variable)",
+    )
+    parser.add_argument(
+        "--cache-size",
+        type=int,
+        default=10000,
+        help="Maximum number of cached responses to keep",
+    )
     args = parser.parse_args()
+
+    # Get API keys from arguments or environment
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    firecrawl_api_key = args.firecrawl_api_key or os.getenv("FIRECRAWL_API_KEY")
+
+    if not api_key:
+        logger.error(
+            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+        )
+        sys.exit(1)
+
+    if not firecrawl_api_key:
+        logger.error(
+            "Firecrawl API key must be provided via --firecrawl-api-key or FIRECRAWL_API_KEY environment variable"
+        )
+        sys.exit(1)
 
     # Read clinical record from input file if specified
     if args.input_file:
@@ -187,7 +223,8 @@ def main():
             sys.exit(1)
 
     # Fetch and parse the trial data
-    json_data = fetch_trial_data(args.nct_id)
+    nct_id: str = args.nct_id
+    json_data = fetch_trial_data(nct_id)
     trials_parser = ClinicalTrialsParser(json_data)
 
     # Find the specific trial

@@ -19,6 +19,9 @@ from openai import OpenAI
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.gpt_client import GPTClient
+from base.pricing import OpenAITokenPricing
+from base.prompt_cache import PromptCache
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -29,59 +32,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-class PromptCache:
-    def __init__(self, cache_dir: str = ".cache", max_size: int = 10000):
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(exist_ok=True)
-        self.max_size = max_size
-        self.cache_index = OrderedDict()
-        self._load_cache_index()
-
-    def _get_cache_key(self, prompt: str, temperature: float) -> str:
-        """Generate a unique cache key for a prompt and temperature."""
-        cache_input = f"{prompt}_{temperature}"
-        return hashlib.md5(cache_input.encode()).hexdigest()
-
-    def _load_cache_index(self):
-        """Load the cache index from disk."""
-        index_path = self.cache_dir / "cache_index.pkl"
-        if index_path.exists():
-            with open(index_path, "rb") as f:
-                self.cache_index = pickle.load(f)
-
-    def _save_cache_index(self):
-        """Save the cache index to disk."""
-        with open(self.cache_dir / "cache_index.pkl", "wb") as f:
-            pickle.dump(self.cache_index, f)
-
-    def get(self, prompt: str, temperature: float) -> dict | None:
-        """Get cached result for a prompt and temperature."""
-        cache_key = self._get_cache_key(prompt, temperature)
-        if cache_key in self.cache_index:
-            cache_file = self.cache_dir / f"{cache_key}.json"
-            if cache_file.exists():
-                with open(cache_file, "r") as f:
-                    return json.load(f)
-        return None
-
-    def set(self, prompt: str, temperature: float, result: dict):
-        """Cache result for a prompt and temperature."""
-        cache_key = self._get_cache_key(prompt, temperature)
-
-        # Enforce cache size limit
-        while len(self.cache_index) >= self.max_size:
-            # Remove oldest entry
-            oldest_key, _ = self.cache_index.popitem(last=False)
-            (self.cache_dir / f"{oldest_key}.json").unlink(missing_ok=True)
-
-        # Save new entry
-        with open(self.cache_dir / f"{cache_key}.json", "w") as f:
-            json.dump(result, f)
-
-        self.cache_index[cache_key] = True
-        self._save_cache_index()
 
 
 class EligibilityCriteriaError(Exception):
@@ -113,8 +63,13 @@ class TrialFailureReason:
 
 class GPTTrialFilter:
     def __init__(self, api_key: str, cache_size: int = 100000):
-        self.client = OpenAI(api_key=api_key)
-        self.cache = PromptCache(max_size=cache_size)
+        self.gpt_client = GPTClient(
+            api_key=api_key,
+            model="gpt-4o-mini",
+            cache_size=cache_size,
+            temperature=0.1,
+            max_retries=3,
+        )
 
     def _call_gpt(
         self,
@@ -124,61 +79,23 @@ class GPTTrialFilter:
         refresh_cache: bool = False,
     ) -> Tuple[str, float]:
         """Common method for making GPT API calls."""
-        # Check cache first, unless refresh_cache is True
-        if not refresh_cache:
-            cached_result = self.cache.get(prompt, temperature)
-            if cached_result is not None:
-                logger.debug("GPTTrialFilter._call_gpt: Using cached result")
-                return cached_result, 0.0
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_role},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=temperature,
-            )
-
-            result = response.choices[0].message.content
-            # Move caching responsibility to the cache class
-            self.cache.set(prompt, temperature, result)
-
-            # Calculate cost
-            input_string_length = len(prompt) + len(system_role)
-            estimated_input_tokens = input_string_length * 0.25
-            estimated_output_tokens = len(result) * 0.25
-            cost = estimated_input_tokens * 0.15e-6 + estimated_output_tokens * 0.6e-6
-            return result, cost
-
-        except Exception as e:
-            logger.error(f"GPTTrialFilter._call_gpt: Error in GPT evaluation: {str(e)}")
-            raise
+        return self.gpt_client.call_gpt(
+            prompt,
+            system_role,
+            temperature=temperature,
+            refresh_cache=refresh_cache,
+            response_format={"type": "json_object"},
+        )
 
     def _call_gpt_with_retry(
         self, prompt: str, system_role: str, max_retries: int = 3
     ) -> Tuple[str, float]:
-        for attempt in range(max_retries):
-            try:
-                # Pass refresh_cache=True on retry attempts
-                response, cost = self._call_gpt(
-                    prompt,
-                    system_role,
-                    temperature=0.1,
-                    refresh_cache=(attempt > 0),  # Refresh cache on retry attempts
-                )
-                # Validate JSON before returning
-                json.loads(response)
-                return response, cost
-            except json.JSONDecodeError:
-                if attempt == max_retries - 1:
-                    logger.warning(
-                        f"GPTTrialFilter._call_gpt_with_retry: Failed after {max_retries} attempts"
-                    )
-                    raise
-                time.sleep(2**attempt)  # Exponential backoff
+        return self.gpt_client.call_with_retry(
+            prompt,
+            system_role,
+            response_format={"type": "json_object"},
+            validate_json=True,
+        )
 
     def _parse_gpt_response(self, response_content: str) -> dict:
         """Parse GPT response content into JSON, with error handling."""
