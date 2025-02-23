@@ -22,6 +22,7 @@ from base.perplexity import PerplexityClient
 from base.pricing import AITokenPricing
 from base.prompts import (
     CLINICAL_TRIAL_SYSTEM_PROMPT,
+    analyze_drugs_and_get_recommendation,
     build_recommendation_prompt,
     parse_recommendation_response,
 )
@@ -103,65 +104,6 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
             Path(temp_output).unlink(missing_ok=True)
         except Exception as e:
             logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
-
-
-def analyze_drugs_and_get_recommendation(
-    novel_drugs: list[str],
-    disease: str,
-    clinical_record: str,
-    trial: ClinicalTrial,
-    perplexity_client: PerplexityClient,
-    gpt_client: GPTClient,
-) -> tuple[str, str, float]:
-    """
-    Analyze drug effectiveness and generate AI recommendation.
-
-    Returns:
-        tuple containing:
-            - Recommendation level (Strongly Recommended, Recommended, etc.)
-            - Reason for the recommendation
-            - Total cost of API calls
-    """
-    total_cost = 0.0
-    drug_analyses: dict[str, str] = {}
-
-    # Analyze each drug's effectiveness
-    if novel_drugs and disease:
-        for drug in novel_drugs:
-            logger.info(f"Analyzing effectiveness of {drug} for {disease}")
-            analysis, citations, cost = analyze_drug_effectiveness(
-                drug, disease, perplexity_client
-            )
-            total_cost += cost
-
-            if analysis:
-                drug_analyses[drug] = analysis
-                logger.info(f"Drug Analysis: {analysis}")
-                if citations:
-                    logger.info(f"Citations ({len(citations)}):")
-                    for i, citation in enumerate(citations, 1):
-                        logger.info(f"Citation {i}: {citation}")
-                logger.info(f"Cost: ${cost:.6f}")
-
-    # Generate recommendation
-    prompt = build_recommendation_prompt(clinical_record, trial, drug_analyses)
-    logger.info(f"Recommendation Prompt:\n{prompt}")
-
-    completion, cost = gpt_client.call_gpt(
-        prompt=prompt,
-        system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
-        temperature=0.2,
-    )
-    total_cost += cost
-
-    if completion is None:
-        raise RuntimeError("Failed to get AI analysis")
-
-    recommendation, reason = parse_recommendation_response(completion)
-    logger.info(f"Recommendation: {recommendation}")
-    logger.info(f"Reason: {reason}")
-
-    return recommendation, reason, total_cost
 
 
 def main():
