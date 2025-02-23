@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from openai import OpenAI
 
-from .pricing import OpenAITokenPricing
-from .prompt_cache import PromptCache
+from base.pricing import AITokenPricing
+from base.prompt_cache import PromptCache
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class GPTClient:
             result = response.choices[0].message.content
             self.cache.set(prompt, temp, result)
 
-            cost = OpenAITokenPricing.calculate_cost(prompt + system_role, result)
+            cost = AITokenPricing.calculate_cost(prompt + system_role, result)
             return result, cost
 
         except Exception as e:

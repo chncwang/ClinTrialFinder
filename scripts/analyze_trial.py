@@ -6,20 +6,15 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 import requests
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
-from openai import OpenAI
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
-from base.gpt_client import GPTClient
-from base.pricing import OpenAITokenPricing
-from base.prompt_cache import PromptCache
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )

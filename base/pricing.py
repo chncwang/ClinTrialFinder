@@ -1,7 +1,7 @@
 from typing import Union
 
 
-class OpenAITokenPricing:
+class AITokenPricing:
     """Utility class for calculating OpenAI API costs."""
 
     # Token estimation ratio (characters to tokens)

@@ -1,27 +1,18 @@
 #!/usr/bin/env python3
 import argparse
 import datetime
-import hashlib
 import json
 import logging
 import os
-import pickle
-import re
 import sys
-import time
-from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-from openai import OpenAI
 
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.gpt_client import GPTClient
-from base.pricing import OpenAITokenPricing
-from base.prompt_cache import PromptCache
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
