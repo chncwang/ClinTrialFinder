@@ -12,7 +12,6 @@ import requests
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
-from firecrawl.firecrawl import FirecrawlApp
 from openai import OpenAI
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
@@ -87,27 +86,6 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
             logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
 
 
-def format_duration(days: Optional[int]) -> str:
-    """Format duration in days to a readable string."""
-    if days is None:
-        return "Unknown duration"
-
-    years = days // 365
-    remaining_days = days % 365
-    months = remaining_days // 30
-    remaining_days = remaining_days % 30
-
-    parts = []
-    if years > 0:
-        parts.append(f"{years} year{'s' if years != 1 else ''}")
-    if months > 0:
-        parts.append(f"{months} month{'s' if months != 1 else ''}")
-    if remaining_days > 0:
-        parts.append(f"{remaining_days} day{'s' if remaining_days != 1 else ''}")
-
-    return ", ".join(parts) if parts else "0 days"
-
-
 CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
     "Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
@@ -177,10 +155,6 @@ def main():
         help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)",
     )
     parser.add_argument(
-        "--firecrawl-api-key",
-        help="Firecrawl API key (alternatively, set FIRECRAWL_API_KEY environment variable)",
-    )
-    parser.add_argument(
         "--cache-size",
         type=int,
         default=10000,
@@ -190,17 +164,10 @@ def main():
 
     # Get API keys from arguments or environment
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    firecrawl_api_key = args.firecrawl_api_key or os.getenv("FIRECRAWL_API_KEY")
 
     if not api_key:
         logger.error(
             "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
-        )
-        sys.exit(1)
-
-    if not firecrawl_api_key:
-        logger.error(
-            "Firecrawl API key must be provided via --firecrawl-api-key or FIRECRAWL_API_KEY environment variable"
         )
         sys.exit(1)
 
