@@ -111,7 +111,11 @@ CLINICAL_TRIAL_SYSTEM_PROMPT = (
 )
 
 
-def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial) -> str:
+def build_recommendation_prompt(
+    clinical_record: str,
+    trial_info: ClinicalTrial,
+    drug_analyses: dict[str, str] = None,
+) -> str:
     """
     Constructs a prompt for an AI to evaluate patient clinical record against trial information
     and return a recommendation level based on potential benefit to the patient.
@@ -119,6 +123,7 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
     Parameters:
     - clinical_record (str): The patient's clinical record to be evaluated
     - trial_info (ClinicalTrial): The clinical trial information to compare against
+    - drug_analyses (dict[str, str]): Optional dictionary mapping drug names to their effectiveness analyses
 
     Returns:
     - str: A formatted prompt string for the AI.
@@ -138,12 +143,21 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
         f"Collaborators: {', '.join(trial_info.sponsor.collaborators)}"
     )
 
+    drug_analysis_str = ""
+    if drug_analyses:
+        drug_analysis_str = "\n\n<drug_analyses>\nDrug Effectiveness Analysis:\n"
+        for drug, analysis in drug_analyses.items():
+            drug_analysis_str += f"\n{drug}:\n{analysis}\n"
+        drug_analysis_str += "</drug_analyses>"
+
     return (
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
-        f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>\n\n'
-        "<output_request>\nIf a novel drug is mentioned in the study title, please focus on that drug. Search for and analyze published research on this drug's effectiveness in treating similar diseases or conditions. Based on this evidence, provide your explanation and recommendation level.\n</output_request>"
+        f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>'
+        f"{drug_analysis_str}\n\n"
+        "<output_request>\nBased on the clinical record, trial information, and drug effectiveness analysis (if available), "
+        "provide your explanation and recommendation level. Consider both the patient's condition and the evidence "
+        "regarding the trial's treatment approach.</output_request>"
     )
-    return prompt
 
 
 def extract_disease_from_record(
@@ -341,7 +355,7 @@ def main():
                 logger.info(f"main: Cost: ${cost:.6f}")
 
     # Build the prompt
-    prompt = build_recommendation_prompt(clinical_record, trial)
+    prompt = build_recommendation_prompt(clinical_record, trial, drug_analyses)
     logger.info(f"main: Recommendation Prompt:\n{prompt}")
 
     # Call the Perplexity AI API using the client
