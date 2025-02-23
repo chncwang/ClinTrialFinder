@@ -238,14 +238,17 @@ def main():
         {"role": "user", "content": prompt},
     ]
 
-    completion, cost = perplexity_client.get_completion(messages)
+    completion, citations, cost = perplexity_client.get_completion(messages)
     if completion is None:
         logger.error("main: Failed to get AI analysis")
         sys.exit(1)
 
     logger.info("main: Successfully received AI analysis")
     logger.info(f"main: AI Analysis: {completion}")
-
+    if citations:
+        logger.info(f"main: Citations ({len(citations)}):")
+        for i, citation in enumerate(citations, 1):
+            logger.info(f"main: Citation {i}: {citation}")
     logger.info(f"main: Cost: ${cost:.6f}")
 
 
