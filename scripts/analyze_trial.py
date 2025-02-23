@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.pricing import AITokenPricing
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
@@ -165,14 +166,22 @@ def extract_disease_from_record(
         f"Clinical Record:\n{clinical_record}"
     )
 
-    completion, cost = gpt_client.get_completion(prompt)
-    if completion is None:
-        logger.error("Failed to extract disease from clinical record")
-        return None, cost
+    try:
+        completion, cost = gpt_client.call_gpt(
+            prompt=prompt,
+            system_role="You are a medical expert focused on identifying primary medical conditions.",
+            temperature=0.1,
+        )
+        if completion is None:
+            logger.error("Failed to extract disease from clinical record")
+            return None, cost
 
-    disease_name = completion.strip()
-    logger.info(f"Extracted disease name: {disease_name}")
-    return disease_name, cost
+        disease_name = completion.strip()
+        logger.info(f"Extracted disease name: {disease_name}")
+        return disease_name, cost
+    except Exception as e:
+        logger.error(f"Error extracting disease from clinical record: {e}")
+        return None, 0.0
 
 
 def main():
@@ -243,6 +252,12 @@ def main():
     if trial is None:
         logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
+
+    # Extract disease from clinical record
+    gpt_client = GPTClient(api_key)
+    disease, cost = extract_disease_from_record(clinical_record, gpt_client)
+    logger.info(f"main: Extracted Disease: {disease}")
+    logger.info(f"main: Cost: ${cost:.6f}")
 
     # Get novel drugs from trial title
     gpt_client = GPTClient(api_key)
