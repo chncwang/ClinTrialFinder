@@ -371,7 +371,7 @@ def main():
     completion, cost = gpt_client.call_gpt(
         prompt=prompt,
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
-        temperature=0.7,
+        temperature=0.2,
     )
     if completion is None:
         logger.error("main: Failed to get AI analysis")
