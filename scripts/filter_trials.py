@@ -237,7 +237,17 @@ Example response:
                 self._build_criterion_prompt(criterion, condition, title),
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
             )
-            result = self._parse_gpt_response_with_fallback(response_content)
+            logger.warning(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
+            )
+
+            # If response_content is already a dict, use it directly
+            result = (
+                response_content
+                if isinstance(response_content, dict)
+                else self._parse_gpt_response_with_fallback(response_content)
+            )
+
             validated_result = self._validate_gpt_response(result)
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Evaluated criterion: {criterion} for condition: {condition} with title: {title}"
@@ -259,8 +269,7 @@ Example response:
             )
         except Exception as e:
             logger.error(f"Failed to evaluate criterion: {str(e)}")
-            # Last resort fallback
-            return 0.5, f"Evaluation failed: {str(e)}", 0.0
+            raise
 
     def split_inclusion_criteria(self, criteria: str) -> List[str]:
         """Split the inclusion criteria into individual statements using GPT."""
