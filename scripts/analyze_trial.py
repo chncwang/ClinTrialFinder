@@ -15,6 +15,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.perplexity import PerplexityClient
 from base.pricing import AITokenPricing
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
@@ -232,49 +233,34 @@ def main():
         logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
+    # Initialize Perplexity client
+    perplexity_client = PerplexityClient(perplexity_api_key)
+
     # Build the prompt
     prompt = build_recommendation_prompt(clinical_record, trial)
     logger.info(f"main: Recommendation Prompt:\n{prompt}")
 
-    # Call the Perplexity AI API
-    url = "https://api.perplexity.ai/chat/completions"
+    # Call the Perplexity AI API using the client
+    messages = [
+        {
+            "role": "system",
+            "content": CLINICAL_TRIAL_SYSTEM_PROMPT,
+        },
+        {"role": "user", "content": prompt},
+    ]
 
-    payload = {
-        "model": "sonar-pro",
-        "messages": [
-            {
-                "role": "system",
-                "content": CLINICAL_TRIAL_SYSTEM_PROMPT,
-            },
-            {"role": "user", "content": prompt},
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.2,
-        "top_p": 0.9,
-        "return_images": False,
-        "return_related_questions": False,
-        "stream": False,
-    }
-
-    headers = {
-        "Authorization": "Bearer " + perplexity_api_key,
-        "Content-Type": "application/json",
-    }
-
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        result = response.json()
-        logger.info("main: Successfully received AI analysis")
-        logger.info(f"main: AI Analysis: {result['choices'][0]['message']['content']}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"main: Error calling Perplexity AI API: {e}")
+    completion = perplexity_client.get_completion(messages)
+    if completion is None:
+        logger.error("main: Failed to get AI analysis")
         sys.exit(1)
+
+    logger.info("main: Successfully received AI analysis")
+    logger.info(f"main: AI Analysis: {completion}")
 
     # Calculate and display costs
     log_cost_breakdown(
         prompt + CLINICAL_TRIAL_SYSTEM_PROMPT,
-        result["choices"][0]["message"]["content"],
+        completion,
     )
 
 
