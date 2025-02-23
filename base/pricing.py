@@ -1,4 +1,7 @@
+import logging
 from typing import Dict, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 
 class AITokenPricing:
@@ -43,7 +46,9 @@ class AITokenPricing:
             )
 
         input_tokens = cls.estimate_tokens(prompt)
+        logger.debug(f"calculate_cost: Estimated input tokens: {input_tokens:.1f}")
         output_tokens = cls.estimate_tokens(response)
+        logger.debug(f"calculate_cost: Estimated output tokens: {output_tokens:.1f}")
 
         input_cost, output_cost = cls.MODEL_COSTS[model]
         return input_tokens * input_cost + output_tokens * output_cost
