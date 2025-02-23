@@ -214,6 +214,12 @@ def main():
         logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
+    # Get novel drugs from trial title
+    gpt_client = GPTClient(api_key)
+    novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
+    logger.info(f"main: Novel Drugs: {novel_drugs}")
+    logger.info(f"main: Cost: ${cost:.6f}")
+
     # Initialize Perplexity client
     perplexity_client = PerplexityClient(perplexity_api_key)
 

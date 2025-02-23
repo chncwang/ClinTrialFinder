@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -253,6 +253,52 @@ class ClinicalTrial:
             f"lead_sponsor={self.sponsor.lead_sponsor}, "
             f"collaborators={self.sponsor.collaborators})"
         )
+
+    def get_novel_drugs_from_title(
+        self, gpt_client: "GPTClient"
+    ) -> Tuple[List[str], float]:
+        """
+        Extract novel drug names mentioned in the trial's brief title using GPT.
+
+        Args:
+            gpt_client: Initialized GPTClient instance for making API calls
+
+        Returns:
+            Tuple containing:
+            - List of novel drug names found in the title
+            - Cost of the GPT API call
+        """
+        prompt = f"""Analyze this clinical trial title and extract any novel drug names mentioned:
+
+Title: {self.identification.brief_title}
+
+Rules for extraction:
+1. Only include drugs that appear to be novel or experimental
+2. Exclude common/established drugs
+3. Return drug names in their exact form from the title
+4. If no novel drugs are mentioned, return an empty list
+5. Include both code names (e.g., BMS-936558) and generic names if present
+
+Return a JSON object with a single key "drug_names" containing an array of strings.
+Example: {{"drug_names": ["BMS-936558", "nivolumab"]}}"""
+
+        system_role = "You are a pharmaceutical expert focused on identifying novel and experimental drugs in clinical trial titles."
+
+        try:
+            response, cost = gpt_client.call_with_retry(
+                prompt,
+                system_role,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+                validate_json=True,
+            )
+
+            drug_names = response.get("drug_names", [])
+            return drug_names, cost
+
+        except Exception as e:
+            logger.error(f"Failed to extract novel drugs from title: {str(e)}")
+            return [], 0.0
 
 
 class ClinicalTrialsParser:
