@@ -107,14 +107,6 @@ CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "- Recommended\n"
     "- Neutral\n"
     "- Not Recommended</recommendation_levels>\n\n"
-    "<instructions>Instructions:\n"
-    "1. Carefully analyze the patient's clinical record and trial details.\n"
-    "2. Search for and review published research on the effectiveness of similar drugs/treatments.\n"
-    "3. Consider the potential therapeutic benefit based on both trial info and research findings.\n"
-    "4. Evaluate risks vs potential benefits for the patient's condition.\n"
-    "5. Factor in alternative treatment options available to the patient.\n"
-    "6. Based on your comprehensive analysis, choose the most appropriate recommendation level.\n"
-    "7. Provide an explanation that includes relevant research findings on similar treatments.</instructions>"
 )
 
 
@@ -146,9 +138,9 @@ def build_recommendation_prompt(clinical_record: str, trial_info: ClinicalTrial)
     )
 
     return (
-        f'<clinical_record>Clinical Record:\n"{clinical_record}"</clinical_record>\n\n'
-        f'<trial_info>Trial Information:\n"{trial_info_str}"</trial_info>\n\n'
-        "<output_request>Please search for and analyze published research on similar treatments, then provide your explanation and recommendation level."
+        f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
+        f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>\n\n'
+        "<output_request>\nIf a novel drug is mentioned in the study title, please focus on that drug. Search for and analyze published research on this drug's effectiveness in treating similar diseases or conditions. Based on this evidence, provide your explanation and recommendation level.\n</output_request>"
     )
     return prompt
 
@@ -238,7 +230,9 @@ def main():
         {"role": "user", "content": prompt},
     ]
 
-    completion, citations, cost = perplexity_client.get_completion(messages)
+    completion, citations, cost = perplexity_client.get_completion(
+        messages, max_tokens=2000
+    )
     if completion is None:
         logger.error("main: Failed to get AI analysis")
         sys.exit(1)
