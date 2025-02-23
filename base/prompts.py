@@ -1,4 +1,5 @@
 import json
+from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,6 +20,17 @@ CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "- reason: A detailed explanation of your recommendation based on the evidence provided\n"
     "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
 )
+
+
+class RecommendationLevel(Enum):
+    STRONGLY_RECOMMENDED = "Strongly Recommended"
+    RECOMMENDED = "Recommended"
+    NEUTRAL = "Neutral"
+    NOT_RECOMMENDED = "Not Recommended"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        return [level.value for level in cls]
 
 
 def build_recommendation_prompt(
@@ -73,3 +85,37 @@ def build_recommendation_prompt(
         "evaluate if this trial would be beneficial for the patient. Consider both the patient's condition and the evidence "
         "regarding the trial's treatment approach.</output_request>"
     )
+
+
+def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, str]:
+    """
+    Parses the JSON response from the AI recommendation.
+
+    Parameters:
+    - response (str): The JSON string response from the AI
+
+    Returns:
+    - tuple[RecommendationLevel, str]: A tuple containing (recommendation enum, reason)
+
+    Raises:
+    - ValueError: If the response is not valid JSON or missing required fields
+    """
+    try:
+        data = json.loads(response)
+        recommendation_str = data.get("recommendation")
+        reason = data.get("reason")
+
+        if not recommendation_str or not reason:
+            raise ValueError(
+                "Response missing required 'recommendation' or 'reason' fields"
+            )
+
+        if recommendation_str not in RecommendationLevel.values():
+            raise ValueError(f"Invalid recommendation level: {recommendation_str}")
+
+        # Convert string to enum
+        recommendation = RecommendationLevel(recommendation_str)
+        return recommendation, reason
+
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON response: {e}")
