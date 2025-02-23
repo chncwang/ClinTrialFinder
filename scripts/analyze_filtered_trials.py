@@ -1,7 +1,12 @@
 import argparse
 import json
 import logging
+import os
 from datetime import datetime
+
+from base.gpt_client import GPTClient
+from base.perplexity import PerplexityClient
+from base.trial_analyzer import analyze_drugs_and_get_recommendation
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -29,7 +34,7 @@ def log_trial(trial):
     logger.info("-" * 80)  # Separator line
 
 
-def process_trials_file(filename):
+def process_trials_file(filename, gpt_client, perplexity_client):
     """Read and process the trials JSON file."""
     try:
         with open(filename, "r") as f:
@@ -39,6 +44,17 @@ def process_trials_file(filename):
 
         for trial in trials:
             log_trial(trial)
+            # Analyze the trial
+            recommendation, reason, total_cost = analyze_drugs_and_get_recommendation(
+                novel_drugs=trial.get("novel_drugs", []),
+                clinical_record=trial.get("clinical_record", ""),
+                trial=trial,
+                perplexity_client=perplexity_client,
+                gpt_client=gpt_client,
+            )
+            logger.info(f"Recommendation: {recommendation}")
+            logger.info(f"Reason: {reason}")
+            logger.info(f"Total Cost: ${total_cost:.6f}")
 
         logger.info(f"Finished processing all trials")
 
@@ -60,8 +76,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "clinical_record_file", help="Path to the input clinical record file"
     )
+    parser.add_argument(
+        "--openai-api-key",
+        help="OpenAI API key",
+        default=os.getenv("OPENAI_API_KEY"),
+    )
+    parser.add_argument(
+        "--perplexity-api-key",
+        help="Perplexity API key",
+        default=os.getenv("PERPLEXITY_API_KEY"),
+    )
     args = parser.parse_args()
 
-    process_trials_file(args.trials_json_file)
+    # Initialize clients
+    gpt_client = GPTClient(api_key=args.openai_api_key)
+    perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
+
+    process_trials_file(args.trials_json_file, gpt_client, perplexity_client)
     # You can add a function to process the clinical record file if needed
     # process_clinical_record_file(args.clinical_record_file)

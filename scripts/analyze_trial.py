@@ -45,6 +45,11 @@ perplexity_logger = logging.getLogger("base.perplexity")
 perplexity_logger.setLevel(logging.DEBUG)
 perplexity_logger.propagate = False  # Prevent propagation to parent loggers
 
+# Configure base.trial_analyzer logger
+trial_analyzer_logger = logging.getLogger("base.trial_analyzer")
+trial_analyzer_logger.setLevel(logging.DEBUG)
+trial_analyzer_logger.propagate = False  # Prevent propagation to parent loggers
+
 # Configure handler only once
 handler = logging.StreamHandler()
 handler.setFormatter(
@@ -55,6 +60,7 @@ handler.setFormatter(
 logger.addHandler(handler)
 pricing_logger.addHandler(handler)
 perplexity_logger.addHandler(handler)
+trial_analyzer_logger.addHandler(handler)
 
 
 def fetch_trial_data(nct_id: str) -> list[dict]:
@@ -175,26 +181,12 @@ def main():
         logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
-    # Extract disease from clinical record
-    gpt_client = GPTClient(api_key)
-    disease, cost = extract_disease_from_record(clinical_record, gpt_client)
-    logger.info(f"main: Extracted Disease: {disease}")
-    logger.info(f"main: Cost: ${cost:.6f}")
-
-    # Get novel drugs from trial title
-    gpt_client = GPTClient(api_key)
-    novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
-    logger.info(f"main: Novel Drugs: {novel_drugs}")
-    logger.info(f"main: Cost: ${cost:.6f}")
-
     # Initialize Perplexity client
     perplexity_client = PerplexityClient(perplexity_api_key)
-
+    gpt_client = GPTClient(api_key)
     # Replace the drug analysis and recommendation section with:
     try:
         recommendation, reason, total_cost = analyze_drugs_and_get_recommendation(
-            novel_drugs=novel_drugs,
-            disease=disease,
             clinical_record=clinical_record,
             trial=trial,
             perplexity_client=perplexity_client,
@@ -205,10 +197,10 @@ def main():
         logger.info(f"Total Cost: ${total_cost:.6f}")
     except ValueError as e:
         logger.error(f"Error parsing recommendation: {e}")
-        sys.exit(1)
+        raise
     except Exception as e:
         logger.error(f"Error during analysis: {e}")
-        sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from base.disease_extractor import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 
 logger = logging.getLogger(__name__)
@@ -129,8 +130,6 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
 
 
 def analyze_drugs_and_get_recommendation(
-    novel_drugs: list[str],
-    disease: str,
     clinical_record: str,
     trial: "ClinicalTrial",
     perplexity_client: "PerplexityClient",
@@ -148,10 +147,22 @@ def analyze_drugs_and_get_recommendation(
     total_cost = 0.0
     drug_analyses: dict[str, str] = {}
 
+    # Extract disease from clinical record
+    disease, cost = extract_disease_from_record(clinical_record, gpt_client)
+    total_cost += cost
+    logger.info(f"analyze_drugs_and_get_recommendation: Extracted Disease: {disease}")
+    logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
+
+    novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
+    logger.debug(f"analyze_drugs_and_get_recommendation: novel_drugs: {novel_drugs}")
+    total_cost += cost
+
     # Analyze each drug's effectiveness
     if novel_drugs and disease:
         for drug in novel_drugs:
-            logger.info(f"Analyzing effectiveness of {drug} for {disease}")
+            logger.info(
+                f"analyze_drugs_and_get_recommendation: Analyzing effectiveness of {drug} for {disease}"
+            )
             analysis, citations, cost = analyze_drug_effectiveness(
                 drug, disease, perplexity_client
             )
@@ -159,16 +170,24 @@ def analyze_drugs_and_get_recommendation(
 
             if analysis:
                 drug_analyses[drug] = analysis
-                logger.info(f"Drug Analysis: {analysis}")
+                logger.info(
+                    f"analyze_drugs_and_get_recommendation: Drug Analysis: {analysis}"
+                )
                 if citations:
-                    logger.info(f"Citations ({len(citations)}):")
+                    logger.info(
+                        f"analyze_drugs_and_get_recommendation: Citations ({len(citations)}):"
+                    )
                     for i, citation in enumerate(citations, 1):
-                        logger.info(f"Citation {i}: {citation}")
-                logger.info(f"Cost: ${cost:.6f}")
+                        logger.info(
+                            f"analyze_drugs_and_get_recommendation: Citation {i}: {citation}"
+                        )
+                logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
 
     # Generate recommendation
     prompt = build_recommendation_prompt(clinical_record, trial, drug_analyses)
-    logger.info(f"Recommendation Prompt:\n{prompt}")
+    logger.info(
+        f"analyze_drugs_and_get_recommendation: Recommendation Prompt:\n{prompt}"
+    )
 
     completion, cost = gpt_client.call_gpt(
         prompt=prompt,
@@ -181,7 +200,9 @@ def analyze_drugs_and_get_recommendation(
         raise RuntimeError("Failed to get AI analysis")
 
     recommendation, reason = parse_recommendation_response(completion)
-    logger.info(f"Recommendation: {recommendation}")
-    logger.info(f"Reason: {reason}")
+    logger.info(
+        f"analyze_drugs_and_get_recommendation: Recommendation: {recommendation}"
+    )
+    logger.info(f"analyze_drugs_and_get_recommendation: Reason: {reason}")
 
     return recommendation, reason, total_cost
