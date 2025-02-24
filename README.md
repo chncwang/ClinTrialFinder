@@ -185,6 +185,8 @@ The system uses GPT-4o-mini to:
 2. Parse and split inclusion criteria
 3. Evaluate individual criteria against conditions
 4. Handle complex OR/AND logic in criteria
+5. Identify the novel drug from the trial title
+6. Identify the disease name from the clinical record
 
 The system uses Perplexity AI to:
 
