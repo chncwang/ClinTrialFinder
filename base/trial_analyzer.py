@@ -126,7 +126,7 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         return recommendation, reason
 
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON response: {e}")
+        raise ValueError(f"Invalid JSON response: {e}. Response content: {response}")
 
 
 def analyze_drugs_and_get_recommendation(
