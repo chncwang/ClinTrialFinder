@@ -13,11 +13,6 @@ class PromptCache:
         self.cache_index = OrderedDict()
         self._load_cache_index()
 
-    def _get_cache_key(self, prompt: str, temperature: float) -> str:
-        """Generate a unique cache key for a prompt and temperature."""
-        cache_input = f"{prompt}_{temperature}"
-        return hashlib.md5(cache_input.encode()).hexdigest()
-
     def _load_cache_index(self):
         """Load the cache index from disk."""
         index_path = self.cache_dir / "cache_index.pkl"
@@ -30,9 +25,8 @@ class PromptCache:
         with open(self.cache_dir / "cache_index.pkl", "wb") as f:
             pickle.dump(self.cache_index, f)
 
-    def get(self, prompt: str, temperature: float) -> dict | None:
-        """Get cached result for a prompt and temperature."""
-        cache_key = self._get_cache_key(prompt, temperature)
+    def get(self, cache_key: str) -> dict | None:
+        """Get cached result for a given cache key."""
         if cache_key in self.cache_index:
             cache_file = self.cache_dir / f"{cache_key}.json"
             if cache_file.exists():
@@ -40,9 +34,8 @@ class PromptCache:
                     return json.load(f)
         return None
 
-    def set(self, prompt: str, temperature: float, result: dict):
-        """Cache result for a prompt and temperature."""
-        cache_key = self._get_cache_key(prompt, temperature)
+    def set(self, cache_key: str, result: dict):
+        """Cache result for a given cache key."""
 
         # Enforce cache size limit
         while len(self.cache_index) >= self.max_size:

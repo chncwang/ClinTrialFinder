@@ -194,6 +194,7 @@ def analyze_drugs_and_get_recommendation(
     completion, cost = gpt_client.call_gpt(
         prompt=prompt,
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
+        model="gpt-4o",
         temperature=0.2,
     )
     total_cost += cost

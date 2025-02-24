@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import time
@@ -17,7 +18,6 @@ class GPTClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4o-mini",
         cache_size: int = 100000,
         temperature: float = 0.1,
         max_retries: int = 3,
@@ -27,13 +27,11 @@ class GPTClient:
 
         Args:
             api_key: OpenAI API key
-            model: GPT model to use
             cache_size: Maximum number of cached responses to keep
             temperature: Default temperature for GPT calls
             max_retries: Maximum number of retry attempts for failed calls
         """
         self.client = OpenAI(api_key=api_key)
-        self.model = model
         self.cache = PromptCache(max_size=cache_size)
         self.default_temperature = temperature
         self.max_retries = max_retries
@@ -42,6 +40,7 @@ class GPTClient:
         self,
         prompt: str,
         system_role: str,
+        model: str = "gpt-4o-mini",
         temperature: Optional[float] = None,
         refresh_cache: bool = False,
         response_format: Optional[Dict[str, str]] = None,
@@ -52,6 +51,7 @@ class GPTClient:
         Args:
             prompt: The user prompt to send
             system_role: The system role message
+            model: GPT model to use
             temperature: Temperature setting (uses default if None)
             refresh_cache: Whether to bypass and refresh the cache
             response_format: Optional response format specification
@@ -61,9 +61,13 @@ class GPTClient:
         """
         temp = temperature if temperature is not None else self.default_temperature
 
+        # Construct a cache key from relevant parameters
+        cache_string = f"{model}:{system_role}:{prompt}:{temp}"
+        cache_key = hashlib.sha256(cache_string.encode("utf-8")).hexdigest()
+
         # Check cache first, unless refresh_cache is True
         if not refresh_cache:
-            cached_result = self.cache.get(prompt, temp)
+            cached_result = self.cache.get(cache_key)
             if cached_result is not None:
                 logger.debug("Using cached result")
                 return cached_result, 0.0
@@ -75,7 +79,7 @@ class GPTClient:
             ]
 
             completion_kwargs: Dict[str, Any] = {
-                "model": self.model,
+                "model": model,
                 "messages": messages,
                 "temperature": temp,
             }
@@ -85,9 +89,9 @@ class GPTClient:
             response = self.client.chat.completions.create(**completion_kwargs)
 
             result = response.choices[0].message.content
-            self.cache.set(prompt, temp, result)
+            self.cache.set(cache_key, result)
 
-            cost = AITokenPricing.calculate_cost(prompt + system_role, result)
+            cost = AITokenPricing.calculate_cost(prompt + system_role, result, model)
             return result, cost
 
         except Exception as e:
