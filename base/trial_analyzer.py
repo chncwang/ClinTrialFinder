@@ -191,6 +191,8 @@ def analyze_drugs_and_get_recommendation(
         f"analyze_drugs_and_get_recommendation: Recommendation Prompt:\n{prompt}"
     )
 
+    completion: str
+    cost: float
     completion, cost = gpt_client.call_gpt(
         prompt=prompt,
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
@@ -201,6 +203,35 @@ def analyze_drugs_and_get_recommendation(
 
     if completion is None:
         raise RuntimeError("Failed to get AI analysis")
+
+    # Validate JSON structure
+    try:
+        data = json.loads(completion)
+        # Ensure required fields are present
+        if "reason" not in data or "recommendation" not in data:
+            raise ValueError(
+                "JSON response missing 'reason' or 'recommendation' fields"
+            )
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON structure detected, attempting to correct it.")
+        # Use gpt-4o-mini to convert to valid JSON
+        correction_prompt = (
+            f"Please convert the following text into a valid JSON object. "
+            f"Ensure no additional text or formatting is included:\n{completion}"
+        )
+        completion, correction_cost = gpt_client.call_gpt(
+            prompt=correction_prompt,
+            system_role="You are a JSON expert.",
+            model="gpt-4o-mini",
+            temperature=0.0,
+        )
+        total_cost += correction_cost
+        try:
+            json.loads(completion)  # Re-validate the corrected JSON
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to correct JSON: {e}")
+            logger.error(f"Failed to convert to valid JSON: {completion}")
+            raise ValueError("Failed to convert to valid JSON")
 
     recommendation: RecommendationLevel
     reason: str
