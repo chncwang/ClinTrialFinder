@@ -136,7 +136,7 @@ def analyze_drugs_and_get_recommendation(
     trial: "ClinicalTrial",
     perplexity_client: "PerplexityClient",
     gpt_client: "GPTClient",
-) -> tuple[str, str, float]:
+) -> tuple[RecommendationLevel, str, float]:
     """
     Analyze drug effectiveness and generate AI recommendation.
 
@@ -201,6 +201,8 @@ def analyze_drugs_and_get_recommendation(
     if completion is None:
         raise RuntimeError("Failed to get AI analysis")
 
+    recommendation: RecommendationLevel
+    reason: str
     recommendation, reason = parse_recommendation_response(completion)
     logger.info(
         f"analyze_drugs_and_get_recommendation: Recommendation: {recommendation}"

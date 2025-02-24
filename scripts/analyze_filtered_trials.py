@@ -7,7 +7,10 @@ from datetime import datetime
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
-from base.trial_analyzer import analyze_drugs_and_get_recommendation
+from base.trial_analyzer import (
+    RecommendationLevel,
+    analyze_drugs_and_get_recommendation,
+)
 from base.utils import read_input_file
 
 # Set up logger
@@ -53,6 +56,9 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             trial = ClinicalTrial(trial_dict)
             logger.info(f"Processing trial: {trial}")
             # Analyze the trial
+            recommendation: RecommendationLevel
+            reason: str
+            total_cost: float
             recommendation, reason, total_cost = analyze_drugs_and_get_recommendation(
                 clinical_record,
                 trial=trial,
@@ -64,7 +70,7 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             logger.info(f"Total Cost: ${total_cost:.6f}")
 
             # Add recommendation and reason to the trial data
-            trial_dict["recommendation_level"] = recommendation
+            trial_dict["recommendation_level"] = str(recommendation)
             trial_dict["reason"] = reason
             updated_trials.append(trial_dict)
 
