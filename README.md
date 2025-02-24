@@ -1,6 +1,6 @@
 # ClinTrialFinder
 
-ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4-mini to help researchers and medical professionals find relevant clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches.
+ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4-mini and evidence-based analysis using Perplexity AI to help researchers and medical professionals find relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level.
 
 ## Features
 
@@ -8,6 +8,8 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
 - **Smart Filtering**: Uses GPT-4-mini to evaluate trial eligibility based on:
   - Trial titles
   - Inclusion criteria
+- **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
+- **Intelligent Recommendations**: Uses GPT-4-mini to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
 - **Flexible Search Options**: Filter trials by:
   - Recruitment status
   - Trial phase
@@ -29,10 +31,11 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
    pip install -r requirements.txt
    ```
 
-3. Set up your OpenAI API key:
+3. Set up your OpenAI and Perplexity API keys:
 
    ```bash
-   export OPENAI_API_KEY='your-api-key-here'
+   export OPENAI_API_KEY='your-openai-api-key-here'
+   export PERPLEXITY_API_KEY='your-perplexity-api-key-here'
    ```
 
 ## Usage
@@ -88,12 +91,31 @@ python -m scripts.filter_trials her2_positive_trials.json "ECOG score is 1" --ou
 
 This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps.
 
+### Analyzing Filtered Trials
+
+To analyze the filtered trials and get recommendations:
+
+```bash
+python -m scripts.analyze_filtered_trial filtered_trials.json clinical_record.txt --openai-api-key $OPENAI_API_KEY --perplexity-api-key $PERPLEXITY_API_KEY
+```
+
+- `filtered_trials.json`: The JSON file containing the filtered trials (output from the filtering step).
+- `clinical_record.txt`: A text file containing the patient's clinical record. This should include relevant information like diagnosis, disease stage, prior treatments, etc.
+- `--openai-api-key`: Your OpenAI API Key.
+- `--perplexity-api-key`: Your Perplexity API Key.
+
+This script will add `recommendation_level` and `reason` fields to each trial in the JSON output file (e.g., `analyzed_filtered_trials.json`).
+
 ## Output File Formats
 
 The filtering process generates two JSON files:
 
 1. **Filtered Trials** (`filtered_trials.json`): Contains the complete trial records that passed all filtering criteria
 2. **Excluded Trials** (`filtered_trials_excluded.json`): Contains information about trials that were excluded and why they failed the filtering criteria
+
+The analysis process generates a new JSON file:
+
+3. **Analyzed Trials** (`analyzed_filtered_trials.json`): Contains the filtered trial records with added `recommendation_level` and `reason` fields.
 
 ### Filtered Trials Format
 
@@ -148,7 +170,14 @@ For inclusion criteria failures, these additional fields provide detailed inform
 - `failed_criterion`: The exact criterion that caused the failure
 - `failure_details`: Detailed explanation of why the condition failed to meet the criterion, including analysis of different branches for OR-type criteria
 
-## GPT-4-mini Integration
+### Analyzed Trials Format
+
+The analyzed trials JSON file contains the filtered trial records with the following added fields:
+
+- `recommendation_level`: The recommendation level for the trial (e.g., "strongly recommend", "recommend", "neutral", "not recommend").
+- `reason`: The reasoning behind the recommendation.
+
+## GPT-4-mini and Perplexity AI Integration
 
 The system uses GPT-4-mini to:
 
@@ -156,19 +185,26 @@ The system uses GPT-4-mini to:
 2. Parse and split inclusion criteria
 3. Evaluate individual criteria against conditions
 4. Handle complex OR/AND logic in criteria
+5. Provide recommendation level and reason based on all inputs.
+
+The system uses Perplexity AI to:
+
+1. Search for and retrieve current medical evidence related to the novel drug and the patient's condition.
 
 Responses are cached to optimize API usage and reduce costs.
 
 ## Logging
 
-When executing `scripts/filter_trials.py`, the system maintains detailed logs including:
+When executing `scripts/filter_trials.py` and `scripts/analyze_filtered_trial.py`, the system maintains detailed logs including:
 
 - Trial processing progress
 - GPT-4 API costs
+- Perplexity API calls
 - Eligibility decisions and reasons
+- Recommendation levels and reasons
 - Error messages and debugging information
 
-Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log`
+Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log` and `analyze_filtered_trials_YYYYMMDD_HHMMSS.log`
 
 ## Future Work
 
@@ -232,3 +268,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Uses the ClinicalTrials.gov API v2
 - Powered by OpenAI's GPT-4-mini
 - Built with Scrapy for web crawling
+- Uses Perplexity AI for evidence-based analysis
