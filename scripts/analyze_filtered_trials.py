@@ -29,6 +29,14 @@ file_handler.setFormatter(
 )
 logger.addHandler(file_handler)
 
+# Set up logger for base.trial_analyzer
+trial_analyzer_logger = logging.getLogger("base.trial_analyzer")
+trial_analyzer_logger.setLevel(logging.INFO)
+
+# Add handlers to the trial_analyzer_logger if needed
+trial_analyzer_logger.addHandler(stream_handler)
+trial_analyzer_logger.addHandler(file_handler)
+
 
 def process_trials_file(filename, gpt_client, perplexity_client, clinical_record):
     """Read and process the trials JSON file."""
