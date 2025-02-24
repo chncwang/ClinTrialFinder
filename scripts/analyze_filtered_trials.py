@@ -21,6 +21,14 @@ stream_handler.setFormatter(
 )
 logger.addHandler(stream_handler)
 
+# Create file handler with timestamp in the file name
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+file_handler = logging.FileHandler(f"analyze_filtered_trials_{timestamp}.log")
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+)
+logger.addHandler(file_handler)
+
 
 def process_trials_file(filename, gpt_client, perplexity_client, clinical_record):
     """Read and process the trials JSON file."""
@@ -29,6 +37,9 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             trials = json.load(f)
 
         logger.info(f"Starting to process {len(trials)} trials from {filename}")
+
+        # Prepare a list to store updated trial data
+        updated_trials = []
 
         for trial_dict in trials:
             trial = ClinicalTrial(trial_dict)
@@ -44,7 +55,19 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             logger.info(f"Reason: {reason}")
             logger.info(f"Total Cost: ${total_cost:.6f}")
 
-        logger.info(f"Finished processing all trials")
+            # Add recommendation and reason to the trial data
+            trial_dict["recommendation_level"] = recommendation
+            trial_dict["reason"] = reason
+            updated_trials.append(trial_dict)
+
+        # Write the analyzed trials to a new JSON file
+        output_filename = f"analyzed_{os.path.basename(filename)}"
+        with open(output_filename, "w") as f:
+            json.dump(updated_trials, f, indent=4)
+
+        logger.info(
+            f"Finished processing all trials. Output written to {output_filename}"
+        )
 
     except FileNotFoundError:
         logger.error(f"File not found: {filename}")
@@ -87,5 +110,3 @@ if __name__ == "__main__":
     process_trials_file(
         args.trials_json_file, gpt_client, perplexity_client, clinical_record
     )
-    # You can add a function to process the clinical record file if needed
-    # process_clinical_record_file(args.clinical_record_file)
