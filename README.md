@@ -28,7 +28,7 @@ graph TD
     D[Novel Drug: T-DXd]
     A -->|gpt-4o-mini| B
     C -->|gpt-4o-mini| D
-    E[evidence for T-DXd effectiveness in treating Metastatic Breast Cancer?]
+    E[Evidence for T-DXd effectiveness in treating Metastatic Breast Cancer?]
     B --> E
     D --> E
     F["Trastuzumab deruxtecan (T-DXd) has shown significant effectiveness in treating metastatic breast cancer, particularly in HER2-positive and HER2-low subtypes ..."]
