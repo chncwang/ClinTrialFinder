@@ -25,7 +25,7 @@ graph TD
     A[Patient: A 58-year-old female with a history of HER2-positive invasive ductal carcinoma of the left breast, ... In January 2025, she developed multiple bone metastases ...]
     B[Disease: Metastatic Breast Cancer]
     C[Trial: A Study of T-DXd as Monotherapy or in Combination With Anti-cancer Agents in Patients With Selected HER2-expressing Tumors]
-    D[Novel Drug: T-DXd
+    D[Novel Drug: T-DXd]
     A -->|gpt-4o-mini| B
     C -->|gpt-4o-mini| D
     E[Evidence for T-DXd effectiveness in treating Metastatic Breast Cancer?]
