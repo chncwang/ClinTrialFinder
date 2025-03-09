@@ -73,9 +73,7 @@ graph TD
 
 ### Crawling Clinical Trials
 
-To download clinical trials data, you can use either the direct scrapy command or the new Python script:
-
-#### Option 1: Using the Python script (recommended)
+To download clinical trials data:
 
 ```bash
 python -m scripts.download_trials --condition "breast cancer" --exclude-completed
@@ -106,19 +104,7 @@ python -m scripts.download_trials --condition "breast cancer" --output-file "my_
 
 # Get more detailed logs
 python -m scripts.download_trials --condition "breast cancer" --log-level DEBUG
-
-#### Option 2: Using scrapy directly
-
-```bash
-cd clinical_trial_crawler
-scrapy crawl clinical_trials -a condition="breast cancer" -a exclude_completed=true -o trials.json
 ```
-
-Options:
-
-- `condition`: Specific condition to search for
-- `exclude_completed`: Set to `true` to exclude completed trials
-- `-o trials.json`: Output file for the crawled data
 
 ### Filtering Trials
 
