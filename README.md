@@ -73,7 +73,41 @@ graph TD
 
 ### Crawling Clinical Trials
 
-To download clinical trials data:
+To download clinical trials data, you can use either the direct scrapy command or the new Python script:
+
+#### Option 1: Using the Python script (recommended)
+
+```bash
+python -m scripts.download_trials --condition "breast cancer" --exclude-completed
+```
+
+Options:
+
+- `--condition`: Disease or condition to search for (required if not using --specific-trial)
+- `--exclude-completed`: Exclude completed trials (optional)
+- `--output-file`: Output file path (default: {condition}_trials.json)
+- `--specific-trial`: Download a specific trial by NCT ID (required if not using --condition)
+- `--log-level`: Set the Scrapy log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+Examples:
+
+```bash
+# Download all trials for breast cancer
+python -m scripts.download_trials --condition "breast cancer"
+
+# Download only active/recruiting trials for breast cancer
+python -m scripts.download_trials --condition "breast cancer" --exclude-completed
+
+# Download a specific trial by NCT ID
+python -m scripts.download_trials --specific-trial "NCT04815720"
+
+# Specify a custom output file
+python -m scripts.download_trials --condition "breast cancer" --output-file "my_breast_cancer_trials.json"
+
+# Get more detailed logs
+python -m scripts.download_trials --condition "breast cancer" --log-level DEBUG
+
+#### Option 2: Using scrapy directly
 
 ```bash
 cd clinical_trial_crawler
