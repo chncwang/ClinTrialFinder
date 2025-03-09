@@ -124,7 +124,7 @@ def parse_arguments():
     return args
 
 
-def download_trials(args, condition=None, output_file=None):
+def download_trials(args, condition=None, output_file=None, append=False):
     """Download clinical trials using scrapy."""
     # Get the project root directory
     project_root = Path(__file__).parent.parent
@@ -165,8 +165,9 @@ def download_trials(args, condition=None, output_file=None):
     # Set log level
     cmd += f" --loglevel={args.log_level}"
 
-    # Add output file
-    cmd += f' -O "{output_file}"'
+    # Add output file with -O (overwrite) or -o (append) flag
+    output_flag = "-o" if append else "-O"
+    cmd += f' {output_flag} "{output_file}"'
 
     # Print the command being executed
     print(f"Executing: {cmd}")
@@ -197,15 +198,15 @@ def download_trials(args, condition=None, output_file=None):
 
         if return_code == 0:
             print(f"Command completed successfully.")
-            print(f"Output saved to: {output_file}")
-            return True, output_file
+            print(f"Output {'appended to' if append else 'saved to'}: {output_file}")
+            return True
         else:
             print(f"Command failed with exit code: {return_code}")
-            return False, None
+            return False
 
     except Exception as e:
         print(f"Error executing command: {e}")
-        return False, None
+        return False
 
 
 def get_broader_categories(condition, api_key):
@@ -272,7 +273,7 @@ def main():
 
     # If not including broader categories, just download trials for the specified condition
     if not args.include_broader or args.specific_trial:
-        success = download_trials(args)[0]
+        success = download_trials(args)
         sys.exit(0 if success else 1)
 
     # Get API key from args or environment
@@ -282,57 +283,19 @@ def main():
     broader_categories = get_broader_categories(args.condition, api_key)
 
     # Download trials for the original condition
-    success, original_output = download_trials(args)
+    success = download_trials(args)
     if not success:
         print("Failed to download trials for the original condition")
         sys.exit(1)
 
-    # Store all output files for merging
-    output_files = [original_output]
-
-    # Download trials for each broader category
+    # Download trials for each broader category and append to the same file
     for category in broader_categories:
-        # Create output filename for this category
-        category_filename = category.replace(" ", "_").lower()
-        if args.exclude_completed:
-            category_output = f"{category_filename}_uncompleted_trials.json"
-        else:
-            category_output = f"{category_filename}_trials.json"
-
         print(f"\nDownloading trials for broader category: {category}")
-        success, category_output_path = download_trials(
-            args, condition=category, output_file=category_output
+        success = download_trials(
+            args, condition=category, output_file=args.output_file, append=True
         )
-
-        if success:
-            output_files.append(category_output_path)
-        else:
+        if not success:
             print(f"Warning: Failed to download trials for category: {category}")
-
-    # Merge all trial files if we have more than one
-    if len(output_files) > 1:
-        print("\nMerging trials from all categories...")
-
-        # Determine merged output filename
-        if args.output_file:
-            merged_output = args.output_file
-        else:
-            condition_base = args.condition.replace(" ", "_").lower()
-            if args.exclude_completed:
-                merged_output = f"{condition_base}_with_broader_uncompleted_trials.json"
-            else:
-                merged_output = f"{condition_base}_with_broader_trials.json"
-
-        # Make sure the path is absolute
-        if not os.path.isabs(merged_output):
-            merged_output = Path(__file__).parent.parent / merged_output
-
-        # Merge the files
-        merge_success = merge_json_files(output_files, merged_output)
-
-        if not merge_success:
-            print("Warning: Failed to merge trial files")
-            sys.exit(1)
 
     sys.exit(0)
 
