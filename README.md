@@ -86,6 +86,8 @@ Options:
 - `--output-file`: Output file path (default: {condition}_trials.json)
 - `--specific-trial`: Download a specific trial by NCT ID (required if not using --condition)
 - `--log-level`: Set the Scrapy log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `--include-broader`: Also download trials for broader disease categories
+- `--openai-api-key`: OpenAI API key for broader category identification (alternatively, use OPENAI_API_KEY environment variable)
 
 Examples:
 
@@ -104,7 +106,19 @@ python -m scripts.download_trials --condition "breast cancer" --output-file "my_
 
 # Get more detailed logs
 python -m scripts.download_trials --condition "breast cancer" --log-level DEBUG
+
+# Download trials for both glioblastoma and broader categories like "brain tumor"
+python -m scripts.download_trials --condition "glioblastoma" --include-broader --openai-api-key $OPENAI_API_KEY
 ```
+
+When using the `--include-broader` option, the script will:
+
+1. Identify broader disease categories using GPT (e.g., for "glioblastoma", it might identify "brain tumor" and "central nervous system cancer")
+2. Download trials for the original condition
+3. Download trials for each broader category
+4. Merge all trials into a single output file, removing duplicates
+
+This is useful for finding more potentially relevant trials that might be categorized under broader disease terms.
 
 ### Filtering Trials
 
