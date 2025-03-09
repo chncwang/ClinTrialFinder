@@ -3,7 +3,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from base.disease_extractor import extract_disease_from_record
+from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 
 logger = logging.getLogger(__name__)

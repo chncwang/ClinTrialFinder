@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Script to download clinical trials using the scrapy crawler.
 

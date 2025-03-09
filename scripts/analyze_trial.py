@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import json
 import logging
@@ -15,7 +14,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
-from base.disease_extractor import extract_disease_from_record
+from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
