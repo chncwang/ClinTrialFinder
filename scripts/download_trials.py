@@ -122,8 +122,10 @@ def get_output_filename(condition, args):
 
 def download_trials(args, condition=None, output_file=None):
     """Download clinical trials using scrapy."""
-    # Get the project root directory
+    # Get the project root directory and change to crawler directory
     project_root = Path(__file__).resolve().parent.parent
+    crawler_dir = project_root / "clinical_trial_crawler"
+    os.chdir(crawler_dir)
 
     # Use provided condition or from args
     condition = condition or args.condition
@@ -133,8 +135,8 @@ def download_trials(args, condition=None, output_file=None):
         project_root, get_output_filename(condition, args)
     )
 
-    # Build the scrapy command using the project's structure
-    cmd = f"python -m scrapy crawl clinical_trials"
+    # Build the scrapy command
+    cmd = "python -m scrapy crawl clinical_trials"
 
     # Add condition
     cmd += f' -a condition="{condition}"'
