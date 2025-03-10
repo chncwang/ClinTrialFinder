@@ -56,11 +56,11 @@ class GPTTrialFilter:
     def __init__(self, api_key: str, cache_size: int = 100000):
         self.gpt_client = GPTClient(
             api_key=api_key,
-            model="gpt-4o-mini",
             cache_size=cache_size,
             temperature=0.1,
             max_retries=3,
         )
+        self.model = "gpt-4o-mini"
 
     def _call_gpt(
         self,
@@ -73,6 +73,7 @@ class GPTTrialFilter:
         return self.gpt_client.call_gpt(
             prompt,
             system_role,
+            model=self.model,
             temperature=temperature,
             refresh_cache=refresh_cache,
             response_format={"type": "json_object"},
