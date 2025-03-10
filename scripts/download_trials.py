@@ -22,13 +22,8 @@ import sys
 from pathlib import Path
 
 # Import the disease expert module for broader categories
-try:
-    from base.disease_expert import get_parent_disease_categories
-    from base.gpt_client import GPTClient
-
-    DISEASE_EXPERT_AVAILABLE = True
-except ImportError:
-    DISEASE_EXPERT_AVAILABLE = False
+from base.disease_expert import get_parent_disease_categories
+from base.gpt_client import GPTClient
 
 
 def parse_arguments():
@@ -87,12 +82,6 @@ def parse_arguments():
     if not args.condition and not args.specific_trial:
         parser.error("Either --condition or --specific-trial must be provided")
 
-    # Check if broader categories are requested but disease_expert is not available
-    if args.include_broader and not DISEASE_EXPERT_AVAILABLE:
-        parser.error(
-            "The --include-broader option requires the base.disease_expert module, which is not available"
-        )
-
     # Check if broader categories are requested but no API key is provided
     if (
         args.include_broader
@@ -124,178 +113,187 @@ def parse_arguments():
     return args
 
 
-def download_trials(args, condition=None, output_file=None, append=False):
+def get_output_filename(condition, args):
+    """Generate output filename based on condition and args."""
+    base_name = condition.replace(" ", "_").lower()
+    suffix = "_uncompleted" if args.exclude_completed else ""
+    return f"{base_name}{suffix}_trials.json"
+
+
+def download_trials(args, condition=None, output_file=None):
     """Download clinical trials using scrapy."""
     # Get the project root directory
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).resolve().parent.parent
 
-    # Get the crawler directory
-    crawler_dir = project_root / "clinical_trial_crawler"
-
-    # Use provided condition and output_file or fall back to args
+    # Use provided condition or from args
     condition = condition or args.condition
 
-    # Make sure the output path is absolute
-    if output_file:
-        if not os.path.isabs(output_file):
-            output_file = project_root / output_file
-    else:
-        if not os.path.isabs(args.output_file):
-            output_file = project_root / args.output_file
-        else:
-            output_file = args.output_file
+    # Use provided output file or generate from condition
+    output_file = output_file or os.path.join(
+        project_root, get_output_filename(condition, args)
+    )
 
-    # Change to the crawler directory
-    os.chdir(crawler_dir)
+    # Build the scrapy command using the project's structure
+    cmd = f"python -m scrapy crawl clinical_trials"
 
-    # Build the command string with proper quoting
-    cmd = "scrapy crawl clinical_trials"
+    # Add condition
+    cmd += f' -a condition="{condition}"'
 
-    # Add arguments
-    if condition:
-        # Properly escape the condition to handle spaces
-        cmd += f' -a condition="{condition}"'
-
-    if args.exclude_completed:
-        cmd += " -a exclude_completed=true"
-
+    # Add specific trial if provided
     if args.specific_trial:
         cmd += f" -a specific_trial={args.specific_trial}"
 
-    # Set log level
+    # Add exclude completed flag if set
+    if args.exclude_completed:
+        cmd += " -a exclude_completed=true"
+
+    # Add log level
     cmd += f" --loglevel={args.log_level}"
 
-    # Add output file with -O (overwrite) or -o (append) flag
-    output_flag = "-o" if append else "-O"
-    cmd += f' {output_flag} "{output_file}"'
+    # Add output file
+    cmd += f' -O "{output_file}"'
 
-    # Print the command being executed
-    print(f"Executing: {cmd}")
+    # Print the command being executing
+    print(f"Executing command: {cmd}")
 
     try:
-        # Execute the command and stream output in real-time
+        # Execute the command
         process = subprocess.Popen(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Redirect stderr to stdout to capture all logs
-            text=True,
-            bufsize=1,  # Line buffered
-            universal_newlines=True,
+            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        stdout, stderr = process.communicate()
 
-        # Print output in real-time
-        print("\nScrapy Log Output:")
-        print("-" * 50)
+        # Get the return code
+        return_code = process.returncode
 
-        for line in process.stdout:
-            print(line.rstrip())
-
-        # Wait for the process to complete
-        return_code = process.wait()
-
-        print("-" * 50)
+        # Print any output
+        if stdout:
+            print(stdout.decode())
+        if stderr:
+            print(stderr.decode())
 
         if return_code == 0:
             print(f"Command completed successfully.")
-            print(f"Output {'appended to' if append else 'saved to'}: {output_file}")
-            return True
+            print(f"Output saved to: {output_file}")
+            return True, output_file
         else:
             print(f"Command failed with exit code: {return_code}")
-            return False
+            return False, None
 
     except Exception as e:
         print(f"Error executing command: {e}")
-        return False
+        return False, None
 
 
 def get_broader_categories(condition, api_key):
     """Get broader disease categories for the given condition."""
-    if not DISEASE_EXPERT_AVAILABLE:
-        print("Error: base.disease_expert module is not available")
-        return []
-
     print(f"Identifying broader disease categories for: {condition}")
 
     # Initialize GPT client
     gpt_client = GPTClient(api_key)
 
     # Get broader categories
-    categories, cost = get_parent_disease_categories(condition, gpt_client)
-
-    print(f"Found {len(categories)} broader categories: {categories}")
-    print(f"API cost: ${cost:.6f}")
-
-    return categories
-
-
-def merge_json_files(file_paths, output_path):
-    """Merge multiple JSON files containing clinical trials data."""
-    all_trials = []
-
-    for file_path in file_paths:
-        try:
-            with open(file_path, "r") as f:
-                trials = json.load(f)
-                if isinstance(trials, list):
-                    all_trials.extend(trials)
-                    print(f"Added {len(trials)} trials from {file_path}")
-                else:
-                    print(f"Warning: {file_path} does not contain a list of trials")
-        except Exception as e:
-            print(f"Error reading {file_path}: {e}")
-
-    # Remove duplicates based on NCT ID
-    unique_trials = {}
-    for trial in all_trials:
-        nct_id = trial.get("identification", {}).get("nct_id")
-        if nct_id:
-            unique_trials[nct_id] = trial
-
-    unique_trial_list = list(unique_trials.values())
-
-    # Write the merged trials to the output file
     try:
-        with open(output_path, "w") as f:
-            json.dump(unique_trial_list, f, indent=2)
-        print(
-            f"Successfully merged {len(unique_trial_list)} unique trials to {output_path}"
-        )
-        return True
+        categories, cost = get_parent_disease_categories(condition, gpt_client)
+        print(f"Found {len(categories)} broader categories: {categories}")
+        print(f"API cost: ${cost:.6f}")
+        return categories
     except Exception as e:
-        print(f"Error writing merged trials to {output_path}: {e}")
-        return False
+        print(f"Error getting broader categories: {e}")
+        return []
+
+
+def load_trials_from_file(file_path):
+    """Load trials from a JSON file."""
+    try:
+        with open(file_path, "r") as f:
+            trials = json.load(f)
+            if isinstance(trials, list):
+                return trials
+            else:
+                print(f"Warning: {file_path} does not contain a list of trials")
+                return []
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return []
+
+
+def merge_trials(trials_list):
+    """Merge multiple lists of trials, removing duplicates based on NCT ID."""
+    unique_trials = {}
+    for trials in trials_list:
+        for trial in trials:
+            nct_id = trial.get("identification", {}).get("nct_id")
+            if nct_id:
+                unique_trials[nct_id] = trial
+    return list(unique_trials.values())
 
 
 def main():
     """Main entry point."""
     args = parse_arguments()
 
+    # Set OpenAI API key if provided
+    if args.openai_api_key:
+        os.environ["OPENAI_API_KEY"] = args.openai_api_key
+
     # If not including broader categories, just download trials for the specified condition
     if not args.include_broader or args.specific_trial:
-        success = download_trials(args)
+        success, _ = download_trials(args)
         sys.exit(0 if success else 1)
 
-    # Get API key from args or environment
-    api_key = args.openai_api_key or os.getenv("OPENAI_API_KEY")
-
     # Get broader categories
-    broader_categories = get_broader_categories(args.condition, api_key)
+    broader_categories = get_broader_categories(args.condition, args.openai_api_key)
+    if not broader_categories:
+        print("No broader categories found")
+        sys.exit(1)
+
+    # List to store all output files
+    output_files = []
 
     # Download trials for the original condition
-    success = download_trials(args)
-    if not success:
+    success, output_file = download_trials(args)
+    if success:
+        output_files.append(output_file)
+    else:
         print("Failed to download trials for the original condition")
         sys.exit(1)
 
-    # Download trials for each broader category and append to the same file
+    # Download trials for each broader category
     for category in broader_categories:
         print(f"\nDownloading trials for broader category: {category}")
-        success = download_trials(
-            args, condition=category, output_file=args.output_file, append=True
+        category_output = get_output_filename(category, args)
+        success, output_file = download_trials(
+            args, condition=category, output_file=category_output
         )
-        if not success:
+        if success:
+            output_files.append(output_file)
+        else:
             print(f"Warning: Failed to download trials for category: {category}")
+
+    # Merge all trials
+    all_trials = []
+    for file in output_files:
+        trials = load_trials_from_file(file)
+        print(f"Loaded {len(trials)} trials from {file}")
+        all_trials.append(trials)
+
+    # Create merged output filename
+    base_condition = args.condition.replace(" ", "_").lower()
+    suffix = "_uncompleted" if args.exclude_completed else ""
+    merged_output = f"{base_condition}_with_broader{suffix}_trials.json"
+
+    # Merge and save
+    unique_trials = merge_trials(all_trials)
+    print(f"\nTotal unique trials after merging: {len(unique_trials)}")
+
+    try:
+        with open(merged_output, "w") as f:
+            json.dump(unique_trials, f, indent=2)
+        print(f"Successfully saved merged trials to: {merged_output}")
+    except Exception as e:
+        print(f"Error writing merged trials to {merged_output}: {e}")
+        sys.exit(1)
 
     sys.exit(0)
 
