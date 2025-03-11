@@ -221,13 +221,33 @@ Return a JSON object containing:
 Example response:
 {{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
 
-        response_content, cost = self._call_gpt(
-            prompt,
-            "You are a clinical trial analyst focused on evaluating titles.",
-            temperature=0.1,
-        )
-        result = self._parse_gpt_response(response_content)
-        return result["suitability_probability"], result["reason"], cost
+        max_retries = 3
+        total_cost = 0.0
+
+        for attempt in range(max_retries):
+            try:
+                response_content, cost = self._call_gpt(
+                    prompt,
+                    "You are a clinical trial analyst focused on evaluating titles.",
+                    temperature=0.1,
+                    refresh_cache=(attempt > 0),  # Refresh cache on retries
+                )
+                total_cost += cost
+                result = self._parse_gpt_response(response_content)
+                return result["suitability_probability"], result["reason"], total_cost
+            except json.JSONDecodeError:
+                logger.warning(
+                    f"GPTTrialFilter.evaluate_title: JSON parsing failed on attempt {attempt + 1}/{max_retries}. Response content: {response_content}"
+                )
+                if attempt == max_retries - 1:  # Last attempt
+                    logger.error(
+                        "GPTTrialFilter.evaluate_title: All attempts to parse JSON failed"
+                    )
+                    return (
+                        0.5,
+                        "Unable to confidently evaluate title due to parsing errors - treating as uncertain",
+                        total_cost,
+                    )
 
     def evaluate_inclusion_criterion(
         self, criterion: str, condition: str, title: str
