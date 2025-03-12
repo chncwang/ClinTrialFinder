@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from base.clinical_trial import ClinicalTrial
     from base.gpt_client import GPTClient
-    from base.perplexity_client import PerplexityClient
+    from base.perplexity import PerplexityClient
 
 CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
