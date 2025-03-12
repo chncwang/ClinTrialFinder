@@ -13,12 +13,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
-from base.pricing import AITokenPricing
 from base.trial_analyzer import (
     CLINICAL_TRIAL_SYSTEM_PROMPT,
     analyze_drugs_and_get_recommendation,

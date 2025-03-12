@@ -8,7 +8,6 @@ from pathlib import Path
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 from base.perplexity import PerplexityClient
-from base.pricing import AITokenPricing
 
 # Configure logging
 logger = logging.getLogger(__name__)
