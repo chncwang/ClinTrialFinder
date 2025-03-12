@@ -27,7 +27,12 @@ class PerplexityClient:
 
         Args:
             api_key (str): The Perplexity API key
+
+        Raises:
+            ValueError: If the API key is empty or invalid
         """
+        if not api_key:
+            raise ValueError("Invalid API key: The API key cannot be empty.")
         self.api_key = api_key
         self.headers = {
             "Authorization": f"Bearer {api_key}",
