@@ -67,12 +67,11 @@ def read_trials_file(file_path):
 def log_trial_details(trial):
     """Log relevant details for each trial."""
     logger.info("=" * 80)
-    identification = trial.get("identification", {})
-    logger.info(f"Trial ID: {identification.get('nct_id', 'N/A')}")
-    logger.info(f"Title: {identification.get('brief_title', 'N/A')}")
-    logger.info(f"Drug Analysis: {trial.get('drug_analysis', {})}")
-    logger.info(f"Recommendation Level: {trial.get('recommendation_level', 'N/A')}")
-    logger.info(f"Analysis Reason: {trial.get('reason', 'N/A')}")
+    logger.info(f"Trial ID: {trial.identification.nct_id}")
+    logger.info(f"Title: {trial.identification.brief_title}")
+    logger.info(f"Drug Analysis: {trial.drug_analysis}")
+    logger.info(f"Recommendation Level: {trial.recommendation_level}")
+    logger.info(f"Analysis Reason: {trial.analysis_reason}")
     logger.info("=" * 80)
 
 
