@@ -54,9 +54,9 @@ def process_trials_file(
         # Prepare a list to store updated trial data
         updated_trials = []
 
-        for trial_dict in trials:
+        for index, trial_dict in enumerate(trials, start=1):
             trial = ClinicalTrial(trial_dict)
-            logger.info(f"Processing trial: {trial}")
+            logger.info(f"Processing trial {index}/{len(trials)}: {trial}")
             # Analyze the trial
             recommendation: RecommendationLevel
             reason: str
