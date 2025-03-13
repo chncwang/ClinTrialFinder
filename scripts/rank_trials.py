@@ -176,10 +176,26 @@ def rank_trials(
         for trial in trials
     ]
 
-    # Randomize the trials before sorting with fixed seed
+    # Log first 10 trial titles before shuffle
+    logger.info("First 10 trial titles before shuffle:")
+    for i in range(min(10, len(trial_objects))):
+        logger.info(f"{i+1}. {trial_objects[i].identification.brief_title}")
+
+    # Randomize trials before sorting
     random.seed(seed)
-    random.shuffle(trial_objects)
     logger.info(f"Randomized {len(trial_objects)} trials before sorting (seed: {seed})")
+    logger.info(
+        f"Initial pivotal trial title (last position): {trial_objects[-1].identification.brief_title}"
+    )
+    random.shuffle(trial_objects)
+    logger.info(
+        f"Pivotal trial title after randomization (last position): {trial_objects[-1].identification.brief_title}"
+    )
+
+    # Log first 10 trial titles after shuffle
+    logger.info("First 10 trial titles after shuffle:")
+    for i in range(min(10, len(trial_objects))):
+        logger.info(f"{i+1}. {trial_objects[i].identification.brief_title}")
 
     # Sort trials using quicksort
     total_cost = quicksort(
@@ -260,7 +276,7 @@ def main():
         logger.info("=" * 80)
 
     except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}", exc_info=True)
         raise
 
 
