@@ -268,6 +268,7 @@ def compare_trials(
             - Total cost of API calls
     """
     total_cost = 0.0
+    max_retries = 3
 
     # Build comparison prompt using existing drug analyses
     trial1_info = (
@@ -300,43 +301,74 @@ def compare_trials(
         "Provide a detailed explanation of your decision.</output_request>"
     )
 
-    # Get comparison from GPT-4
-    completion, cost = gpt_client.call_gpt(
-        prompt=comparison_prompt,
-        system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
-        model="gpt-4o",
-        temperature=0.2,
-        response_format={"type": "json_object"},
-    )
-    total_cost += cost
-
-    if completion is None:
-        raise RuntimeError("Failed to get trial comparison")
-
-    # Parse the comparison response
-    try:
-        data = json.loads(completion)
-        reason = data.get("reason")
-        better_trial_id = data.get("better_trial")
-
-        if not better_trial_id or not reason:
-            raise ValueError(
-                "Response missing required 'better_trial' or 'reason' fields"
+    for attempt in range(max_retries):
+        try:
+            # Get comparison from GPT-4
+            completion, cost = gpt_client.call_gpt(
+                prompt=comparison_prompt,
+                system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
+                model="gpt-4o",
+                temperature=0.2,
+                response_format={"type": "json_object"},
+                refresh_cache=attempt > 0,  # Refresh cache if retried
             )
+            total_cost += cost
 
-        # Determine which trial is better
-        better_trial = (
-            trial1 if better_trial_id == trial1.identification.nct_id else trial2
-        )
+            if completion is None:
+                raise RuntimeError("Failed to get trial comparison")
 
-        logger.info(
-            f"compare_trials: Better trial: {better_trial.identification.nct_id}"
-        )
-        logger.info(f"compare_trials: Reason: {reason}")
-        logger.info(f"compare_trials: Total cost: ${total_cost:.6f}")
+            # Parse the comparison response
+            try:
+                data = json.loads(completion)
+                reason = data.get("reason")
+                better_trial_id = data.get("better_trial")
 
-        return better_trial, reason, total_cost
+                if not better_trial_id or not reason:
+                    logger.error(
+                        f"Response missing required fields. Response content: {completion}"
+                    )
+                    if attempt < max_retries - 1:
+                        logger.info(
+                            f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                        )
+                        continue
+                    raise ValueError(
+                        "Response missing required 'better_trial' or 'reason' fields"
+                    )
 
-    except json.JSONDecodeError:
-        logger.warning("Invalid JSON structure detected in comparison response")
-        raise ValueError(f"Invalid JSON response: {completion}")
+                # Determine which trial is better
+                better_trial = (
+                    trial1
+                    if better_trial_id == trial1.identification.nct_id
+                    else trial2
+                )
+
+                logger.info(
+                    f"compare_trials: Better trial: {better_trial.identification.nct_id}"
+                )
+                logger.info(f"compare_trials: Reason: {reason}")
+                logger.info(f"compare_trials: Total cost: ${total_cost:.6f}")
+
+                return better_trial, reason, total_cost
+
+            except json.JSONDecodeError:
+                logger.error(
+                    f"Invalid JSON response on attempt {attempt + 1}/{max_retries}: {completion}"
+                )
+                if attempt < max_retries - 1:
+                    logger.info(
+                        f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                    )
+                    continue
+                raise ValueError(f"Invalid JSON response: {completion}")
+
+        except Exception as e:
+            logger.error(f"Error on attempt {attempt + 1}/{max_retries}: {str(e)}")
+            if attempt < max_retries - 1:
+                logger.info(
+                    f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                )
+                continue
+            raise
+
+    raise RuntimeError(f"Failed to get valid comparison after {max_retries} attempts")
