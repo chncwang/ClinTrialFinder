@@ -244,3 +244,99 @@ def analyze_drugs_and_get_recommendation(
     logger.info(f"analyze_drugs_and_get_recommendation: Reason: {reason}")
 
     return recommendation, reason, drug_analyses, total_cost
+
+
+def compare_trials(
+    clinical_record: str,
+    trial1: "ClinicalTrial",
+    trial2: "ClinicalTrial",
+    gpt_client: "GPTClient",
+) -> tuple["ClinicalTrial", str, float]:
+    """
+    Compare two clinical trials and determine which is better for a target patient.
+
+    Args:
+        clinical_record (str): The patient's clinical record
+        trial1 (ClinicalTrial): First trial to compare
+        trial2 (ClinicalTrial): Second trial to compare
+        gpt_client (GPTClient): Client for GPT-4 analysis
+
+    Returns:
+        tuple containing:
+            - The better trial (ClinicalTrial)
+            - Detailed explanation of the comparison
+            - Total cost of API calls
+    """
+    total_cost = 0.0
+
+    # Build comparison prompt using existing drug analyses
+    trial1_info = (
+        f"NCT ID: {trial1.identification.nct_id}\n"
+        f"Title: {trial1.identification.brief_title}\n"
+        f"Recommendation Level: {trial1.recommendation_level}\n"
+        f"Reason: {trial1.analysis_reason}\n"
+        f"Drug Analyses: {json.dumps(trial1.drug_analysis, indent=2)}"
+    )
+
+    trial2_info = (
+        f"NCT ID: {trial2.identification.nct_id}\n"
+        f"Title: {trial2.identification.brief_title}\n"
+        f"Recommendation Level: {trial2.recommendation_level}\n"
+        f"Reason: {trial2.analysis_reason}\n"
+        f"Drug Analyses: {json.dumps(trial2.drug_analysis, indent=2)}"
+    )
+
+    comparison_prompt = (
+        f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
+        f"<trial1_info>\n{trial1_info}\n</trial1_info>\n\n"
+        f"<trial2_info>\n{trial2_info}\n</trial2_info>\n\n"
+        "<output_format>\nProvide your response as a JSON object with the following structure:\n"
+        "{\n"
+        '  "reason": "detailed explanation of why this trial is better, considering both trials\' recommendations, drug analyses, and other relevant factors",\n'
+        '  "better_trial": "nct_id of the better trial"\n'
+        "}\n</output_format>\n\n"
+        "<output_request>\nBased on the clinical record and both trials' analyses, determine which trial would be better for the patient. "
+        "Consider the recommendation levels, drug effectiveness analyses, and any other relevant factors. "
+        "Provide a detailed explanation of your decision.</output_request>"
+    )
+
+    # Get comparison from GPT-4
+    completion, cost = gpt_client.call_gpt(
+        prompt=comparison_prompt,
+        system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
+        model="gpt-4o",
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+    total_cost += cost
+
+    if completion is None:
+        raise RuntimeError("Failed to get trial comparison")
+
+    # Parse the comparison response
+    try:
+        data = json.loads(completion)
+        reason = data.get("reason")
+        better_trial_id = data.get("better_trial")
+
+        if not better_trial_id or not reason:
+            raise ValueError(
+                "Response missing required 'better_trial' or 'reason' fields"
+            )
+
+        # Determine which trial is better
+        better_trial = (
+            trial1 if better_trial_id == trial1.identification.nct_id else trial2
+        )
+
+        logger.info(
+            f"compare_trials: Better trial: {better_trial.identification.nct_id}"
+        )
+        logger.info(f"compare_trials: Reason: {reason}")
+        logger.info(f"compare_trials: Total cost: ${total_cost:.6f}")
+
+        return better_trial, reason, total_cost
+
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON structure detected in comparison response")
+        raise ValueError(f"Invalid JSON response: {completion}")
