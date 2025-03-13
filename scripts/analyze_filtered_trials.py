@@ -41,7 +41,9 @@ trial_analyzer_logger.addHandler(stream_handler)
 trial_analyzer_logger.addHandler(file_handler)
 
 
-def process_trials_file(filename, gpt_client, perplexity_client, clinical_record):
+def process_trials_file(
+    filename, gpt_client, perplexity_client, clinical_record, output_filename=None
+):
     """Read and process the trials JSON file."""
     try:
         with open(filename, "r") as f:
@@ -80,7 +82,8 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             updated_trials.append(trial_dict)
 
         # Write the analyzed trials to a new JSON file
-        output_filename = f"analyzed_{os.path.basename(filename)}"
+        if output_filename is None:
+            output_filename = f"analyzed_{os.path.basename(filename)}"
         with open(output_filename, "w") as f:
             json.dump(updated_trials, f, indent=4)
 
@@ -119,6 +122,10 @@ if __name__ == "__main__":
         help="Perplexity API key",
         default=os.getenv("PERPLEXITY_API_KEY"),
     )
+    parser.add_argument(
+        "--output",
+        help="Output JSON file path (default: analyzed_[input_filename])",
+    )
     args = parser.parse_args()
 
     # Initialize clients
@@ -127,5 +134,9 @@ if __name__ == "__main__":
 
     clinical_record = read_input_file(args.clinical_record_file)
     process_trials_file(
-        args.trials_json_file, gpt_client, perplexity_client, clinical_record
+        args.trials_json_file,
+        gpt_client,
+        perplexity_client,
+        clinical_record,
+        args.output,
     )
