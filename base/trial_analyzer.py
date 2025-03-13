@@ -1,16 +1,17 @@
 import json
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
+from base.gpt_client import GPTClient
+from base.utils import parse_json_response
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from base.clinical_trial import ClinicalTrial
-    from base.gpt_client import GPTClient
     from base.perplexity import PerplexityClient
 
 CLINICAL_TRIAL_SYSTEM_PROMPT = (

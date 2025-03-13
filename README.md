@@ -10,6 +10,7 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
   - Inclusion criteria
 - **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
 - **Intelligent Recommendations**: Uses GPT-4o to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
+- **Clinical Record Analysis**: Extracts relevant conditions, demographics, and clinical status from patient records using GPT-4o.
 - **Flexible Search Options**: Filter trials by:
   - Recruitment status
   - Trial phase
@@ -174,6 +175,39 @@ python -m scripts.analyze_filtered_trial filtered_trials.json clinical_record.tx
 - `--perplexity-api-key`: Your Perplexity API Key.
 
 This script will add `recommendation_level` and `reason` fields to each trial in the JSON output file (e.g., `analyzed_filtered_trials.json`).
+
+### Extracting Conditions from Clinical Records
+
+To extract relevant conditions, demographics, and clinical status from a patient's clinical record:
+
+```bash
+python -m scripts.extract_conditions clinical_record.txt --openai-api-key $OPENAI_API_KEY
+```
+
+Options:
+- `clinical_record.txt`: A text file containing the patient's clinical record
+- `--openai-api-key`: Your OpenAI API Key (required)
+
+The script will output a JSON array of extracted values, including:
+- Key medical conditions
+- Essential patient demographics (age, gender)
+- Important clinical status (performance score, stage, etc.)
+
+Example output:
+```json
+[
+  "The patient has Type 2 Diabetes.",
+  "The patient is 65 years old.",
+  "The patient is male.",
+  "The patient has an ECOG PS of 1.",
+  "The patient is at Stage III."
+]
+```
+
+This feature is particularly useful for:
+1. Preparing patient information for trial matching
+2. Standardizing clinical record data for analysis
+3. Identifying key eligibility criteria from patient records
 
 ## Output File Formats
 

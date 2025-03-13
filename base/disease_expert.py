@@ -1,8 +1,9 @@
 import json
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
-from .gpt_client import GPTClient
+from base.gpt_client import GPTClient
+from base.utils import parse_json_response
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -42,8 +43,7 @@ def extract_disease_from_record(
         logger.info(f"Extracted disease name: {disease_name}")
         return disease_name, cost
     except Exception as e:
-        logger.error(f"Error extracting disease from clinical record: {e}")
-        return None, 0.0
+        raise RuntimeError(f"Error extracting disease from clinical record: {e}")
 
 
 def get_parent_disease_categories(
@@ -88,61 +88,115 @@ def get_parent_disease_categories(
             logger.error(f"Failed to get parent disease categories for {disease_name}")
             return [], cost
 
-        # Parse the response as JSON
-        try:
-            # Clean up the response to ensure it's valid JSON
-            cleaned_response = completion.strip()
-
-            # Parse the JSON response
-            response_data = json.loads(cleaned_response)
-
-            # Extract the categories
-            if not isinstance(response_data, dict) or "categories" not in response_data:
-                logger.error(
-                    f"Response is not in the expected format: {cleaned_response}"
-                )
-                return [], cost
-
-            categories = response_data["categories"]
+        def validate_categories(data: Dict) -> bool:
+            if not isinstance(data, dict) or "categories" not in data:
+                return False
+            categories = data["categories"]
             if not isinstance(categories, list):
-                logger.error(f"Categories is not a list: {categories}")
-                return [], cost
+                return False
+            return True
 
-            # Ensure all items are strings
-            categories = [str(item) for item in categories]
+        # Parse and validate the response
+        response_data, total_cost = parse_json_response(
+            completion,
+            expected_type=dict,
+            gpt_client=gpt_client,
+            cost=cost,
+            validation_func=validate_categories,
+        )
 
-            # Filter out overly general categories
-            too_general = [
-                "cancer",
-                "malignancy",
-                "oncological disorder",
-                "disease",
-                "disorder",
-                "condition",
-                "illness",
-            ]
-            filtered_categories = [
-                category
-                for category in categories
-                if not any(
-                    category.lower() == general.lower() for general in too_general
-                )
-            ]
+        # Process the categories
+        categories = response_data["categories"]
+        categories = [str(item) for item in categories]
 
-            logger.info(
-                f"Parent disease categories for {disease_name}: {filtered_categories}"
-            )
-            return filtered_categories, cost
+        # Filter out overly general categories
+        too_general = [
+            "cancer",
+            "malignancy",
+            "oncological disorder",
+            "disease",
+            "disorder",
+            "condition",
+            "illness",
+        ]
+        filtered_categories = [
+            category
+            for category in categories
+            if not any(category.lower() == general.lower() for general in too_general)
+        ]
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON response: {e}")
-            logger.error(f"Raw response: {completion}")
-            return [], cost
-        except Exception as e:
-            logger.error(f"Error processing parent disease categories response: {e}")
-            logger.error(f"Raw response: {completion}")
-            return [], cost
+        logger.info(
+            f"Parent disease categories for {disease_name}: {filtered_categories}"
+        )
+        return filtered_categories, total_cost
 
     except Exception as e:
-        logger.error(f"Error getting parent disease categories for {disease_name}: {e}")
-        return [], cost
+        raise RuntimeError(
+            f"Error getting parent disease categories for {disease_name}: {e}"
+        )
+
+
+def extract_conditions_from_record(
+    clinical_record: str, gpt_client: GPTClient
+) -> Tuple[List[str], float]:
+    """
+    Extracts relevant clinical conditions from a clinical record using GPT-4o.
+    Returns a flat array of extracted values that are typically matched in clinical trials.
+
+    Parameters:
+    - clinical_record (str): The patient's clinical record text
+    - gpt_client (GPTClient): Initialized GPT client for making API calls
+
+    Returns:
+    - tuple[list[str], float]: A tuple containing:
+        - List of extracted values (conditions, demographics, clinical status, etc.)
+        - Cost of the API call
+    """
+    prompt = (
+        "Extract relevant clinical conditions from the following clinical record that are typically matched in clinical trials. "
+        "Return the results as a JSON array of strings, where each string represents a piece of information. "
+        "Focus on conditions and statuses that are critical for clinical trial matching.\n\n"
+        "Include:\n"
+        "- Key medical conditions\n"
+        "- Essential patient demographics (age, gender)\n"
+        "- Important clinical status (performance score, stage, etc.)\n\n"
+        "Example format:\n"
+        "[\n"
+        '  "The patient has Type 2 Diabetes.",\n'
+        '  "The patient is 65 years old.",\n'
+        '  "The patient is male.",\n'
+        '  "The patient has an ECOG PS of 1.",\n'
+        '  "The patient is at Stage III."\n'
+        "]\n\n"
+        f"Clinical Record:\n{clinical_record}\n\n"
+        "Return only the JSON array, no additional text or explanation."
+    )
+
+    try:
+        completion, cost = gpt_client.call_gpt(
+            prompt=prompt,
+            system_role="You are a medical expert specialized in extracting structured patient information from clinical records.",
+            temperature=0.1,
+            model="gpt-4o",  # Use GPT-4o model
+        )
+        if completion is None:
+            logger.error("Failed to extract information from clinical record")
+            return [], cost
+
+        # Parse and validate the response
+        result, total_cost = parse_json_response(
+            completion, expected_type=list, gpt_client=gpt_client, cost=cost
+        )
+
+        # Convert all items to strings and filter out empty strings
+        extracted_values = [
+            str(item).strip()
+            for item in result
+            if isinstance(item, (str, int, float)) and str(item).strip()
+        ]
+
+        logger.info(f"Extracted {len(extracted_values)} values from clinical record")
+        return extracted_values, total_cost
+
+    except Exception as e:
+        raise RuntimeError(f"Error extracting information from clinical record: {e}")
