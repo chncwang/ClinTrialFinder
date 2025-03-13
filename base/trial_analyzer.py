@@ -136,7 +136,7 @@ def analyze_drugs_and_get_recommendation(
     trial: "ClinicalTrial",
     perplexity_client: "PerplexityClient",
     gpt_client: "GPTClient",
-) -> tuple[RecommendationLevel, str, float]:
+) -> tuple[RecommendationLevel, str, dict[str, str], float]:
     """
     Analyze drug effectiveness and generate AI recommendation.
 
@@ -144,6 +144,7 @@ def analyze_drugs_and_get_recommendation(
         tuple containing:
             - Recommendation level (Strongly Recommended, Recommended, etc.)
             - Reason for the recommendation
+            - Dictionary mapping drug names to their effectiveness analyses
             - Total cost of API calls
     """
     total_cost = 0.0
@@ -241,4 +242,4 @@ def analyze_drugs_and_get_recommendation(
     )
     logger.info(f"analyze_drugs_and_get_recommendation: Reason: {reason}")
 
-    return recommendation, reason, total_cost
+    return recommendation, reason, drug_analyses, total_cost

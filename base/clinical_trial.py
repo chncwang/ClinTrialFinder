@@ -147,6 +147,7 @@ class ClinicalTrial:
         # Handle additional fields from analyzed trials
         self.recommendation_level = trial_data.get("recommendation_level")
         self.analysis_reason = trial_data.get("reason")
+        self.drug_analysis = trial_data.get("drug_analysis")
 
     @property
     def is_recruiting(self) -> bool:
@@ -232,6 +233,8 @@ class ClinicalTrial:
             base_dict["recommendation_level"] = self.recommendation_level
         if hasattr(self, "analysis_reason") and self.analysis_reason is not None:
             base_dict["reason"] = self.analysis_reason
+        if hasattr(self, "drug_analysis") and self.drug_analysis is not None:
+            base_dict["drug_analysis"] = self.drug_analysis
 
         return base_dict
 

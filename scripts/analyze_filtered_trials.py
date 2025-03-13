@@ -58,20 +58,25 @@ def process_trials_file(filename, gpt_client, perplexity_client, clinical_record
             # Analyze the trial
             recommendation: RecommendationLevel
             reason: str
+            drug_analyses: dict[str, str]
             total_cost: float
-            recommendation, reason, total_cost = analyze_drugs_and_get_recommendation(
-                clinical_record,
-                trial=trial,
-                perplexity_client=perplexity_client,
-                gpt_client=gpt_client,
+            recommendation, reason, drug_analyses, total_cost = (
+                analyze_drugs_and_get_recommendation(
+                    clinical_record,
+                    trial=trial,
+                    perplexity_client=perplexity_client,
+                    gpt_client=gpt_client,
+                )
             )
             logger.info(f"Recommendation: {recommendation}")
             logger.info(f"Reason: {reason}")
+            logger.info(f"Drug Analyses: {drug_analyses}")
             logger.info(f"Total Cost: ${total_cost:.6f}")
 
-            # Add recommendation and reason to the trial data
+            # Add recommendation, reason, and drug analysis to the trial data
             trial_dict["recommendation_level"] = str(recommendation)
             trial_dict["reason"] = reason
+            trial_dict["drug_analysis"] = drug_analyses
             updated_trials.append(trial_dict)
 
         # Write the analyzed trials to a new JSON file
