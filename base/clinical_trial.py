@@ -144,6 +144,10 @@ class ClinicalTrial:
 
         self.sponsor = Sponsor(**trial_data["sponsor"])
 
+        # Handle additional fields from analyzed trials
+        self.recommendation_level = trial_data.get("recommendation_level")
+        self.analysis_reason = trial_data.get("reason")
+
     @property
     def is_recruiting(self) -> bool:
         return self.status.overall_status == "RECRUITING"
@@ -156,7 +160,7 @@ class ClinicalTrial:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the trial object back to a dictionary format."""
-        return {
+        base_dict = {
             "identification": {
                 "nct_id": self.identification.nct_id,
                 "brief_title": self.identification.brief_title,
@@ -219,6 +223,17 @@ class ClinicalTrial:
                 "collaborators": self.sponsor.collaborators,
             },
         }
+
+        # Add analyzed trial fields if they exist
+        if (
+            hasattr(self, "recommendation_level")
+            and self.recommendation_level is not None
+        ):
+            base_dict["recommendation_level"] = self.recommendation_level
+        if hasattr(self, "analysis_reason") and self.analysis_reason is not None:
+            base_dict["reason"] = self.analysis_reason
+
+        return base_dict
 
     def __str__(self) -> str:
         """Provide a user-friendly string representation of the ClinicalTrial object."""
@@ -340,4 +355,41 @@ class ClinicalTrialsParser:
             trial
             for trial in self.trials
             if trial.design.study_type.lower() != excluded_type.lower()
+        ]
+
+    def get_trials_by_recommendation_level(
+        self, recommendation_level: str
+    ) -> List[ClinicalTrial]:
+        """Get all trials matching the specified recommendation level (case-insensitive).
+
+        Args:
+            recommendation_level: The recommendation level to filter by (e.g., 'Strongly Recommended',
+                                'Recommended', 'Neutral', 'Not Recommended')
+
+        Returns:
+            List of trials that match the recommendation level
+        """
+        # For "Recommended", match substring but exclude "Not Recommended"
+        if recommendation_level.lower() == "recommended":
+            return [
+                trial
+                for trial in self.trials
+                if (
+                    hasattr(trial, "recommendation_level")
+                    and trial.recommendation_level
+                    and "recommended" in trial.recommendation_level.lower()
+                    and "not recommended" not in trial.recommendation_level.lower()
+                    and "not_recommended" not in trial.recommendation_level.lower()
+                )
+            ]
+
+        # For all other cases, use substring matching
+        return [
+            trial
+            for trial in self.trials
+            if (
+                hasattr(trial, "recommendation_level")
+                and trial.recommendation_level
+                and recommendation_level.lower() in trial.recommendation_level.lower()
+            )
         ]

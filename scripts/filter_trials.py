@@ -805,8 +805,8 @@ def main():
     )
     parser.add_argument(
         "conditions",
-        nargs="+",
-        help="One or more conditions to filter trials (e.g., 'doesn\\'t have a measurable site')",
+        nargs="*",  # Changed from '+' to '*' to make it optional
+        help="Optional conditions to filter trials (e.g., 'doesn\\'t have a measurable site')",
     )
     parser.add_argument(
         "--output",
@@ -838,22 +838,34 @@ def main():
         "--exclude-study-type",
         help="Exclude trials of a specific study type (e.g., 'Observational')",
     )
+    parser.add_argument(
+        "--recommendation-level",
+        choices=["Strongly Recommended", "Recommended", "Neutral", "Not Recommended"],
+        help="Filter trials by recommendation level (from previous analysis)",
+    )
 
     args = parser.parse_args()
 
     # Get API key from arguments or environment
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    if (
+        not api_key and args.conditions
+    ):  # Only require API key if conditions are provided
         logger.error(
-            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable"
+            "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable when using conditions"
         )
         sys.exit(1)
 
-    # Initialize GPT filter and load trials
-    gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
+    # Initialize GPT filter only if needed
+    gpt_filter = None
+    if args.conditions:
+        gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
+
     json_data = load_json_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
+
+    logger.info(f"main: Loaded {len(trials)} trials from input file")
 
     # Apply filters
     if args.exclude_study_type:
@@ -873,77 +885,107 @@ def main():
             f"main: Filtered for phase {args.phase} trials: {len(trials)} found"
         )
 
+    if args.recommendation_level:
+        recommendation_filtered = trials_parser.get_trials_by_recommendation_level(
+            args.recommendation_level
+        )
+        trials = [t for t in trials if t in recommendation_filtered]
+        logger.info(
+            f"main: Filtered for recommendation level '{args.recommendation_level}': {len(trials)} found"
+        )
+
     filtered_trials = []
     excluded_trials = []
     total_trials = len(trials)
     total_cost = 0.0
     eligible_count = 0
 
-    logger.info(f"Processing {total_trials} trials with conditions: {args.conditions}")
-
-    for i, trial in enumerate(trials, 1):
+    if args.conditions:
         logger.info(
-            f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            f"Processing {total_trials} trials with conditions: {args.conditions}"
         )
 
-        # Now we unpack three values: eligibility, cost, and failure reason
-        is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-            trial, args.conditions
-        )
-        total_cost += cost
+        for i, trial in enumerate(trials, 1):
+            logger.info(
+                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            )
 
-        if is_eligible:
-            # If the trial is eligible, we keep the entire record
-            trial_dict = trial.to_dict()
-            filtered_trials.append(trial_dict)
-            eligible_count += 1
-        else:
-            # If the trial is ineligible, store failure details
-            excluded_info = {
-                "nct_id": trial.identification.nct_id,
-                "brief_title": trial.identification.brief_title,
-                "eligibility_criteria": trial.eligibility.criteria,
-                "failure_type": failure_reason.type,
-                "failure_message": failure_reason.message,
-            }
+            # Now we unpack three values: eligibility, cost, and failure reason
+            is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
+                trial, args.conditions
+            )
+            total_cost += cost
 
-            # Add additional fields for inclusion criterion failures
-            if failure_reason.type == "inclusion_criterion":
-                excluded_info.update(
-                    {
-                        "failed_condition": failure_reason.failed_condition,
-                        "failed_criterion": failure_reason.failed_criterion,
-                        "failure_details": failure_reason.failure_details,
-                    }
-                )
+            if is_eligible:
+                # If the trial is eligible, we keep the entire record
+                trial_dict = trial.to_dict()
+                filtered_trials.append(trial_dict)
+                eligible_count += 1
+            else:
+                # If the trial is ineligible, store failure details
+                excluded_info = {
+                    "nct_id": trial.identification.nct_id,
+                    "brief_title": trial.identification.brief_title,
+                    "eligibility_criteria": trial.eligibility.criteria,
+                    "failure_type": failure_reason.type,
+                    "failure_message": failure_reason.message,
+                }
 
-            excluded_trials.append(excluded_info)
+                # Add additional fields for inclusion criterion failures
+                if failure_reason.type == "inclusion_criterion":
+                    excluded_info.update(
+                        {
+                            "failed_condition": failure_reason.failed_condition,
+                            "failed_criterion": failure_reason.failed_criterion,
+                            "failure_details": failure_reason.failure_details,
+                        }
+                    )
 
+                # Add analyzed trial fields if they exist
+                if (
+                    hasattr(trial, "recommendation_level")
+                    and trial.recommendation_level
+                ):
+                    excluded_info["recommendation_level"] = trial.recommendation_level
+                if hasattr(trial, "analysis_reason") and trial.analysis_reason:
+                    excluded_info["analysis_reason"] = trial.analysis_reason
+
+                excluded_trials.append(excluded_info)
+
+            logger.info(
+                f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+            )
+    else:
+        # If no conditions provided, all trials that made it through the filters are eligible
         logger.info(
-            f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+            "No conditions provided - keeping all trials that passed other filters"
         )
+        filtered_trials = [trial.to_dict() for trial in trials]
+        eligible_count = len(filtered_trials)
 
     # Save the passing (filtered) trials
     save_json_file(filtered_trials, args.output)
 
-    # Save the excluded trials
-    excluded_path = args.output.replace(".json", "_excluded.json")
-    try:
-        with open(excluded_path, "w") as f:
-            json.dump(excluded_trials, f, indent=2)
-        logger.info(f"Excluded trials saved to {excluded_path}")
-    except Exception as e:
-        logger.error(f"Error saving excluded trials: {str(e)}")
-        sys.exit(1)
+    # Save the excluded trials only if we did condition filtering
+    if args.conditions:
+        excluded_path = args.output.replace(".json", "_excluded.json")
+        try:
+            with open(excluded_path, "w") as f:
+                json.dump(excluded_trials, f, indent=2)
+            logger.info(f"Excluded trials saved to {excluded_path}")
+        except Exception as e:
+            logger.error(f"Error saving excluded trials: {str(e)}")
+            sys.exit(1)
 
     logger.info(
         f"main: Final results: {eligible_count}/{total_trials} trials were eligible"
     )
     logger.info(f"main: Filtered trials saved to {args.output}")
-    logger.info(
-        f"main: Excluded trials saved to {args.output.replace('.json', '_excluded.json')}"
-    )
-    logger.info(f"main: Total API cost: ${total_cost:.2f}")
+    if args.conditions:
+        logger.info(
+            f"main: Excluded trials saved to {args.output.replace('.json', '_excluded.json')}"
+        )
+        logger.info(f"main: Total API cost: ${total_cost:.2f}")
 
 
 if __name__ == "__main__":
