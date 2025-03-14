@@ -161,24 +161,33 @@ def extract_conditions_from_record(
 
         # Extract clinical history in chronological order
         prompt = (
-            "Extract at most 5 most important key conditions from the patient's clinical record for clinical trials filtering. "
-            "Present the results as a JSON array of strings, with each string detailing a key condition.\n\n"
+            f"Extract at most 10 most important key conditions AND demographic features from the patient's clinical record for clinical trials filtering. "
+            f"Use relative time references based on today's date ({current_time_str}). "
+            "Present the results as a JSON array of strings. Include relevant demographic information (age, sex, etc.) as the first item.\n\n"
             "Focus on:\n"
+            "- Demographic features (age, sex, etc.)\n"
             "- Major medical conditions\n"
             "- Significant treatments and their status\n"
             "- Current clinical status\n\n"
             "Example format:\n"
             "[\n"
+            '  "65-year-old female",\n'
             '  "Type 2 Diabetes, stable with medication",\n'
             '  "Stage 3 lung cancer with ongoing chemotherapy",\n'
             '  "Liver metastasis under monitoring",\n'
-            '  "Receiving drug Z for lung cancer with stable disease",\n'
-            '  "Hypertension managed with medication"\n'
+            '  "Hypertension managed with medication",\n'
+            '  "Chronic kidney disease stage 2",\n'
+            '  "Myocardial infarction 4 years ago",\n'
+            '  "Osteoarthritis of the knee",\n'
+            '  "Hypothyroidism on levothyroxine",\n'
+            '  "COPD with occasional exacerbations"\n'
             "]\n\n"
             "Guidelines:\n"
-            "1. Focus on the condition and its current status\n"
-            "2. Include relevant treatment information if applicable\n"
-            "3. Keep descriptions concise and medically relevant\n\n"
+            "1. Always include demographic information as the first item\n"
+            "2. Focus on the condition and its current status\n"
+            "3. Include relevant treatment information if applicable\n"
+            "4. Use relative time references (e.g., '2 years ago' instead of '2021')\n"
+            "5. Keep descriptions concise and medically relevant\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
             "Return only the JSON array, without any additional text or explanation."
         )
