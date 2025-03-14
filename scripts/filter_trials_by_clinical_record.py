@@ -12,25 +12,45 @@ from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
 from base.utils import load_json_list_file
 
-# Get logger for this module first
-logger = logging.getLogger(__name__)
-
 # Configure logging with timestamp in filename
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-log_file = f"filter_trials_by_clinical_record_{timestamp}.log"
+# Create logs directory if it doesn't exist
+logs_dir = Path("logs")
+logs_dir.mkdir(exist_ok=True)
+log_file = logs_dir / f"filter_trials_by_clinical_record_{timestamp}.log"
 
-# Configure logging with both file and console output
+# Configure root logger first
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
 )
 
-# Set logging level for all loggers
+# Create and configure file handler
+file_handler = logging.FileHandler(str(log_file))
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+)
+file_handler.setLevel(logging.INFO)
+
+# Create and configure console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+)
+console_handler.setLevel(logging.INFO)
+
+# Get and configure the module logger
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logging.getLogger("base.disease_expert").setLevel(logging.INFO)
-logging.getLogger("base.trial_expert").setLevel(logging.INFO)
-logging.getLogger("base.gpt_client").setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Configure other loggers
+for module in ["base.disease_expert", "base.trial_expert", "base.gpt_client"]:
+    module_logger = logging.getLogger(module)
+    module_logger.setLevel(logging.INFO)
+    module_logger.addHandler(file_handler)
+    module_logger.addHandler(console_handler)
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:
