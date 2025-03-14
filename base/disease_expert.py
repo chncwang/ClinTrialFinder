@@ -1,9 +1,10 @@
 import json
 import logging
+from datetime import datetime
 from typing import Dict, List, Tuple
 
 from base.gpt_client import GPTClient
-from base.utils import parse_json_response
+from base.utils import parse_json_response, read_input_file
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -137,66 +138,80 @@ def get_parent_disease_categories(
 
 
 def extract_conditions_from_record(
-    clinical_record: str, gpt_client: GPTClient
-) -> Tuple[List[str], float]:
+    clinical_record_file: str, gpt_client: GPTClient
+) -> List[str]:
     """
-    Extracts relevant clinical conditions from a clinical record using GPT-4o.
-    Returns a flat array of extracted values that are typically matched in clinical trials.
+    Extract the patient's clinical history from a clinical record file in chronological order.
 
     Parameters:
-    - clinical_record (str): The patient's clinical record text
+    - clinical_record_file (str): Path to the clinical record file
     - gpt_client (GPTClient): Initialized GPT client for making API calls
 
     Returns:
-    - tuple[list[str], float]: A tuple containing:
-        - List of extracted values (conditions, demographics, clinical status, etc.)
-        - Cost of the API call
+    - List[str]: List of clinical history items in chronological order
     """
-    prompt = (
-        "Extract relevant clinical conditions from the following clinical record that are typically matched in clinical trials. "
-        "Return the results as a JSON array of strings, where each string represents a piece of information. "
-        "Focus on conditions and statuses that are critical for clinical trial matching.\n\n"
-        "Include:\n"
-        "- Key medical conditions\n"
-        "- Essential patient demographics (age, gender)\n"
-        "- Important clinical status (performance score, stage, etc.)\n\n"
-        "Example format:\n"
-        "[\n"
-        '  "The patient has Type 2 Diabetes.",\n'
-        '  "The patient is 65 years old.",\n'
-        '  "The patient is male.",\n'
-        '  "The patient has an ECOG PS of 1.",\n'
-        '  "The patient is at Stage III."\n'
-        "]\n\n"
-        f"Clinical Record:\n{clinical_record}\n\n"
-        "Return only the JSON array, no additional text or explanation."
-    )
-
     try:
+        # Read the clinical record
+        clinical_record = read_input_file(clinical_record_file)
+        logger.info(f"Read clinical record from {clinical_record_file}")
+
+        # Get current time for relative time calculations
+        current_time = datetime.now()
+        current_time_str = current_time.strftime("%Y-%m-%d")
+
+        # Extract clinical history in chronological order
+        prompt = (
+            "Extract the patient's clinical history from the following clinical record in chronological order. "
+            "Return the results as a JSON array of strings, where each string represents an event, condition, or treatment. "
+            f"Today's date is {current_time_str}. EVERY condition, event, and treatment MUST include a relative time reference "
+            "(e.g., '9 months ago', '2 weeks ago', 'currently', etc.). Do not use absolute dates.\n\n"
+            "Include:\n"
+            "- Basic patient information (current age, gender)\n"
+            "- Medical conditions with when they occurred/were diagnosed\n"
+            "- Treatments and procedures with start and end times\n"
+            "- Response to treatments with timing\n"
+            "- Current clinical status with 'currently' or 'present'\n\n"
+            "Example format:\n"
+            "[\n"
+            '  "Currently 35 years old",\n'
+            '  "Male",\n'
+            '  "Diagnosed with Type 2 Diabetes 2 years ago",\n'
+            '  "Started chemotherapy 6 months ago",\n'
+            '  "Developed metastasis 3 months ago",\n'
+            '  "Had partial response to immunotherapy from 4 months ago until 2 months ago",\n'
+            '  "Currently receiving drug Z for the past 2 weeks",\n'
+            '  "Currently has ECOG PS of 1"\n'
+            "]\n\n"
+            "Rules:\n"
+            "1. Every medical condition must include when it was diagnosed/occurred\n"
+            "2. Every treatment must include when it started and ended (or 'currently' if ongoing)\n"
+            "3. Every status must include 'currently' if it's a present condition\n"
+            "4. Use the most precise time reference possible (e.g., '2 weeks ago' instead of 'recently')\n\n"
+            f"Clinical Record:\n{clinical_record}\n\n"
+            "Return only the JSON array, no additional text or explanation."
+        )
+
         completion, cost = gpt_client.call_gpt(
             prompt=prompt,
-            system_role="You are a medical expert specialized in extracting structured patient information from clinical records.",
+            system_role="You are a medical expert specialized in extracting clinical history from medical records.",
             temperature=0.1,
-            model="gpt-4o",  # Use GPT-4o model
-        )
-        if completion is None:
-            logger.error("Failed to extract information from clinical record")
-            return [], cost
-
-        # Parse and validate the response
-        result, total_cost = parse_json_response(
-            completion, expected_type=list, gpt_client=gpt_client, cost=cost
+            model="gpt-4o",
         )
 
-        # Convert all items to strings and filter out empty strings
-        extracted_values = [
-            str(item).strip()
-            for item in result
-            if isinstance(item, (str, int, float)) and str(item).strip()
-        ]
+        if completion:
+            history, _ = parse_json_response(
+                completion, expected_type=list, gpt_client=gpt_client, cost=cost
+            )
 
-        logger.info(f"Extracted {len(extracted_values)} values from clinical record")
-        return extracted_values, total_cost
+            # Log history
+            logger.info(f"Extracted {len(history)} clinical history items:")
+            for item in history:
+                logger.info(f"- {item}")
+
+            return history
 
     except Exception as e:
-        raise RuntimeError(f"Error extracting information from clinical record: {e}")
+        logger.error(f"Error processing clinical record: {e}")
+        raise
+
+    return []
