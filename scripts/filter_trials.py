@@ -25,33 +25,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class EligibilityCriteriaError(Exception):
-    """Custom exception for eligibility criteria format errors."""
-
-    pass
-
-
-@dataclass
-class CriterionEvaluation:
-    """Represents the evaluation result of a clinical trial criterion."""
-
-    criterion: str
-    reason: str
-    eligibility: float
-
-
-@dataclass
-class TrialFailureReason:
-    """Represents why a trial was deemed ineligible."""
-
-    type: str  # "title" or "inclusion_criterion"
-    message: str  # General failure message for title failures
-    # Fields specific to inclusion criterion failures
-    failed_condition: Optional[str] = None
-    failed_criterion: Optional[str] = None
-    failure_details: Optional[str] = None
-
-
 def load_json_file(file_path: str) -> List[dict]:
     """Load and parse a JSON file."""
     try:
@@ -65,27 +38,120 @@ def load_json_file(file_path: str) -> List[dict]:
         sys.exit(1)
 
 
-def save_json_file(data: List[Dict], output_path: str):
-    """Save filtered trials to a JSON file."""
+def save_json_file(data: List[Dict], output_path: str, file_type: str = "results"):
+    """Save data to a JSON file.
+
+    Args:
+        data: The data to save
+        output_path: The path to save to
+        file_type: Type of file being saved (for logging purposes)
+    """
     try:
         with open(output_path, "w") as f:
             json.dump(data, f, indent=2)
-        logger.info(f"save_json_file: Results saved to {output_path}")
+        logger.info(f"save_json_file: {file_type.capitalize()} saved to {output_path}")
     except Exception as e:
-        logger.error(f"save_json_file: Error saving results: {str(e)}")
+        logger.error(f"save_json_file: Error saving {file_type}: {str(e)}")
         sys.exit(1)
 
 
-def save_excluded_trials(excluded_trials: List[Dict], output_path: str):
-    """Save excluded trials with their failure reasons to a JSON file."""
-    excluded_path = output_path.replace(".json", "_excluded.json")
-    try:
-        with open(excluded_path, "w") as f:
-            json.dump(excluded_trials, f, indent=2)
-        logger.info(f"save_excluded_trials: Excluded trials saved to {excluded_path}")
-    except Exception as e:
-        logger.error(f"save_excluded_trials: Error saving excluded trials: {str(e)}")
-        sys.exit(1)
+def process_trials_with_conditions(
+    trials: List[ClinicalTrial],
+    conditions: List[str],
+    output_path: str,
+    gpt_filter: Optional[GPTTrialFilter] = None,
+) -> Tuple[int, float]:
+    """Process trials with given conditions and save results.
+
+    Args:
+        trials: List of clinical trials to process
+        conditions: List of conditions to filter trials
+        output_path: Path to save output files
+        gpt_filter: Optional GPTTrialFilter instance for condition evaluation
+
+    Returns:
+        Tuple of (number of eligible trials, total API cost)
+    """
+    filtered_trials = []
+    excluded_trials = []
+    total_trials = len(trials)
+    total_cost = 0.0
+    eligible_count = 0
+
+    if conditions:
+        if not gpt_filter:
+            raise ValueError(
+                "GPTTrialFilter instance required when conditions are provided"
+            )
+
+        logger.info(f"Processing {total_trials} trials with conditions: {conditions}")
+
+        for i, trial in enumerate(trials, 1):
+            logger.info(
+                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            )
+
+            is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
+                trial, conditions
+            )
+            total_cost += cost
+
+            if is_eligible:
+                trial_dict = trial.to_dict()
+                filtered_trials.append(trial_dict)
+                eligible_count += 1
+            else:
+                excluded_info = {
+                    "nct_id": trial.identification.nct_id,
+                    "brief_title": trial.identification.brief_title,
+                    "eligibility_criteria": trial.eligibility.criteria,
+                    "failure_type": failure_reason.type,
+                    "failure_message": failure_reason.message,
+                }
+
+                if failure_reason.type == "inclusion_criterion":
+                    excluded_info.update(
+                        {
+                            "failed_condition": failure_reason.failed_condition,
+                            "failed_criterion": failure_reason.failed_criterion,
+                            "failure_details": failure_reason.failure_details,
+                        }
+                    )
+
+                if (
+                    hasattr(trial, "recommendation_level")
+                    and trial.recommendation_level
+                ):
+                    excluded_info["recommendation_level"] = trial.recommendation_level
+                if hasattr(trial, "analysis_reason") and trial.analysis_reason:
+                    excluded_info["analysis_reason"] = trial.analysis_reason
+
+                excluded_trials.append(excluded_info)
+
+            logger.info(
+                f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+            )
+    else:
+        logger.info(
+            "No conditions provided - keeping all trials that passed other filters"
+        )
+        filtered_trials = [trial.to_dict() for trial in trials]
+        eligible_count = len(filtered_trials)
+
+    # Save the passing (filtered) trials
+    save_json_file(filtered_trials, output_path, "filtered trials")
+
+    # Save the excluded trials only if we did condition filtering
+    if conditions:
+        excluded_path = output_path.replace(".json", "_excluded.json")
+        save_json_file(excluded_trials, excluded_path, "excluded trials")
+
+    logger.info(f"Final results: {eligible_count}/{total_trials} trials were eligible")
+    logger.info(f"Filtered trials saved to {output_path}")
+    if conditions:
+        logger.info(f"Excluded trials saved to {excluded_path}")
+
+    return eligible_count, total_cost
 
 
 def main():
@@ -186,97 +252,12 @@ def main():
             f"main: Filtered for recommendation level '{args.recommendation_level}': {len(trials)} found"
         )
 
-    filtered_trials = []
-    excluded_trials = []
-    total_trials = len(trials)
-    total_cost = 0.0
-    eligible_count = 0
-
-    if args.conditions:
-        logger.info(
-            f"Processing {total_trials} trials with conditions: {args.conditions}"
-        )
-
-        for i, trial in enumerate(trials, 1):
-            logger.info(
-                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
-            )
-
-            # Now we unpack three values: eligibility, cost, and failure reason
-            is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-                trial, args.conditions
-            )
-            total_cost += cost
-
-            if is_eligible:
-                # If the trial is eligible, we keep the entire record
-                trial_dict = trial.to_dict()
-                filtered_trials.append(trial_dict)
-                eligible_count += 1
-            else:
-                # If the trial is ineligible, store failure details
-                excluded_info = {
-                    "nct_id": trial.identification.nct_id,
-                    "brief_title": trial.identification.brief_title,
-                    "eligibility_criteria": trial.eligibility.criteria,
-                    "failure_type": failure_reason.type,
-                    "failure_message": failure_reason.message,
-                }
-
-                # Add additional fields for inclusion criterion failures
-                if failure_reason.type == "inclusion_criterion":
-                    excluded_info.update(
-                        {
-                            "failed_condition": failure_reason.failed_condition,
-                            "failed_criterion": failure_reason.failed_criterion,
-                            "failure_details": failure_reason.failure_details,
-                        }
-                    )
-
-                # Add analyzed trial fields if they exist
-                if (
-                    hasattr(trial, "recommendation_level")
-                    and trial.recommendation_level
-                ):
-                    excluded_info["recommendation_level"] = trial.recommendation_level
-                if hasattr(trial, "analysis_reason") and trial.analysis_reason:
-                    excluded_info["analysis_reason"] = trial.analysis_reason
-
-                excluded_trials.append(excluded_info)
-
-            logger.info(
-                f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
-            )
-    else:
-        # If no conditions provided, all trials that made it through the filters are eligible
-        logger.info(
-            "No conditions provided - keeping all trials that passed other filters"
-        )
-        filtered_trials = [trial.to_dict() for trial in trials]
-        eligible_count = len(filtered_trials)
-
-    # Save the passing (filtered) trials
-    save_json_file(filtered_trials, args.output)
-
-    # Save the excluded trials only if we did condition filtering
-    if args.conditions:
-        excluded_path = args.output.replace(".json", "_excluded.json")
-        try:
-            with open(excluded_path, "w") as f:
-                json.dump(excluded_trials, f, indent=2)
-            logger.info(f"Excluded trials saved to {excluded_path}")
-        except Exception as e:
-            logger.error(f"Error saving excluded trials: {str(e)}")
-            sys.exit(1)
-
-    logger.info(
-        f"main: Final results: {eligible_count}/{total_trials} trials were eligible"
+    # Process trials with conditions and save results
+    eligible_count, total_cost = process_trials_with_conditions(
+        trials, args.conditions, args.output, gpt_filter
     )
-    logger.info(f"main: Filtered trials saved to {args.output}")
+
     if args.conditions:
-        logger.info(
-            f"main: Excluded trials saved to {args.output.replace('.json', '_excluded.json')}"
-        )
         logger.info(f"main: Total API cost: ${total_cost:.2f}")
 
 
