@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.gpt_client import GPTClient
-from base.trial_analyzer import GPTTrialFilter, TrialFailureReason
+from base.trial_expert import GPTTrialFilter, TrialFailureReason
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"

@@ -9,7 +9,7 @@ from typing import List, Tuple
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
-from base.trial_analyzer import compare_trials
+from base.trial_expert import compare_trials
 
 # Global logger instance
 logger = None

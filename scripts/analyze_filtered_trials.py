@@ -7,38 +7,32 @@ from datetime import datetime
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
-from base.trial_analyzer import (
-    RecommendationLevel,
-    analyze_drugs_and_get_recommendation,
-)
+from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recommendation
 from base.utils import read_input_file
 
-# Set up logger
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-# Create stream handler
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(stream_handler)
-
-# Create file handler with timestamp in the file name
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-file_handler = logging.FileHandler(f"analyze_filtered_trials_{timestamp}.log")
+# Set up file handler
+file_handler = logging.FileHandler("analyze_filtered_trials.log")
+file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
-logger.addHandler(file_handler)
 
-# Set up logger for base.trial_analyzer
-trial_analyzer_logger = logging.getLogger("base.trial_analyzer")
-trial_analyzer_logger.setLevel(logging.INFO)
+# Set up stream handler for console output
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(logging.Formatter("%(message)s"))
 
-# Add handlers to the trial_analyzer_logger if needed
-trial_analyzer_logger.addHandler(stream_handler)
-trial_analyzer_logger.addHandler(file_handler)
+# Set up logger for base.trial_expert
+trial_expert_logger = logging.getLogger("base.trial_expert")
+trial_expert_logger.setLevel(logging.INFO)
+
+# Add handlers to the trial_expert_logger if needed
+trial_expert_logger.addHandler(stream_handler)
+trial_expert_logger.addHandler(file_handler)
 
 
 def process_trials_file(

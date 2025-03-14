@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -13,53 +14,42 @@ sys.path.append(str(Path(__file__).parent.parent))
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-from base.clinical_trial import ClinicalTrialsParser
+from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
-from base.trial_analyzer import (
-    CLINICAL_TRIAL_SYSTEM_PROMPT,
-    analyze_drugs_and_get_recommendation,
-    build_recommendation_prompt,
-    parse_recommendation_response,
-)
+from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recommendation
 from base.utils import read_input_file
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
 
 # Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set logger level to INFO
-logger.propagate = False  # Prevent propagation to parent loggers
 
-# Configure base.pricing logger
-pricing_logger = logging.getLogger("base.pricing")
-pricing_logger.setLevel(logging.DEBUG)
-pricing_logger.propagate = False  # Prevent propagation to parent loggers
+# Create file handler with timestamp in the file name
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+file_handler = logging.FileHandler(f"analyze_trial_{timestamp}.log")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
+logger.addHandler(file_handler)
 
-# Configure base.perplexity logger
-perplexity_logger = logging.getLogger("base.perplexity")
-perplexity_logger.setLevel(logging.DEBUG)
-perplexity_logger.propagate = False  # Prevent propagation to parent loggers
+# Configure base.trial_expert logger
+trial_expert_logger = logging.getLogger("base.trial_expert")
+trial_expert_logger.setLevel(logging.DEBUG)
+trial_expert_logger.propagate = False  # Prevent propagation to parent loggers
 
-# Configure base.trial_analyzer logger
-trial_analyzer_logger = logging.getLogger("base.trial_analyzer")
-trial_analyzer_logger.setLevel(logging.DEBUG)
-trial_analyzer_logger.propagate = False  # Prevent propagation to parent loggers
-
-# Configure handler only once
-handler = logging.StreamHandler()
+# Create file handler for trial_expert logger
+handler = logging.FileHandler(f"trial_expert_{timestamp}.log")
+handler.setLevel(logging.DEBUG)
 handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)  # Standard format with timestamp, logger name, and level
-
-# Add handler to all loggers
-logger.addHandler(handler)
-pricing_logger.addHandler(handler)
-perplexity_logger.addHandler(handler)
-trial_analyzer_logger.addHandler(handler)
+)
+trial_expert_logger.addHandler(handler)
 
 
 def fetch_trial_data(nct_id: str) -> list[dict]:
@@ -158,7 +148,7 @@ def main():
     # Fetch and parse the trial data
     nct_id: str = args.nct_id
     json_data = fetch_trial_data(nct_id)
-    trials_parser = ClinicalTrialsParser(json_data)
+    trials_parser = ClinicalTrial(json_data)
 
     # Find the specific trial
     trial = trials_parser.get_trial_by_nct_id(args.nct_id)

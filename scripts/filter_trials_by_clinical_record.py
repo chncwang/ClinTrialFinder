@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
-from base.trial_analyzer import GPTTrialFilter
+from base.trial_expert import GPTTrialFilter
 
 # Configure logging
 logging.basicConfig(
