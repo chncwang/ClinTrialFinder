@@ -1,67 +1,42 @@
 import argparse
+import datetime
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from base.clinical_trial import ClinicalTrial
+from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
-from base.trial_expert import GPTTrialFilter
+from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
+from base.utils import load_json_list_file
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Get logger for this module first
 logger = logging.getLogger(__name__)
+
+# Configure logging with timestamp in filename
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = f"filter_trials_by_clinical_record_{timestamp}.log"
+
+# Configure logging with both file and console output
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+)
+
+# Set logging level for all loggers
+logger.setLevel(logging.INFO)
+logging.getLogger("base.disease_expert").setLevel(logging.INFO)
+logging.getLogger("base.trial_expert").setLevel(logging.INFO)
+logging.getLogger("base.gpt_client").setLevel(logging.INFO)
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:
     """Load trials from a JSON file."""
     with open(trials_file, "r") as f:
         return json.load(f)
-
-
-def filter_trials_by_conditions(
-    trials: List[Dict[str, Any]], conditions: List[str], gpt_filter: GPTTrialFilter
-) -> List[Dict[str, Any]]:
-    """Filter trials based on extracted conditions using GPT evaluation."""
-    filtered_trials = []
-
-    # Log the conditions we're looking for
-    logger.info("Looking for conditions:")
-    for condition in conditions:
-        logger.info(f"- {condition}")
-
-    for trial_dict in trials:
-        # Create ClinicalTrial object directly
-        trial = ClinicalTrial(trial_dict)
-
-        # Evaluate trial using GPTTrialFilter
-        is_eligible, probability, failure_reason = gpt_filter.evaluate_trial(
-            trial, conditions
-        )
-
-        if is_eligible:
-            logger.info(
-                f"Found matching trial: {trial.identification.nct_id} "
-                f"(probability: {probability:.2f})"
-            )
-            # Add probability to the trial data
-            trial_dict["suitability_probability"] = probability
-            filtered_trials.append(trial_dict)
-        else:
-            logger.debug(
-                f"Trial {trial.identification.nct_id} excluded: "
-                f"{failure_reason.message if failure_reason else 'Unknown reason'}"
-            )
-
-    # Sort filtered trials by suitability probability
-    filtered_trials.sort(
-        key=lambda x: x.get("suitability_probability", 0), reverse=True
-    )
-    return filtered_trials
 
 
 def main():
@@ -74,7 +49,7 @@ def main():
         "--output",
         "-o",
         help="Output file path for filtered trials",
-        default="filtered_trials.json",
+        default=f"filtered_trials_{timestamp}.json",
     )
     parser.add_argument(
         "--api-key",
@@ -89,37 +64,61 @@ def main():
 
     args = parser.parse_args()
 
+    logger.info("Starting trial filtering process")
+    logger.info(f"Input clinical record: {args.clinical_record}")
+    logger.info(f"Input trials file: {args.trials_file}")
+    logger.info(f"Output file: {args.output}")
+
     # Get API key from command line or environment
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
+        logger.error("OpenAI API key not found")
         raise ValueError(
             "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
         )
 
-    # Initialize GPT client and filter
-    gpt_client = GPTClient(api_key=api_key)
-    gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
+    try:
+        # Initialize GPT client and filter
+        logger.info("Initializing GPT client and filter")
+        gpt_client = GPTClient(api_key=api_key)
+        gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
 
-    # Extract conditions from clinical record
-    logger.info(f"Reading clinical record from {args.clinical_record}")
-    history_items = extract_conditions_from_record(args.clinical_record, gpt_client)
-    logger.info(f"Extracted {len(history_items)} history items")
+        # Extract conditions from clinical record
+        logger.info(f"Reading clinical record from {args.clinical_record}")
+        logger.info("Extracting conditions from clinical record")
+        history_items = extract_conditions_from_record(args.clinical_record, gpt_client)
+        logger.info(f"Extracted {len(history_items)} conditions:")
+        for item in history_items:
+            logger.info(f"  - {item}")
 
-    # Load trials
-    logger.info(f"Loading trials from {args.trials_file}")
-    trials = load_trials(args.trials_file)
-    logger.info(f"Loaded {len(trials)} trials")
+        # Load trials
+        logger.info(f"Loading trials from {args.trials_file}")
+        trials = load_trials(args.trials_file)
+        trials_parser = ClinicalTrialsParser(trials)
+        logger.info(f"Loaded {len(trials)} trials")
 
-    # Filter trials
-    logger.info("Filtering trials based on conditions")
-    filtered_trials = filter_trials_by_conditions(trials, history_items, gpt_filter)
-    logger.info(f"Found {len(filtered_trials)} matching trials")
+        # Process trials with conditions
+        logger.info("Starting trial filtering process")
+        total_cost, eligible_count = process_trials_with_conditions(
+            trials_parser.trials, history_items, args.output, gpt_filter
+        )
 
-    # Save filtered trials
-    output_path = Path(args.output)
-    with open(output_path, "w") as f:
-        json.dump(filtered_trials, f, indent=2)
-    logger.info(f"Saved filtered trials to {output_path}")
+        # Log final results
+        logger.info("=" * 50)
+        logger.info("Filtering process completed")
+        logger.info(f"Total trials processed: {len(trials)}")
+        logger.info(f"Eligible trials found: {eligible_count}")
+        logger.info(f"Total API cost: ${total_cost:.2f}")
+        logger.info(f"Results saved to: {args.output}")
+        logger.info(
+            f"Excluded trials saved to: {args.output.replace('.json', '_excluded.json')}"
+        )
+        logger.info(f"Log file: {log_file}")
+        logger.info("=" * 50)
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

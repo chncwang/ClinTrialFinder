@@ -12,7 +12,11 @@ from typing import Dict, List, Optional, Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.gpt_client import GPTClient
-from base.trial_expert import GPTTrialFilter, TrialFailureReason
+from base.trial_expert import (
+    GPTTrialFilter,
+    TrialFailureReason,
+    process_trials_with_conditions,
+)
 from base.utils import load_json_list_file, save_json_list_file
 
 # Configure logging
@@ -24,105 +28,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def process_trials_with_conditions(
-    trials: List[ClinicalTrial],
-    conditions: List[str],
-    output_path: str,
-    gpt_filter: Optional[GPTTrialFilter] = None,
-) -> Tuple[int, float]:
-    """Process trials with given conditions and save results.
-
-    Args:
-        trials: List of clinical trials to process
-        conditions: List of conditions to filter trials
-        output_path: Path to save output files
-        gpt_filter: Optional GPTTrialFilter instance for condition evaluation
-
-    Returns:
-        Tuple of (number of eligible trials, total API cost)
-    """
-    filtered_trials = []
-    excluded_trials = []
-    total_trials = len(trials)
-    total_cost = 0.0
-    eligible_count = 0
-
-    if conditions:
-        if not gpt_filter:
-            raise ValueError(
-                "GPTTrialFilter instance required when conditions are provided"
-            )
-
-        logger.info(f"Processing {total_trials} trials with conditions: {conditions}")
-
-        for i, trial in enumerate(trials, 1):
-            logger.info(
-                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
-            )
-
-            is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-                trial, conditions
-            )
-            total_cost += cost
-
-            if is_eligible:
-                trial_dict = trial.to_dict()
-                filtered_trials.append(trial_dict)
-                eligible_count += 1
-            else:
-                excluded_info = {
-                    "nct_id": trial.identification.nct_id,
-                    "brief_title": trial.identification.brief_title,
-                    "eligibility_criteria": trial.eligibility.criteria,
-                    "failure_type": failure_reason.type,
-                    "failure_message": failure_reason.message,
-                }
-
-                if failure_reason.type == "inclusion_criterion":
-                    excluded_info.update(
-                        {
-                            "failed_condition": failure_reason.failed_condition,
-                            "failed_criterion": failure_reason.failed_criterion,
-                            "failure_details": failure_reason.failure_details,
-                        }
-                    )
-
-                if (
-                    hasattr(trial, "recommendation_level")
-                    and trial.recommendation_level
-                ):
-                    excluded_info["recommendation_level"] = trial.recommendation_level
-                if hasattr(trial, "analysis_reason") and trial.analysis_reason:
-                    excluded_info["analysis_reason"] = trial.analysis_reason
-
-                excluded_trials.append(excluded_info)
-
-            logger.info(
-                f"main: Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
-            )
-    else:
-        logger.info(
-            "No conditions provided - keeping all trials that passed other filters"
-        )
-        filtered_trials = [trial.to_dict() for trial in trials]
-        eligible_count = len(filtered_trials)
-
-    # Save the passing (filtered) trials
-    save_json_list_file(filtered_trials, output_path, "filtered trials")
-
-    # Save the excluded trials only if we did condition filtering
-    if conditions:
-        excluded_path = output_path.replace(".json", "_excluded.json")
-        save_json_list_file(excluded_trials, excluded_path, "excluded trials")
-
-    logger.info(f"Final results: {eligible_count}/{total_trials} trials were eligible")
-    logger.info(f"Filtered trials saved to {output_path}")
-    if conditions:
-        logger.info(f"Excluded trials saved to {excluded_path}")
-
-    return eligible_count, total_cost
 
 
 def main():
@@ -224,7 +129,7 @@ def main():
         )
 
     # Process trials with conditions and save results
-    eligible_count, total_cost = process_trials_with_conditions(
+    total_cost, eligible_count = process_trials_with_conditions(
         trials, args.conditions, args.output, gpt_filter
     )
 

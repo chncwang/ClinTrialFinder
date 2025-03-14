@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
+from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
-from base.utils import parse_json_response
+from base.utils import parse_json_response, save_json_list_file
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from base.clinical_trial import ClinicalTrial
     from base.perplexity import PerplexityClient
 
 CLINICAL_TRIAL_SYSTEM_PROMPT = (
@@ -46,7 +46,7 @@ class RecommendationLevel(Enum):
 
 def build_recommendation_prompt(
     clinical_record: str,
-    trial_info: "ClinicalTrial",
+    trial_info: ClinicalTrial,
     drug_analyses: dict[str, str] = None,
 ) -> str:
     """
@@ -136,7 +136,7 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
 
 def analyze_drugs_and_get_recommendation(
     clinical_record: str,
-    trial: "ClinicalTrial",
+    trial: ClinicalTrial,
     perplexity_client: "PerplexityClient",
     gpt_client: "GPTClient",
 ) -> tuple[RecommendationLevel, str, dict[str, str], float]:
@@ -250,8 +250,8 @@ def analyze_drugs_and_get_recommendation(
 
 def compare_trials(
     clinical_record: str,
-    trial1: "ClinicalTrial",
-    trial2: "ClinicalTrial",
+    trial1: ClinicalTrial,
+    trial2: ClinicalTrial,
     gpt_client: "GPTClient",
 ) -> tuple["ClinicalTrial", str, float]:
     """
@@ -534,7 +534,7 @@ Example response 2:
 {{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
 
     def evaluate_title(
-        self, trial: "ClinicalTrial", conditions: str | list[str]
+        self, trial: ClinicalTrial, conditions: str | list[str]
     ) -> Tuple[float, str, float]:
         """
         Evaluate if a trial title indicates suitability for given conditions.
@@ -600,39 +600,611 @@ Example response:
                         total_cost,
                     )
 
+    def evaluate_inclusion_criterion(
+        self, criterion: str, condition: str, title: str
+    ) -> Tuple[float, str, float]:
+        try:
+            # Try with retries first
+            response_content, cost = self._call_gpt_with_retry(
+                self._build_criterion_prompt(criterion, condition, title),
+                "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+            )
+            logger.warning(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
+            )
+
+            # If response_content is already a dict, use it directly
+            result = (
+                response_content
+                if isinstance(response_content, dict)
+                else self._parse_gpt_response_with_fallback(response_content)
+            )
+
+            validated_result = self._validate_gpt_response(result)
+            logger.info(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Evaluated criterion: {criterion} for condition: {condition} with title: {title}"
+                + json.dumps(
+                    {
+                        "criterion": criterion,
+                        "condition": condition,
+                        "eligibility": validated_result["suitability_probability"],
+                        "reason": validated_result["reason"],
+                        "cost": cost,
+                    },
+                    indent=2,
+                )
+            )
+            return (
+                validated_result["suitability_probability"],
+                validated_result["reason"],
+                cost,
+            )
+        except Exception as e:
+            logger.error(f"Failed to evaluate criterion: {str(e)}")
+            raise
+
+    def split_inclusion_criteria(self, criteria: str) -> List[str]:
+        """Split the inclusion criteria into individual statements using GPT."""
+        prompt = f"""You are analyzing clinical trial inclusion criteria text.
+
+Inclusion Criteria Text:
+{criteria}
+
+Split this text into individual inclusion criterion statements following these rules:
+
+1. **Disease-Specific Consolidation**:
+   - Combine ALL disease type requirements into a single criterion using "OR" logic, even if:
+     - They appear as separate bullet points
+     - They have different biomarker/therapy requirements
+     - They have mixed prior therapy rules (naïve vs. treated)
+   - Structure as: "Patients must have one of the following: (a) [Disease A] with [requirements]; OR (b) [Disease B] with [different requirements]..."
+   - Preserve ALL disease-specific details (biomarker thresholds, prior therapy sequences, progression requirements)
+
+2. **Multi-Level Requirements**:
+   - For complex disease requirements, use nested logic:
+     '''
+     Patients must have:
+     a) [Disease 1] with:
+        - [Requirement 1]
+        - [Requirement 2]
+     OR
+     b) [Disease 2] with:
+        - [Requirement 3]
+        - [Requirement 4]
+     '''
+
+3. **Separate Non-Disease Criteria**:
+   - Keep non-disease requirements (organ function, performance status) as distinct criteria
+   - Each requirement will be treated as a separate criterion connected by AND logic
+
+4. **Logical Structure**:
+   - Use clear alphanumeric labeling (a), b), c)) for complex criteria
+   - Employ AND/OR relationships within disease subgroups as needed
+   - Maintain all temporal sequence requirements (e.g., "prior X then Y")
+   - All separate criteria are implicitly connected with AND logic
+
+Return ONLY valid JSON with criteria list.
+
+Example response:
+{{"criteria": [
+    "Patient must have one of the following: (a) Triple-negative breast cancer with PD-L1 CPS ≥10 and progression after prior therapy; OR (b) Advanced endometrial cancer with MSI-H/dMMR and platinum-therapy failure",
+    "Adequate organ function per laboratory parameters"
+]}}"""
+
+        response_content, cost = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst focused on parsing inclusion criteria.",
+            temperature=0.0,
+        )
+        try:
+            result = self._parse_gpt_response(response_content)
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
+            )
+            raise
+        logger.info(
+            f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
+        )
+        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
+        return result["criteria"]
+
+    def _extract_inclusion_criteria(self, criteria: str) -> str:
+        """Extract and validate inclusion criteria from the full criteria text.
+
+        Args:
+            criteria: Full criteria text containing both inclusion and exclusion criteria
+
+        Returns:
+            str: The inclusion criteria section
+
+        Raises:
+            EligibilityCriteriaError: If the criteria format is invalid
+        """
+        if not criteria or "Inclusion Criteria" not in criteria:
+            logger.warning(
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria: {criteria}"
+            )
+            return criteria
+
+        # Split by "Inclusion Criteria" and take everything after it
+        inclusion_text = criteria.split("Inclusion Criteria")[1].strip()
+
+        # If there's an "Exclusion Criteria" section, only take the text before it
+        if "Exclusion Criteria" in inclusion_text:
+            inclusion_text = inclusion_text.split("Exclusion Criteria")[0].strip()
+        else:
+            logger.warning(
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria}"
+            )
+
+        return inclusion_text
+
+    def _is_or_criterion(self, criterion: str) -> bool:
+        """Check if a criterion contains top-level OR logic using GPT."""
+        prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
+
+Criterion: {criterion}
+
+Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
+{{"is_or_criterion": true/false}}"""
+
+        try:
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                temperature=0.0,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
+        except json.JSONDecodeError:
+            # Retry with cache refresh on parse error
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                temperature=0.0,
+                refresh_cache=True,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
+
+    def _split_or_branches(self, criterion: str) -> List[str]:
+        """Split a criterion with top-level OR logic into individual branches."""
+        prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
+
+Original Criterion:
+{criterion}
+
+Rules:
+1. Split only at TOP-LEVEL OR connections
+2. Maintain nested AND/OR structures within branches
+3. Preserve all original requirements in each branch
+
+Return ONLY JSON with a "branches" list containing the split criteria:
+{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in logical structure analysis.",
+            temperature=0.0,
+        )
+        result = self._parse_gpt_response(response_content)
+        return result.get("branches", [criterion])
+
+    def _evaluate_branch(
+        self, branch: str, conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
+        """
+        Helper method to evaluate a single branch of an inclusion criterion.
+
+        Args:
+            branch: A single branch of an inclusion criterion to evaluate
+            conditions: List of medical conditions to check against the branch
+            trial_title: Title of the clinical trial for context
+
+        Returns:
+            Tuple containing:
+                - float: Probability of eligibility (product of all condition probabilities)
+                - Dict[str,CriterionEvaluation]: Mapping of conditions to their
+                  evaluation results, including reasons
+                - float: Cost of the GPT API call
+        """
+        branch_prob = 1.0
+        branch_condition_evaluations = {}
+        cost_sum = 0.0
+
+        for condition in conditions:
+            probability, reason, cost = self.evaluate_inclusion_criterion(
+                branch, condition, trial_title
+            )
+            cost_sum += cost
+            logger.info(
+                f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
+                + json.dumps(
+                    {
+                        "branch": branch,
+                        "condition": condition,
+                        "probability": probability,
+                        "cost": cost,
+                    }
+                )
+            )
+            branch_prob *= probability
+            branch_condition_evaluations[condition] = CriterionEvaluation(
+                criterion=branch,
+                reason=reason,
+                eligibility=probability,
+            )
+
+            # Early exit if any condition results in zero probability
+            if branch_prob <= 0.0:
+                break
+
+        return branch_prob, branch_condition_evaluations, cost_sum
+
+    def process_branches(
+        self, branches: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
+        """
+        Process multiple branches and return the best probability and results.
+
+        Args:
+            branches: List of branch criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the clinical trial
+
+        Returns:
+            Tuple of (
+                max_probability: float,
+                condition_results: Dict[str, List[CriterionEvaluation]],
+                total_cost: float
+            )
+        """
+        branch_max_prob = 0.0
+        branch_cost_sum = 0.0
+        branch_results = {condition: [] for condition in conditions}
+
+        for branch in branches:
+            branch_prob: float
+            branch_condition_evaluations: Dict[
+                str, CriterionEvaluation
+            ]  # Maps condition (str) to evaluation found for that condition
+            branch_prob, branch_condition_evaluations, branch_cost = (
+                self._evaluate_branch(branch, conditions, trial_title)
+            )
+            branch_cost_sum += branch_cost
+            branch_max_prob = max(branch_max_prob, branch_prob)
+
+            # Record which conditions met this branch
+            for condition in conditions:
+                # Get the individual condition's probability for this branch
+                if condition in branch_condition_evaluations:
+                    condition_evaluation: CriterionEvaluation = (
+                        branch_condition_evaluations[condition]
+                    )
+                    branch_results[condition].append(
+                        CriterionEvaluation(
+                            criterion=branch,
+                            reason=condition_evaluation.reason,
+                            eligibility=condition_evaluation.eligibility,
+                        )
+                    )
+
+            # Early exit if we found a fully compatible branch
+            if branch_max_prob >= 1.0:
+                logger.info(
+                    f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                )
+                break
+
+        return branch_max_prob, branch_results, branch_cost_sum
+
+    def _get_or_criterion_failure_reason(
+        self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
+    ) -> Tuple[str, str, str]:
+        """
+        Find and format the failure reason when all branches of an OR criterion fail.
+
+        Args:
+            branch_results: Dictionary mapping conditions to their branch evaluations
+            criterion: The original OR criterion being evaluated
+
+        Returns:
+            Tuple of (failed_condition, criterion, detailed_reason)
+        """
+        # Find the first condition that failed all branches
+        failed_condition = None
+        failed_branch_evaluations = []
+        for condition, branch_evaluations in branch_results.items():
+            # Check if all branches failed for this condition
+            if all(evaluation.eligibility <= 0.0 for evaluation in branch_evaluations):
+                # Found a condition that failed all branches
+                failed_condition = condition
+                failed_branch_evaluations = branch_evaluations
+                break
+
+        # Format the detailed failure reason
+        branch_reasons = [
+            f"Branch {i+1}: {evaluation.reason}"
+            for i, evaluation in enumerate(failed_branch_evaluations)
+        ]
+        detailed_reason = "Failed all OR branches:\n" + "\n".join(branch_reasons)
+
+        logger.info(
+            f"Condition failed all branches:\n{json.dumps({'condition': failed_condition, 'criterion': criterion, 'detailed_reason': detailed_reason}, indent=2)}"
+        )
+
+        return (failed_condition, criterion, detailed_reason)
+
+    def evaluate_inclusion_criteria(
+        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
+        """
+        Evaluate a list of inclusion criteria against given conditions.
+
+        Args:
+            inclusion_criteria: List of inclusion criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the clinical trial
+
+        Returns:
+            Tuple of (
+                overall_probability: float,
+                failure_reason: Optional[Tuple[str, str, str]],  # (condition, criterion, reason) if failed
+                total_cost: float
+            )
+        """
+        total_cost = 0.0
+        overall_probability = 1.0
+        failure_reason = None
+
+        for criterion in inclusion_criteria:
+            logger.info(
+                f"GPTTrialFilter.evaluate_inclusion_criteria: Evaluating criterion: {criterion}"
+            )
+
+            # Handle OR criterion
+            if self._is_or_criterion(criterion):
+                logger.info(f"OR criterion detected: {criterion}")
+                branches = self._split_or_branches(criterion)
+                logger.info(
+                    f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
+                )
+
+                branch_max_prob: float
+                branch_results: Dict[str, List[CriterionEvaluation]]
+                branch_cost: float
+                # Process each branch of the OR criterion, evaluating against all conditions
+                # Returns:
+                # - branch_max_prob: Maximum probability across all branches (0-1)
+                # - branch_results: Dict mapping conditions to list of CriterionEvaluation objects
+                #   The evaluations are ordered to match the input branches, but may be incomplete
+                #   if early exit occurs when a fully compatible branch is found
+                # - branch_cost: Total API cost for evaluating all branches
+                branch_max_prob, branch_results, branch_cost = self.process_branches(
+                    branches, conditions, trial_title
+                )
+                total_cost += branch_cost
+
+                # Check if any condition failed all branches
+                if branch_max_prob <= 0.0:
+                    failure_reason = self._get_or_criterion_failure_reason(
+                        branch_results, criterion
+                    )
+                    overall_probability = 0.0
+                    break
+
+            # Handle non-OR criterion
+            else:
+                logger.info(f"Non-OR criterion detected: {criterion}")
+                for condition in conditions:
+                    probability, reason, cost = self.evaluate_inclusion_criterion(
+                        criterion, condition, trial_title
+                    )
+                    overall_probability *= probability
+                    total_cost += cost
+
+                    if probability <= 0.0:
+                        failure_reason = (condition, criterion, reason)
+                        break
+
+        if overall_probability <= 0.0 and failure_reason is None:
+            raise RuntimeError(
+                "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
+            )
+        return overall_probability, failure_reason, total_cost
+
     def evaluate_trial(
-        self, trial: "ClinicalTrial", conditions: str | list[str]
+        self, trial: ClinicalTrial, conditions: list[str]
     ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
-        Evaluate if a trial is suitable for given conditions.
+        Evaluate a trial's eligibility based on title and inclusion criteria.
 
         Args:
             trial: The clinical trial to evaluate
-            conditions: Patient condition(s) to check against, either as a single string or list of strings
+            conditions: List of conditions to check against
 
         Returns:
-            Tuple of:
-                bool: Whether the trial is suitable
-                float: Probability of suitability (0.0-1.0)
-                Optional[TrialFailureReason]: Reason for failure if trial is not suitable
-        """
-        # First evaluate the title
-        title_prob, title_reason, _ = self.evaluate_title(trial, conditions)
+            (is_eligible, total_cost, failure_reason)
 
-        # If title is clearly unsuitable, return early
-        if title_prob < 0.2:
-            return (
-                False,
-                title_prob,
-                TrialFailureReason(
-                    type="title",
-                    message=f"Trial title indicates poor suitability: {title_reason}",
-                ),
+            - is_eligible: Whether the trial is eligible.
+            - total_cost: Estimated GPT API cost for the calls.
+            - failure_reason: If ineligible, a TrialFailureReason object describing why it failed.
+                            If eligible, None.
+        """
+        # 1) Evaluate the title first
+        title_probability, title_reason, title_cost = self.evaluate_title(
+            trial, conditions
+        )
+
+        # If the trial fails at the title level
+        if title_probability <= 0.0:
+            failure = TrialFailureReason(
+                type="title", message=f"Title check failed: {title_reason}"
+            )
+            logger.info(
+                f"GPTTrialFilter.evaluate_trial: Title-based ineligibility "
+                f"for {trial.identification.nct_id} | {failure.message}"
+            )
+            return False, title_cost, failure
+
+        # 2) Extract and split the inclusion criteria
+        try:
+            inclusion_text = self._extract_inclusion_criteria(
+                trial.eligibility.criteria
+            )
+            inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
+            logger.info(
+                json.dumps(
+                    {
+                        "message": "evaluate_trial: Split inclusion criteria",
+                        "trial_id": trial.identification.nct_id,
+                        "criteria_count": len(inclusion_criteria),
+                        "criteria": inclusion_criteria,
+                    },
+                    indent=2,
+                )
+            )
+        except EligibilityCriteriaError as e:
+            failure = TrialFailureReason(
+                type="format", message=f"Inclusion criteria format error: {str(e)}"
+            )
+            logger.error(
+                f"evaluate_trial: Invalid criteria format "
+                f"for trial {trial.identification.nct_id}: {failure.message}"
+            )
+            return False, title_cost, failure
+
+        # 3) Evaluate the inclusion criteria
+        inclusion_probability, inc_failure_reason, criteria_cost = (
+            self.evaluate_inclusion_criteria(
+                inclusion_criteria, conditions, trial.identification.brief_title
+            )
+        )
+
+        total_cost = title_cost + criteria_cost
+        overall_probability = title_probability * inclusion_probability
+
+        # If it failed on an inclusion criterion
+        if inc_failure_reason is not None:
+            (cond_failed, crit_failed, reason) = inc_failure_reason
+            failure = TrialFailureReason(
+                type="inclusion_criterion",
+                message="Failed inclusion criterion evaluation",
+                failed_condition=cond_failed,
+                failed_criterion=crit_failed,
+                failure_details=reason,
+            )
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} failed "
+                f"inclusion criteria evaluation"
+            )
+            return False, total_cost, failure
+
+        # If overall probability is zero or near zero but no explicit inc_failure_reason
+        if overall_probability <= 0.0:
+            raise RuntimeError(
+                "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
             )
 
-        # If title is promising, return success
-        if title_prob > 0.8:
-            return True, title_prob, None
+        # Otherwise, the trial is eligible
+        return True, total_cost, None
 
-        # For borderline cases, return uncertain but potentially suitable
-        return True, title_prob, None
+
+def process_trials_with_conditions(
+    trials: List["ClinicalTrial"],
+    conditions: List[str],
+    output_path: str,
+    gpt_filter: Optional["GPTTrialFilter"] = None,
+) -> Tuple[float, int]:
+    """Process trials with given conditions and save results.
+
+    Args:
+        trials: List of clinical trials to process
+        conditions: List of conditions to filter trials
+        output_path: Path to save output files
+        gpt_filter: Optional GPTTrialFilter instance for condition evaluation
+
+    Returns:
+        Tuple of (total API cost, number of eligible trials)
+    """
+    filtered_trials = []
+    excluded_trials = []
+    total_trials = len(trials)
+    total_cost = 0.0
+    eligible_count = 0
+
+    if conditions:
+        if not gpt_filter:
+            raise ValueError(
+                "GPTTrialFilter instance required when conditions are provided"
+            )
+
+        logger.info(f"Processing {total_trials} trials with conditions: {conditions}")
+
+        for i, trial in enumerate(trials, 1):
+            logger.info(
+                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+            )
+
+            is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
+                trial, conditions
+            )
+            total_cost += cost
+
+            if is_eligible:
+                trial_dict = trial.to_dict()
+                filtered_trials.append(trial_dict)
+                eligible_count += 1
+            else:
+                excluded_info = {
+                    "nct_id": trial.identification.nct_id,
+                    "brief_title": trial.identification.brief_title,
+                    "eligibility_criteria": trial.eligibility.criteria,
+                    "failure_type": failure_reason.type,
+                    "failure_message": failure_reason.message,
+                }
+
+                if failure_reason.type == "inclusion_criterion":
+                    excluded_info.update(
+                        {
+                            "failed_condition": failure_reason.failed_condition,
+                            "failed_criterion": failure_reason.failed_criterion,
+                            "failure_details": failure_reason.failure_details,
+                        }
+                    )
+
+                if (
+                    hasattr(trial, "recommendation_level")
+                    and trial.recommendation_level
+                ):
+                    excluded_info["recommendation_level"] = trial.recommendation_level
+                if hasattr(trial, "analysis_reason") and trial.analysis_reason:
+                    excluded_info["analysis_reason"] = trial.analysis_reason
+
+                excluded_trials.append(excluded_info)
+
+            logger.info(
+                f"Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+            )
+    else:
+        logger.info(
+            "No conditions provided - keeping all trials that passed other filters"
+        )
+        filtered_trials = [trial.to_dict() for trial in trials]
+        eligible_count = len(filtered_trials)
+
+    # Save the passing (filtered) trials
+    save_json_list_file(filtered_trials, output_path, "filtered trials")
+
+    # Save the excluded trials only if we did condition filtering
+    if conditions:
+        excluded_path = output_path.replace(".json", "_excluded.json")
+        save_json_list_file(excluded_trials, excluded_path, "excluded trials")
+
+    logger.info(f"Final results: {eligible_count}/{total_trials} trials were eligible")
+    logger.info(f"Filtered trials saved to {output_path}")
+    if conditions:
+        logger.info(f"Excluded trials saved to {excluded_path}")
+
+    return total_cost, eligible_count
