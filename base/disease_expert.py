@@ -161,34 +161,26 @@ def extract_conditions_from_record(
 
         # Extract clinical history in chronological order
         prompt = (
-            "Extract the patient's clinical history from the following clinical record in chronological order. "
-            "Return the results as a JSON array of strings, where each string represents an event, condition, or treatment. "
-            f"Today's date is {current_time_str}. EVERY condition, event, and treatment MUST include a relative time reference "
-            "(e.g., '9 months ago', '2 weeks ago', 'currently', etc.). Do not use absolute dates.\n\n"
-            "Include:\n"
-            "- Basic patient information (current age, gender)\n"
-            "- Medical conditions with when they occurred/were diagnosed\n"
-            "- Treatments and procedures with start and end times\n"
-            "- Response to treatments with timing\n"
-            "- Current clinical status with 'currently' or 'present'\n\n"
+            "Extract at most 5 most important key conditions from the patient's clinical record for clinical trials filtering. "
+            "Present the results as a JSON array of strings, with each string detailing a key condition.\n\n"
+            "Focus on:\n"
+            "- Major medical conditions\n"
+            "- Significant treatments and their status\n"
+            "- Current clinical status\n\n"
             "Example format:\n"
             "[\n"
-            '  "Currently 35 years old",\n'
-            '  "Male",\n'
-            '  "Diagnosed with Type 2 Diabetes 2 years ago",\n'
-            '  "Started chemotherapy 6 months ago",\n'
-            '  "Developed metastasis 3 months ago",\n'
-            '  "Had partial response to immunotherapy from 4 months ago until 2 months ago",\n'
-            '  "Currently receiving drug Z for the past 2 weeks",\n'
-            '  "Currently has ECOG PS of 1"\n'
+            '  "Type 2 Diabetes, stable with medication",\n'
+            '  "Stage 3 lung cancer with ongoing chemotherapy",\n'
+            '  "Liver metastasis under monitoring",\n'
+            '  "Receiving drug Z for lung cancer with stable disease",\n'
+            '  "Hypertension managed with medication"\n'
             "]\n\n"
-            "Rules:\n"
-            "1. Every medical condition must include when it was diagnosed/occurred\n"
-            "2. Every treatment must include when it started and ended (or 'currently' if ongoing)\n"
-            "3. Every status must include 'currently' if it's a present condition\n"
-            "4. Use the most precise time reference possible (e.g., '2 weeks ago' instead of 'recently')\n\n"
+            "Guidelines:\n"
+            "1. Focus on the condition and its current status\n"
+            "2. Include relevant treatment information if applicable\n"
+            "3. Keep descriptions concise and medically relevant\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
-            "Return only the JSON array, no additional text or explanation."
+            "Return only the JSON array, without any additional text or explanation."
         )
 
         completion, cost = gpt_client.call_gpt(
