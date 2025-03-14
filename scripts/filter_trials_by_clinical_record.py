@@ -61,6 +61,12 @@ def main():
         default=100000,
         help="Size of the GPT response cache",
     )
+    parser.add_argument(
+        "--max-trials",
+        type=int,
+        default=None,
+        help="Maximum number of trials to process. Default is no limit",
+    )
 
     args = parser.parse_args()
 
@@ -94,6 +100,9 @@ def main():
         # Load trials
         logger.info(f"Loading trials from {args.trials_file}")
         trials = load_trials(args.trials_file)
+        if args.max_trials:
+            trials = trials[: args.max_trials]
+            logger.info(f"Limited to processing {args.max_trials} trials")
         trials_parser = ClinicalTrialsParser(trials)
         logger.info(f"Loaded {len(trials)} trials")
 

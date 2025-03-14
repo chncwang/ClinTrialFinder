@@ -609,7 +609,7 @@ Example response:
                 self._build_criterion_prompt(criterion, condition, title),
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
             )
-            logger.warning(
+            logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
             )
 
@@ -703,10 +703,10 @@ Example response:
                 f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
             )
             raise
-        logger.info(
+        logger.debug(
             f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
         )
-        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
+        logger.debug(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
         return result["criteria"]
 
     def _extract_inclusion_criteria(self, criteria: str) -> str:
@@ -723,7 +723,7 @@ Example response:
         """
         if not criteria or "Inclusion Criteria" not in criteria:
             logger.warning(
-                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria: {criteria}"
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria. Brief: {criteria[:50]}..."
             )
             return criteria
 
@@ -735,7 +735,7 @@ Example response:
             inclusion_text = inclusion_text.split("Exclusion Criteria")[0].strip()
         else:
             logger.warning(
-                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria}"
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria[:50]}..."
             )
 
         return inclusion_text
@@ -799,48 +799,105 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
         Args:
             branch: A single branch of an inclusion criterion to evaluate
-            conditions: List of medical conditions to check against the branch
+            conditions: List of conditions to check against the branch
             trial_title: Title of the clinical trial for context
 
         Returns:
             Tuple containing:
-                - float: Probability of eligibility (product of all condition probabilities)
+                - float: Probability of eligibility (based on most relevant condition)
                 - Dict[str,CriterionEvaluation]: Mapping of conditions to their
                   evaluation results, including reasons
                 - float: Cost of the GPT API call
         """
-        branch_prob = 1.0
-        branch_condition_evaluations = {}
         cost_sum = 0.0
+        branch_condition_evaluations = {}
 
+        # First choose the most relevant condition
+        most_relevant_condition = self.choose_most_relevant_condition(
+            branch, conditions, trial_title
+        )
+
+        # Only evaluate the most relevant condition
+        probability, reason, cost = self.evaluate_inclusion_criterion(
+            branch, most_relevant_condition, trial_title
+        )
+        cost_sum += cost
+        logger.info(
+            f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
+            + json.dumps(
+                {
+                    "branch": branch,
+                    "condition": most_relevant_condition,
+                    "probability": probability,
+                    "cost": cost,
+                }
+            )
+        )
+
+        # Store the evaluation result for the most relevant condition
+        branch_condition_evaluations[most_relevant_condition] = CriterionEvaluation(
+            criterion=branch,
+            reason=reason,
+            eligibility=probability,
+        )
+
+        # For other conditions, mark them as fully compatible since they weren't the most relevant
         for condition in conditions:
-            probability, reason, cost = self.evaluate_inclusion_criterion(
-                branch, condition, trial_title
-            )
-            cost_sum += cost
-            logger.info(
-                f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
-                + json.dumps(
-                    {
-                        "branch": branch,
-                        "condition": condition,
-                        "probability": probability,
-                        "cost": cost,
-                    }
+            if condition != most_relevant_condition:
+                branch_condition_evaluations[condition] = CriterionEvaluation(
+                    criterion=branch,
+                    reason="Not the most relevant condition for this criterion - assumed compatible",
+                    eligibility=1.0,
                 )
-            )
-            branch_prob *= probability
-            branch_condition_evaluations[condition] = CriterionEvaluation(
-                criterion=branch,
-                reason=reason,
-                eligibility=probability,
-            )
 
-            # Early exit if any condition results in zero probability
-            if branch_prob <= 0.0:
-                break
+        return probability, branch_condition_evaluations, cost_sum
 
-        return branch_prob, branch_condition_evaluations, cost_sum
+    def choose_most_relevant_condition(
+        self, branch: str, conditions: List[str], trial_title: str
+    ) -> str:
+        """
+        Choose the most relevant condition from a list of conditions for a given branch.
+
+        Args:
+            branch: A single branch of an inclusion criterion to evaluate
+            conditions: List of medical conditions to check against the branch
+            trial_title: Title of the clinical trial for context
+
+        Returns:
+            The most relevant condition as a string
+        """
+        prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient condition is most relevant.
+
+Trial Title: {trial_title}
+
+Inclusion Criterion Branch:
+{branch}
+
+Patient Conditions:
+{json.dumps(conditions, indent=2)}
+
+Task: Choose the SINGLE most relevant condition that should be evaluated against this inclusion criterion branch.
+
+Return ONLY a JSON object with this structure:
+{{"most_relevant_condition": "exact text of the chosen condition"}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in patient condition relevance.",
+            temperature=0.0,
+        )
+
+        try:
+            result = self._parse_gpt_response(response_content)
+            logger.info(
+                f"GPTTrialFilter.choose_most_relevant_condition: Branch: {branch}, Result: {result}"
+            )
+            return result.get("most_relevant_condition", conditions[0])
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(
+                f"Failed to parse most relevant condition response: {e}. Using first condition as fallback."
+            )
+            return conditions[0]
 
     def process_branches(
         self, branches: List[str], conditions: List[str], trial_title: str
@@ -974,13 +1031,6 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 branch_max_prob: float
                 branch_results: Dict[str, List[CriterionEvaluation]]
                 branch_cost: float
-                # Process each branch of the OR criterion, evaluating against all conditions
-                # Returns:
-                # - branch_max_prob: Maximum probability across all branches (0-1)
-                # - branch_results: Dict mapping conditions to list of CriterionEvaluation objects
-                #   The evaluations are ordered to match the input branches, but may be incomplete
-                #   if early exit occurs when a fully compatible branch is found
-                # - branch_cost: Total API cost for evaluating all branches
                 branch_max_prob, branch_results, branch_cost = self.process_branches(
                     branches, conditions, trial_title
                 )
@@ -997,16 +1047,21 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             # Handle non-OR criterion
             else:
                 logger.info(f"Non-OR criterion detected: {criterion}")
-                for condition in conditions:
-                    probability, reason, cost = self.evaluate_inclusion_criterion(
-                        criterion, condition, trial_title
-                    )
-                    overall_probability *= probability
-                    total_cost += cost
+                # Choose the most relevant condition for this criterion
+                most_relevant_condition = self.choose_most_relevant_condition(
+                    criterion, conditions, trial_title
+                )
 
-                    if probability <= 0.0:
-                        failure_reason = (condition, criterion, reason)
-                        break
+                # Only evaluate the most relevant condition
+                probability, reason, cost = self.evaluate_inclusion_criterion(
+                    criterion, most_relevant_condition, trial_title
+                )
+                overall_probability *= probability
+                total_cost += cost
+
+                if probability <= 0.0:
+                    failure_reason = (most_relevant_condition, criterion, reason)
+                    break
 
         if overall_probability <= 0.0 and failure_reason is None:
             raise RuntimeError(
