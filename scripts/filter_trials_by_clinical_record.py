@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_analyzer import GPTTrialFilter
@@ -28,7 +28,6 @@ def filter_trials_by_conditions(
 ) -> List[Dict[str, Any]]:
     """Filter trials based on extracted conditions using GPT evaluation."""
     filtered_trials = []
-    parser = ClinicalTrialsParser()
 
     # Log the conditions we're looking for
     logger.info("Looking for conditions:")
@@ -36,8 +35,8 @@ def filter_trials_by_conditions(
         logger.info(f"- {condition}")
 
     for trial_dict in trials:
-        # Parse trial dictionary into ClinicalTrial object
-        trial = parser.parse_trial(trial_dict)
+        # Create ClinicalTrial object directly
+        trial = ClinicalTrial(trial_dict)
 
         # Evaluate trial using GPTTrialFilter
         is_eligible, probability, failure_reason = gpt_filter.evaluate_trial(
