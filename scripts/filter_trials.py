@@ -13,6 +13,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, TrialFailureReason
+from base.utils import load_json_list_file, save_json_list_file
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -23,40 +24,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def load_json_list_file(file_path: str) -> List[dict]:
-    """Load and parse a JSON file containing a list of objects."""
-    try:
-        with open(file_path, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.error(f"load_json_list_file: File '{file_path}' not found.")
-        sys.exit(1)
-    except json.JSONDecodeError:
-        logger.error(
-            f"load_json_list_file: File '{file_path}' is not a valid JSON file."
-        )
-        sys.exit(1)
-
-
-def save_json_list_file(data: List[Dict], output_path: str, file_type: str = "results"):
-    """Save a list of dictionaries to a JSON file.
-
-    Args:
-        data: The list of dictionaries to save
-        output_path: The path to save to
-        file_type: Type of file being saved (for logging purposes)
-    """
-    try:
-        with open(output_path, "w") as f:
-            json.dump(data, f, indent=2)
-        logger.info(
-            f"save_json_list_file: {file_type.capitalize()} saved to {output_path}"
-        )
-    except Exception as e:
-        logger.error(f"save_json_list_file: Error saving {file_type}: {str(e)}")
-        sys.exit(1)
 
 
 def process_trials_with_conditions(
