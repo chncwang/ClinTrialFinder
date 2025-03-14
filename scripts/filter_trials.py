@@ -25,33 +25,37 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def load_json_file(file_path: str) -> List[dict]:
-    """Load and parse a JSON file."""
+def load_json_list_file(file_path: str) -> List[dict]:
+    """Load and parse a JSON file containing a list of objects."""
     try:
         with open(file_path, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        logger.error(f"load_json_file: File '{file_path}' not found.")
+        logger.error(f"load_json_list_file: File '{file_path}' not found.")
         sys.exit(1)
     except json.JSONDecodeError:
-        logger.error(f"load_json_file: File '{file_path}' is not a valid JSON file.")
+        logger.error(
+            f"load_json_list_file: File '{file_path}' is not a valid JSON file."
+        )
         sys.exit(1)
 
 
-def save_json_file(data: List[Dict], output_path: str, file_type: str = "results"):
-    """Save data to a JSON file.
+def save_json_list_file(data: List[Dict], output_path: str, file_type: str = "results"):
+    """Save a list of dictionaries to a JSON file.
 
     Args:
-        data: The data to save
+        data: The list of dictionaries to save
         output_path: The path to save to
         file_type: Type of file being saved (for logging purposes)
     """
     try:
         with open(output_path, "w") as f:
             json.dump(data, f, indent=2)
-        logger.info(f"save_json_file: {file_type.capitalize()} saved to {output_path}")
+        logger.info(
+            f"save_json_list_file: {file_type.capitalize()} saved to {output_path}"
+        )
     except Exception as e:
-        logger.error(f"save_json_file: Error saving {file_type}: {str(e)}")
+        logger.error(f"save_json_list_file: Error saving {file_type}: {str(e)}")
         sys.exit(1)
 
 
@@ -139,12 +143,12 @@ def process_trials_with_conditions(
         eligible_count = len(filtered_trials)
 
     # Save the passing (filtered) trials
-    save_json_file(filtered_trials, output_path, "filtered trials")
+    save_json_list_file(filtered_trials, output_path, "filtered trials")
 
     # Save the excluded trials only if we did condition filtering
     if conditions:
         excluded_path = output_path.replace(".json", "_excluded.json")
-        save_json_file(excluded_trials, excluded_path, "excluded trials")
+        save_json_list_file(excluded_trials, excluded_path, "excluded trials")
 
     logger.info(f"Final results: {eligible_count}/{total_trials} trials were eligible")
     logger.info(f"Filtered trials saved to {output_path}")
@@ -219,7 +223,7 @@ def main():
     if args.conditions:
         gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
 
-    json_data = load_json_file(args.json_file)
+    json_data = load_json_list_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
 
