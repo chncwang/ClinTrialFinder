@@ -161,6 +161,44 @@ python -m scripts.filter_trials analyzed_filtered_trials.json --recommendation-l
 
 This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps. The recommendation level filter can be used after analyzing trials to focus on the most promising ones.
 
+### Filtering Trials Based on Clinical Records
+
+To filter trials based on a patient's clinical record:
+
+```bash
+python -m scripts.filter_trials_by_clinical_record clinical_record.txt trials.json --api-key $OPENAI_API_KEY
+```
+
+Options:
+- `clinical_record.txt`: Path to the clinical record file (required)
+- `trials_file`: Path to the trials JSON file (required)
+- `--output`, `-o`: Output file path for filtered trials (default: filtered_trials_[timestamp].json)
+- `--api-key`: OpenAI API key (alternatively, use OPENAI_API_KEY environment variable)
+- `--cache-size`: Size of the GPT response cache (default: 100000)
+
+This script will:
+1. Extract relevant conditions from the clinical record using GPT
+2. Load and parse the clinical trials
+3. Filter trials based on the extracted conditions
+4. Save eligible trials to the output file
+5. Generate a detailed log file with timestamps
+
+The script provides comprehensive logging, including:
+- Number of conditions extracted from the clinical record
+- Total trials processed
+- Number of eligible trials found
+- Total API cost
+- Paths to output files and logs
+
+Example usage:
+```bash
+# Basic usage
+python -m scripts.filter_trials_by_clinical_record patient_record.txt breast_cancer_trials.json
+
+# Specify custom output file and cache size
+python -m scripts.filter_trials_by_clinical_record patient_record.txt trials.json -o my_filtered_trials.json --cache-size 50000
+```
+
 ### Analyzing Filtered Trials
 
 To analyze the filtered trials and get recommendations:
