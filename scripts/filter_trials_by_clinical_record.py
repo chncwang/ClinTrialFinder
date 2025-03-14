@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -49,11 +50,22 @@ def main():
         help="Output file path for filtered trials",
         default="filtered_trials.json",
     )
+    parser.add_argument(
+        "--api-key",
+        help="OpenAI API key. If not provided, will try to get from OPENAI_API_KEY environment variable",
+    )
 
     args = parser.parse_args()
 
+    # Get API key from command line or environment
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
+        )
+
     # Initialize GPT client
-    gpt_client = GPTClient()
+    gpt_client = GPTClient(api_key=api_key)
 
     # Extract conditions from clinical record
     logger.info(f"Reading clinical record from {args.clinical_record}")
