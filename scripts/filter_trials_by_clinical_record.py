@@ -5,8 +5,10 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
+from base.trial_analyzer import GPTTrialFilter
 
 # Configure logging
 logging.basicConfig(
@@ -22,19 +24,44 @@ def load_trials(trials_file: str) -> List[Dict[str, Any]]:
 
 
 def filter_trials_by_conditions(
-    trials: List[Dict[str, Any]], conditions: List[str]
+    trials: List[Dict[str, Any]], conditions: List[str], gpt_filter: GPTTrialFilter
 ) -> List[Dict[str, Any]]:
-    """Filter trials based on extracted conditions."""
+    """Filter trials based on extracted conditions using GPT evaluation."""
     filtered_trials = []
-    for trial in trials:
-        # Check if trial's conditions match any of the extracted conditions
-        trial_conditions = trial.get("conditions", [])
-        if any(
-            condition.lower() in trial_condition.lower()
-            for condition in conditions
-            for trial_condition in trial_conditions
-        ):
-            filtered_trials.append(trial)
+    parser = ClinicalTrialsParser()
+
+    # Log the conditions we're looking for
+    logger.info("Looking for conditions:")
+    for condition in conditions:
+        logger.info(f"- {condition}")
+
+    for trial_dict in trials:
+        # Parse trial dictionary into ClinicalTrial object
+        trial = parser.parse_trial(trial_dict)
+
+        # Evaluate trial using GPTTrialFilter
+        is_eligible, probability, failure_reason = gpt_filter.evaluate_trial(
+            trial, conditions
+        )
+
+        if is_eligible:
+            logger.info(
+                f"Found matching trial: {trial.identification.nct_id} "
+                f"(probability: {probability:.2f})"
+            )
+            # Add probability to the trial data
+            trial_dict["suitability_probability"] = probability
+            filtered_trials.append(trial_dict)
+        else:
+            logger.debug(
+                f"Trial {trial.identification.nct_id} excluded: "
+                f"{failure_reason.message if failure_reason else 'Unknown reason'}"
+            )
+
+    # Sort filtered trials by suitability probability
+    filtered_trials.sort(
+        key=lambda x: x.get("suitability_probability", 0), reverse=True
+    )
     return filtered_trials
 
 
@@ -54,6 +81,12 @@ def main():
         "--api-key",
         help="OpenAI API key. If not provided, will try to get from OPENAI_API_KEY environment variable",
     )
+    parser.add_argument(
+        "--cache-size",
+        type=int,
+        default=100000,
+        help="Size of the GPT response cache",
+    )
 
     args = parser.parse_args()
 
@@ -64,13 +97,14 @@ def main():
             "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
         )
 
-    # Initialize GPT client
+    # Initialize GPT client and filter
     gpt_client = GPTClient(api_key=api_key)
+    gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
 
     # Extract conditions from clinical record
     logger.info(f"Reading clinical record from {args.clinical_record}")
-    conditions = extract_conditions_from_record(args.clinical_record, gpt_client)
-    logger.info(f"Extracted {len(conditions)} conditions from clinical record")
+    history_items = extract_conditions_from_record(args.clinical_record, gpt_client)
+    logger.info(f"Extracted {len(history_items)} history items")
 
     # Load trials
     logger.info(f"Loading trials from {args.trials_file}")
@@ -79,7 +113,7 @@ def main():
 
     # Filter trials
     logger.info("Filtering trials based on conditions")
-    filtered_trials = filter_trials_by_conditions(trials, conditions)
+    filtered_trials = filter_trials_by_conditions(trials, history_items, gpt_filter)
     logger.info(f"Found {len(filtered_trials)} matching trials")
 
     # Save filtered trials

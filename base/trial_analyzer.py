@@ -1,7 +1,9 @@
 import json
 import logging
+import re
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from base.disease_expert import extract_disease_from_record
 from base.drug_analyzer import analyze_drug_effectiveness
@@ -372,3 +374,265 @@ def compare_trials(
             raise
 
     raise RuntimeError(f"Failed to get valid comparison after {max_retries} attempts")
+
+
+class EligibilityCriteriaError(Exception):
+    """Custom exception for eligibility criteria format errors."""
+
+    pass
+
+
+@dataclass
+class CriterionEvaluation:
+    """Represents the evaluation result of a clinical trial criterion."""
+
+    criterion: str
+    reason: str
+    eligibility: float
+
+
+@dataclass
+class TrialFailureReason:
+    """Represents why a trial was deemed ineligible."""
+
+    type: str  # "title" or "inclusion_criterion"
+    message: str  # General failure message for title failures
+    # Fields specific to inclusion criterion failures
+    failed_condition: Optional[str] = None
+    failed_criterion: Optional[str] = None
+    failure_details: Optional[str] = None
+
+
+class GPTTrialFilter:
+    def __init__(self, api_key: str, cache_size: int = 100000):
+        self.gpt_client = GPTClient(
+            api_key=api_key,
+            cache_size=cache_size,
+            temperature=0.1,
+            max_retries=3,
+        )
+        self.model = "gpt-4o-mini"
+
+    def _call_gpt(
+        self,
+        prompt: str,
+        system_role: str,
+        temperature: float = 0.1,
+        refresh_cache: bool = False,
+    ) -> Tuple[str, float]:
+        """Common method for making GPT API calls."""
+        return self.gpt_client.call_gpt(
+            prompt,
+            system_role,
+            model=self.model,
+            temperature=temperature,
+            refresh_cache=refresh_cache,
+            response_format={"type": "json_object"},
+        )
+
+    def _call_gpt_with_retry(
+        self, prompt: str, system_role: str, max_retries: int = 3
+    ) -> Tuple[str, float]:
+        return self.gpt_client.call_with_retry(
+            prompt,
+            system_role,
+            response_format={"type": "json_object"},
+            validate_json=True,
+        )
+
+    def _parse_gpt_response(self, response_content: str) -> dict:
+        """Parse GPT response content into JSON, with error handling."""
+        try:
+            return json.loads(response_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse GPT response: {response_content}")
+            raise
+
+    def _parse_gpt_response_with_fallback(self, response_content: str) -> dict:
+        try:
+            return json.loads(response_content)
+        except json.JSONDecodeError:
+            # Try to extract probability and reason using regex
+            prob_match = re.search(
+                r'suitability_probability":\s*(0?\.\d+)', response_content
+            )
+            reason_match = re.search(r'reason":\s*"([^"]+)"', response_content)
+
+            if prob_match:
+                return {
+                    "suitability_probability": float(prob_match.group(1)),
+                    "reason": (
+                        reason_match.group(1)
+                        if reason_match
+                        else "Parsing error - no reason available"
+                    ),
+                }
+
+            # If all parsing fails, return a conservative default
+            logger.warning(
+                f"Failed to parse GPT response, using default values: {response_content}"
+            )
+            return {
+                "suitability_probability": 0.5,  # Conservative middle value
+                "reason": "Failed to parse GPT response",
+            }
+
+    def _validate_gpt_response(self, parsed_response: dict) -> dict:
+        """
+        Validate the GPT response has required fields and valid values.
+
+        Args:
+            parsed_response: Dictionary containing the parsed GPT response
+
+        Returns:
+            The validated response dictionary
+
+        Raises:
+            ValueError: If response is missing required fields or has invalid values
+        """
+        required_fields = {"reason", "suitability_probability"}
+        if not all(field in parsed_response for field in required_fields):
+            raise ValueError(
+                f"Missing required fields in GPT response: {parsed_response}"
+            )
+
+        prob = parsed_response["suitability_probability"]
+        if not isinstance(prob, (int, float)) or not 0 <= prob <= 1:
+            raise ValueError(f"Invalid probability value: {prob}")
+
+        return parsed_response
+
+    def _build_criterion_prompt(
+        self, criterion: str, condition: str, title: str
+    ) -> str:
+        """Build the prompt for evaluating an inclusion criterion."""
+        return f"""You are evaluating a clinical trial inclusion criterion against one of the patient's conditions.
+
+Study Title:
+{title}
+
+Inclusion Criterion:
+{criterion}
+
+Patient Condition to Evaluate:
+{condition}
+
+Please determine if this inclusion criterion aligns with this specific condition provided, considering the context from the study title.
+Focus only on evaluating this single condition, even though the patient may have other conditions.
+If this condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
+If the inclusion criterion represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
+
+IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
+{{"reason": "your explanation here", "suitability_probability": 0.0-1.0}}
+
+Do not include any other text outside the JSON object.
+
+Example response 1:
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}
+
+Example response 2:
+{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
+
+    def evaluate_title(
+        self, trial: "ClinicalTrial", conditions: str | list[str]
+    ) -> Tuple[float, str, float]:
+        """
+        Evaluate if a trial title indicates suitability for given conditions.
+
+        Args:
+            trial: The clinical trial to evaluate
+            conditions: Patient condition(s) to check against, either as a single string or list of strings
+
+        Returns:
+            Tuple of:
+                float: Probability of trial suitability (0.0-1.0)
+                str: Explanation of the evaluation
+                float: Cost of the GPT API call
+        """
+        conditions_list = conditions if isinstance(conditions, list) else [conditions]
+        conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
+
+        prompt = f"""You are filtering clinical trials based on patient conditions and trial title.
+
+Trial Details:
+- Title: {trial.identification.brief_title}
+
+Patient Conditions to Evaluate:
+{conditions_text}
+
+Please determine if the trial is potentially suitable for the patient conditions.
+
+Return a JSON object containing:
+- "reason": An explanation of why the title is or is not suitable
+- "suitability_probability": A float value between 0.0 and 1.0 representing how suitable the trial is:
+  - 0.0: Completely unsuitable
+  - 0.5: Uncertain
+  - 1.0: Completely suitable
+
+Example response:
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
+
+        max_retries = 3
+        total_cost = 0.0
+
+        for attempt in range(max_retries):
+            try:
+                response_content, cost = self._call_gpt(
+                    prompt,
+                    "You are a clinical trial analyst focused on evaluating titles.",
+                    temperature=0.1,
+                    refresh_cache=(attempt > 0),  # Refresh cache on retries
+                )
+                total_cost += cost
+                result = self._parse_gpt_response(response_content)
+                return result["suitability_probability"], result["reason"], total_cost
+            except json.JSONDecodeError:
+                logger.warning(
+                    f"GPTTrialFilter.evaluate_title: JSON parsing failed on attempt {attempt + 1}/{max_retries}. Response content: {response_content}"
+                )
+                if attempt == max_retries - 1:  # Last attempt
+                    logger.error(
+                        "GPTTrialFilter.evaluate_title: All attempts to parse JSON failed"
+                    )
+                    return (
+                        0.5,
+                        "Unable to confidently evaluate title due to parsing errors - treating as uncertain",
+                        total_cost,
+                    )
+
+    def evaluate_trial(
+        self, trial: "ClinicalTrial", conditions: str | list[str]
+    ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
+        """
+        Evaluate if a trial is suitable for given conditions.
+
+        Args:
+            trial: The clinical trial to evaluate
+            conditions: Patient condition(s) to check against, either as a single string or list of strings
+
+        Returns:
+            Tuple of:
+                bool: Whether the trial is suitable
+                float: Probability of suitability (0.0-1.0)
+                Optional[TrialFailureReason]: Reason for failure if trial is not suitable
+        """
+        # First evaluate the title
+        title_prob, title_reason, _ = self.evaluate_title(trial, conditions)
+
+        # If title is clearly unsuitable, return early
+        if title_prob < 0.2:
+            return (
+                False,
+                title_prob,
+                TrialFailureReason(
+                    type="title",
+                    message=f"Trial title indicates poor suitability: {title_reason}",
+                ),
+            )
+
+        # If title is promising, return success
+        if title_prob > 0.8:
+            return True, title_prob, None
+
+        # For borderline cases, return uncertain but potentially suitable
+        return True, title_prob, None
