@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from base.disease_expert import extract_conditions_from_record
-from base.trial_analyzer import TrialAnalyzer
+from base.gpt_client import GPTClient
 
 # Configure logging
 logging.basicConfig(
@@ -52,9 +52,12 @@ def main():
 
     args = parser.parse_args()
 
+    # Initialize GPT client
+    gpt_client = GPTClient()
+
     # Extract conditions from clinical record
     logger.info(f"Reading clinical record from {args.clinical_record}")
-    conditions = extract_conditions_from_record(args.clinical_record)
+    conditions = extract_conditions_from_record(args.clinical_record, gpt_client)
     logger.info(f"Extracted {len(conditions)} conditions from clinical record")
 
     # Load trials
