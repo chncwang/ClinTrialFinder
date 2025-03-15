@@ -396,3 +396,17 @@ class ClinicalTrialsParser:
                 and recommendation_level.lower() in trial.recommendation_level.lower()
             )
         ]
+
+    def get_trials_with_novel_drug_analysis(self) -> List[ClinicalTrial]:
+        """Get all trials that have non-empty drug analysis results.
+
+        Returns:
+            List of trials that have drug analysis results (i.e., novel drugs were found and analyzed)
+        """
+        return [
+            trial
+            for trial in self.trials
+            if hasattr(trial, "drug_analysis")
+            and trial.drug_analysis is not None
+            and trial.drug_analysis  # Check if dict is non-empty
+        ]

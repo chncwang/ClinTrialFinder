@@ -21,11 +21,23 @@ from base.utils import load_json_list_file, save_json_list_file
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Update logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler(sys.stdout),  # Explicitly use stdout
+    ],
+    force=True,  # Force reconfiguration of the root logger
 )
+
+# Get the root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Get the script's logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -77,6 +89,11 @@ def main():
         choices=["Strongly Recommended", "Recommended", "Neutral", "Not Recommended"],
         help="Filter trials by recommendation level (from previous analysis)",
     )
+    parser.add_argument(
+        "--has-novel-drug-analysis",
+        action="store_true",
+        help="Filter for trials that have non-empty novel drug analysis results",
+    )
 
     args = parser.parse_args()
 
@@ -126,6 +143,13 @@ def main():
         trials = [t for t in trials if t in recommendation_filtered]
         logger.info(
             f"main: Filtered for recommendation level '{args.recommendation_level}': {len(trials)} found"
+        )
+
+    if args.has_novel_drug_analysis:
+        novel_drug_filtered = trials_parser.get_trials_with_novel_drug_analysis()
+        trials = [t for t in trials if t in novel_drug_filtered]
+        logger.info(
+            f"main: Filtered for trials with novel drug analysis: {len(trials)} found"
         )
 
     # Process trials with conditions and save results
