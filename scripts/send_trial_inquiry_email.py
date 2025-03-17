@@ -10,6 +10,7 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
 from base.gpt_client import GPTClient
+from base.utils import read_input_file
 
 # Add argument parser
 parser = argparse.ArgumentParser(
@@ -37,6 +38,10 @@ parser.add_argument(
     "--contact",
     required=True,
     help="Your contact number to be included in the email",
+)
+parser.add_argument(
+    "--patient-info",
+    help="Path to a file containing patient information to be included in the email",
 )
 parser.add_argument(
     "--openai-api-key",
@@ -106,6 +111,16 @@ Return ONLY the title text without any additional text or formatting."""
 
 def generate_email_body(trial_title, ctd_id, lang, gpt_client, name, contact):
     """Generate an email body using GPT based on the trial information and language preference."""
+    # Read patient information if provided
+    patient_info = ""
+    if args.patient_info:
+        try:
+            patient_info = read_input_file(args.patient_info)
+            logger.info(f"Read patient information from {args.patient_info}")
+        except Exception as e:
+            logger.warning(f"Failed to read patient information: {e}")
+            patient_info = ""
+
     prompt = f"""Generate an email body for a clinical trial information inquiry from the perspective of a cancer patient.
 
 Trial Title: {trial_title}
@@ -114,20 +129,21 @@ Patient Name: {name}
 Contact Number: {contact}
 Language: {'Simplified Chinese' if lang == 'zh' else 'English'}
 ClinicalTrials.gov Link: https://clinicaltrials.gov/study/{ctd_id}
+Patient Information:
+{patient_info}
 
 Rules:
 - Write in a polite and professional tone
 - Express genuine interest in participating in the trial
-- Mention that the trial was found on ClinicalTrials.gov and include the link
+- Mention that the trial was found on ClinicalTrials.gov and include the link https://clinicaltrials.gov/study/{ctd_id}
 - Request specific information about:
-  * Trial eligibility criteria
-  * Trial location and duration
-  * Treatment protocol
+  * My eligibility for the trial
   * Next steps for participation
 - Keep medical terms and drug names untranslated
 - Keep it concise but comprehensive
 - Include a proper greeting and closing
 - Add the patient's name and contact number at the end of the email, after the closing
+- Incorporate relevant details about their condition and medical history from the provided patient information
 - If in Chinese,
  * start with 尊敬的医生
  * when mentioning their organization, use 贵院, e.g., 我在ClinicalTrials.gov上看到贵院...
