@@ -29,6 +29,16 @@ parser.add_argument(
     help="Language for the email title (en: English, zh: Chinese)",
 )
 parser.add_argument(
+    "--name",
+    required=True,
+    help="Your name to be included in the email",
+)
+parser.add_argument(
+    "--contact",
+    required=True,
+    help="Your contact number to be included in the email",
+)
+parser.add_argument(
     "--openai-api-key",
     help="OpenAI API key (overrides OPENAI_API_KEY environment variable)",
 )
@@ -94,17 +104,21 @@ Return ONLY the title text without any additional text or formatting."""
         return f"Clinical Trial Information Inquiry - {ctd_id}", 0.0
 
 
-def generate_email_body(trial_title, ctd_id, lang, gpt_client):
+def generate_email_body(trial_title, ctd_id, lang, gpt_client, name, contact):
     """Generate an email body using GPT based on the trial information and language preference."""
     prompt = f"""Generate an email body for a clinical trial information inquiry from the perspective of a cancer patient.
 
 Trial Title: {trial_title}
 Trial ID: {ctd_id}
+Patient Name: {name}
+Contact Number: {contact}
 Language: {'Simplified Chinese' if lang == 'zh' else 'English'}
+ClinicalTrials.gov Link: https://clinicaltrials.gov/study/{ctd_id}
 
 Rules:
 - Write in a polite and professional tone
 - Express genuine interest in participating in the trial
+- Mention that the trial was found on ClinicalTrials.gov and include the link
 - Request specific information about:
   * Trial eligibility criteria
   * Trial location and duration
@@ -113,9 +127,10 @@ Rules:
 - Keep medical terms and drug names untranslated
 - Keep it concise but comprehensive
 - Include a proper greeting and closing
+- Add the patient's name and contact number at the end of the email, after the closing
 - If in Chinese,
  * start with 尊敬的医生
- * when mentioning their organization, use 贵院
+ * when mentioning their organization, use 贵院, e.g., 我在ClinicalTrials.gov上看到贵院...
 
 Return ONLY the email body without any additional text or formatting."""
 
@@ -164,7 +179,7 @@ def send_trial_inquiry_email():
 
     # Generate email body using GPT
     email_body, body_gpt_cost = generate_email_body(
-        trial_title, args.ctd_id, args.lang, gpt_client
+        trial_title, args.ctd_id, args.lang, gpt_client, args.name, args.contact
     )
     logger.info(
         f"send_trial_inquiry_email: Generated email body (cost: ${body_gpt_cost:.4f})"
