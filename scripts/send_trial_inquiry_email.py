@@ -73,7 +73,7 @@ Language: {'Simplified Chinese' if lang == 'zh' else 'English'}
 Rules:
 - Keep it concise and empathetic
 - Include the trial ID
-- Include the trial title
+- Include the trial title (translate it if necessary)
 - Make it clear it's an information inquiry
 - Keep the drug names untranslated
 
@@ -86,6 +86,7 @@ Return ONLY the title text without any additional text or formatting."""
             prompt=prompt,
             system_role=system_role,
             temperature=0.1,
+            model="gpt-4o",
         )
         return title.strip(), cost
     except Exception as e:
@@ -93,7 +94,47 @@ Return ONLY the title text without any additional text or formatting."""
         return f"Clinical Trial Information Inquiry - {ctd_id}", 0.0
 
 
-def send_test_email():
+def generate_email_body(trial_title, ctd_id, lang, gpt_client):
+    """Generate an email body using GPT based on the trial information and language preference."""
+    prompt = f"""Generate an email body for a clinical trial information inquiry from the perspective of a cancer patient.
+
+Trial Title: {trial_title}
+Trial ID: {ctd_id}
+Language: {'Simplified Chinese' if lang == 'zh' else 'English'}
+
+Rules:
+- Write in a polite and professional tone
+- Express genuine interest in participating in the trial
+- Request specific information about:
+  * Trial eligibility criteria
+  * Trial location and duration
+  * Treatment protocol
+  * Next steps for participation
+- Keep medical terms and drug names untranslated
+- Keep it concise but comprehensive
+- Include a proper greeting and closing
+- If in Chinese,
+ * start with 尊敬的医生
+ * when mentioning their organization, use 贵院
+
+Return ONLY the email body without any additional text or formatting."""
+
+    system_role = "You are a cancer patient seeking information about clinical trials."
+
+    try:
+        body, cost = gpt_client.call_gpt(
+            prompt=prompt,
+            system_role=system_role,
+            temperature=0.1,
+            model="gpt-4o",
+        )
+        return body.strip(), cost
+    except Exception as e:
+        logger.error(f"Failed to generate email body: {str(e)}")
+        return f"Default inquiry message for trial {ctd_id}", 0.0
+
+
+def send_trial_inquiry_email():
     # Load environment variables
     load_dotenv()
 
@@ -113,21 +154,31 @@ def send_test_email():
 
     # Get trial title
     trial_title = get_trial_title(args.trial_data, args.ctd_id)
-    logger.info(f"send_test_email: Found trial title: {trial_title}")
+    logger.info(f"send_trial_inquiry_email: Found trial title: {trial_title}")
 
     # Generate email title using GPT
-    email_title, gpt_cost = generate_email_title(
+    email_title, title_gpt_cost = generate_email_title(
         trial_title, args.ctd_id, args.lang, gpt_client
     )
-    logger.info(f"send_test_email: Generated email title: {email_title}")
+    logger.info(f"send_trial_inquiry_email: Generated email title: {email_title}")
+
+    # Generate email body using GPT
+    email_body, body_gpt_cost = generate_email_body(
+        trial_title, args.ctd_id, args.lang, gpt_client
+    )
+    logger.info(
+        f"send_trial_inquiry_email: Generated email body (cost: ${body_gpt_cost:.4f})"
+    )
 
     # Email configuration
     sender_email = os.getenv("GMAIL_USER")
-    logger.debug(f"send_test_email: Sender email configured: {sender_email}")
+    logger.debug(f"send_trial_inquiry_email: Sender email configured: {sender_email}")
     sender_password = os.getenv(
         "GMAIL_APP_PASSWORD"
     )  # Use App Password, not regular password
-    logger.debug(f"send_test_email: Sender password configured: {sender_password}")
+    logger.debug(
+        f"send_trial_inquiry_email: Sender password configured: {sender_password}"
+    )
     receiver_email = os.getenv("GMAIL_USER")  # For testing, sending to same email
 
     # Create message
@@ -136,20 +187,8 @@ def send_test_email():
     message["To"] = receiver_email
     message["Subject"] = email_title
 
-    # Email body
-    body = f"""
-    This is a test email from the ClinTrialFinder application.
-    
-    Trial: {trial_title}
-    CTD ID: {args.ctd_id}
-    
-    If you're receiving this, the email functionality is working correctly!
-    
-    Best regards,
-    ClinTrialFinder Team
-    """
-
-    message.attach(MIMEText(body, "plain"))
+    # Attach the GPT-generated email body
+    message.attach(MIMEText(email_body, "plain"))
 
     try:
         # Create SMTP session
@@ -158,20 +197,24 @@ def send_test_email():
 
         # Login
         server.login(sender_email, sender_password)
-        logger.info("Successfully logged into SMTP server")
+        logger.info("send_trial_inquiry_email: Successfully logged into SMTP server")
 
         # Send email
         text = message.as_string()
         server.sendmail(sender_email, receiver_email, text)
-        logger.info(f"Test email sent successfully to {receiver_email}")
+        logger.info(
+            f"send_trial_inquiry_email: Trial inquiry email sent successfully to {receiver_email}"
+        )
 
         # Close session
         server.quit()
-        logger.debug("SMTP session closed")
+        logger.debug("send_trial_inquiry_email: SMTP session closed")
 
     except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}", exc_info=True)
+        logger.error(
+            f"send_trial_inquiry_email: Failed to send email: {str(e)}", exc_info=True
+        )
 
 
 if __name__ == "__main__":
-    send_test_email()
+    send_trial_inquiry_email()
