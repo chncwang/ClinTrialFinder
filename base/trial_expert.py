@@ -914,6 +914,9 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         Returns:
             List of the most relevant conditions, ordered by relevance
         """
+        if num_conditions >= len(conditions):
+            return conditions
+
         prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
 
 Trial Title: {trial_title}
