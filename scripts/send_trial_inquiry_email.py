@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
 
+from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.utils import read_input_file
 
@@ -55,21 +56,27 @@ logging.basicConfig(
     level=logging_level,
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,  # Force override any existing logger
+    handlers=[
+        logging.StreamHandler(),  # Add explicit console handler
+    ],
 )
 logger = logging.getLogger(__name__)
 
+# Add an initial log message to verify logging is working
+logger.info("Starting trial inquiry email script")
 
-def get_trial_title(trial_data_path, ctd_id):
-    """Read the trial data and return the brief title for the given CTD ID."""
+
+def get_trial(trial_data_path, ctd_id):
+    """Read the trial data and return the trial object for the given CTD ID."""
     try:
         with open(trial_data_path, "r") as f:
             trials = json.load(f)
 
-        for trial in trials:
-            if trial.get("identification", {}).get("nct_id") == ctd_id:
-                return trial.get("identification", {}).get(
-                    "brief_title", "No title found"
-                )
+        parser = ClinicalTrialsParser(trials)
+        trial = parser.get_trial_by_nct_id(ctd_id)
+        if trial:
+            return trial
 
         raise ValueError(f"Trial with CTD ID {ctd_id} not found in the data file")
     except Exception as e:
@@ -183,8 +190,9 @@ def send_trial_inquiry_email():
         max_retries=3,
     )
 
-    # Get trial title
-    trial_title = get_trial_title(args.trial_data, args.ctd_id)
+    # Get trial object
+    trial = get_trial(args.trial_data, args.ctd_id)
+    trial_title = trial.identification.brief_title
     logger.info(f"send_trial_inquiry_email: Found trial title: {trial_title}")
 
     # Generate email title using GPT
@@ -241,6 +249,8 @@ def send_trial_inquiry_email():
         server.quit()
         logger.debug("send_trial_inquiry_email: SMTP session closed")
 
+        # Log study link
+        logger.info(f"send_trial_inquiry_email: Study link: {trial.identification.url}")
     except Exception as e:
         logger.error(
             f"send_trial_inquiry_email: Failed to send email: {str(e)}", exc_info=True
