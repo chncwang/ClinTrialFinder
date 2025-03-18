@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -833,23 +834,11 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         result = self._parse_gpt_response(response_content)
         return result.get("branches", [criterion])
 
-    def _evaluate_branch(
+    async def _evaluate_branch_async(
         self, branch: str, conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
         """
-        Helper method to evaluate a single branch of an inclusion criterion.
-
-        Args:
-            branch: A single branch of an inclusion criterion to evaluate
-            conditions: List of conditions to check against the branch
-            trial_title: Title of the clinical trial for context
-
-        Returns:
-            Tuple containing:
-                - float: Probability of eligibility (based on most relevant conditions)
-                - Dict[str,CriterionEvaluation]: Mapping of conditions to their
-                  evaluation results, including reasons
-                - float: Cost of the GPT API call
+        Async version of _evaluate_branch method.
         """
         cost_sum = 0.0
         branch_condition_evaluations = {}
@@ -860,12 +849,12 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         )
 
         # Evaluate the branch against the most relevant conditions
-        probability, reason, cost = self.evaluate_inclusion_criterion(
+        probability, reason, cost = await self.evaluate_inclusion_criterion_async(
             branch, most_relevant_conditions, trial_title
         )
         cost_sum += cost
         logger.info(
-            f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
+            f"GPTTrialFilter._evaluate_branch_async: Branch evaluation:\n"
             + json.dumps(
                 {
                     "branch": branch,
@@ -884,7 +873,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 eligibility=probability,
             )
 
-        # For other conditions, mark them as fully compatible since they weren't among the most relevant
+        # For other conditions, mark them as fully compatible
         for condition in conditions:
             if condition not in most_relevant_conditions:
                 branch_condition_evaluations[condition] = CriterionEvaluation(
@@ -894,6 +883,53 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 )
 
         return probability, branch_condition_evaluations, cost_sum
+
+    async def process_branches_async(
+        self, branches: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
+        """
+        Async version of process_branches that evaluates branches concurrently.
+        """
+        branch_max_prob = 0.0
+        branch_cost_sum = 0.0
+        branch_results = {condition: [] for condition in conditions}
+
+        # Create tasks for all branches
+        tasks = [
+            self._evaluate_branch_async(branch, conditions, trial_title)
+            for branch in branches
+        ]
+
+        # Execute all tasks concurrently
+        branch_evaluations = await asyncio.gather(*tasks)
+
+        # Process results
+        for branch, (branch_prob, branch_condition_evaluations, branch_cost) in zip(
+            branches, branch_evaluations
+        ):
+            branch_cost_sum += branch_cost
+            branch_max_prob = max(branch_max_prob, branch_prob)
+
+            # Record which conditions met this branch
+            for condition in conditions:
+                if condition in branch_condition_evaluations:
+                    condition_evaluation = branch_condition_evaluations[condition]
+                    branch_results[condition].append(
+                        CriterionEvaluation(
+                            criterion=branch,
+                            reason=condition_evaluation.reason,
+                            eligibility=condition_evaluation.eligibility,
+                        )
+                    )
+
+            # Early exit if we found a fully compatible branch
+            if branch_max_prob >= 1.0:
+                logger.info(
+                    f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                )
+                break
+
+        return branch_max_prob, branch_results, branch_cost_sum
 
     def choose_most_relevant_conditions(
         self,
