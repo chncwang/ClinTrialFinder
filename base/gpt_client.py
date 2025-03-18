@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import threading
 import time
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -35,6 +36,7 @@ class GPTClient:
         self.cache = PromptCache(max_size=cache_size)
         self.default_temperature = temperature
         self.max_retries = max_retries
+        self._cache_lock = threading.RLock()  # Add a reentrant lock for thread safety
 
     def call_gpt(
         self,
@@ -67,10 +69,11 @@ class GPTClient:
 
         # Check cache first, unless refresh_cache is True
         if not refresh_cache:
-            cached_result = self.cache.get(cache_key)
-            if cached_result is not None:
-                logger.debug("Using cached result")
-                return cached_result, 0.0
+            with self._cache_lock:  # Use lock when accessing the cache
+                cached_result = self.cache.get(cache_key)
+                if cached_result is not None:
+                    logger.debug("Using cached result")
+                    return cached_result, 0.0
 
         try:
             messages = [
@@ -89,7 +92,9 @@ class GPTClient:
             response = self.client.chat.completions.create(**completion_kwargs)
 
             result = response.choices[0].message.content
-            self.cache.set(cache_key, result)
+
+            with self._cache_lock:  # Use lock when modifying the cache
+                self.cache.set(cache_key, result)
 
             cost = AITokenPricing.calculate_cost(prompt + system_role, result, model)
             return result, cost

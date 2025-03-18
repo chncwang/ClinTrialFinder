@@ -1256,6 +1256,27 @@ Return ONLY a JSON object with this structure:
         # Otherwise, the trial is eligible
         return True, total_cost, None
 
+    async def evaluate_inclusion_criterion_async(
+        self, criterion: str, conditions: List[str], title: str
+    ) -> Tuple[float, str, float]:
+        """
+        Asynchronous version of evaluate_inclusion_criterion method.
+
+        Args:
+            criterion: The inclusion criterion to evaluate
+            conditions: List of conditions to check against the criterion
+            title: Title of the clinical trial for context
+
+        Returns:
+            Tuple containing:
+                - float: Overall probability of eligibility (best match among conditions)
+                - str: Reason for the evaluation
+                - float: Cost of the GPT API call
+        """
+        # This is a simple async wrapper around the synchronous method
+        # In a more optimized implementation, this would use an async GPT client
+        return self.evaluate_inclusion_criterion(criterion, conditions, title)
+
 
 def process_trials_with_conditions(
     trials: List["ClinicalTrial"],
