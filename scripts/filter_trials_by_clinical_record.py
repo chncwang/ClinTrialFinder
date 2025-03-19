@@ -76,6 +76,11 @@ def main():
         default=None,
         help="Maximum number of trials to process. Default is no limit",
     )
+    parser.add_argument(
+        "--refresh-cache",
+        action="store_true",
+        help="Refresh the cache of GPT responses",
+    )
 
     args = parser.parse_args()
 
@@ -101,7 +106,9 @@ def main():
         # Extract conditions from clinical record
         logger.info(f"Reading clinical record from {args.clinical_record}")
         logger.info("Extracting conditions from clinical record")
-        history_items = extract_conditions_from_record(args.clinical_record, gpt_client)
+        history_items = extract_conditions_from_record(
+            args.clinical_record, gpt_client, refresh_cache=args.refresh_cache
+        )
         logger.info(f"Extracted {len(history_items)} conditions:")
         for item in history_items:
             logger.info(f"  - {item}")
@@ -118,7 +125,11 @@ def main():
         # Process trials with conditions
         logger.info("Starting trial filtering process")
         total_cost, eligible_count = process_trials_with_conditions(
-            trials_parser.trials, history_items, args.output, gpt_filter
+            trials_parser.trials,
+            history_items,
+            args.output,
+            gpt_filter,
+            refresh_cache=args.refresh_cache,
         )
 
         # Log final results

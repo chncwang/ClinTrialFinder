@@ -139,7 +139,7 @@ def get_parent_disease_categories(
 
 
 def extract_conditions_from_record(
-    clinical_record_file: str, gpt_client: GPTClient
+    clinical_record_file: str, gpt_client: GPTClient, refresh_cache: bool = False
 ) -> List[str]:
     """
     Extract the patient's clinical history from a clinical record file in chronological order.
@@ -201,6 +201,7 @@ def extract_conditions_from_record(
             system_role="You are a medical expert specialized in extracting clinical history from medical records.",
             temperature=0.1,
             model="gpt-4o",
+            refresh_cache=refresh_cache,
         )
 
         if completion:

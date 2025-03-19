@@ -29,6 +29,7 @@ logger.addHandler(file_handler)
 def process_clinical_record(
     clinical_record_file: str,
     openai_api_key: str | None = None,
+    refresh_cache: bool = False,
 ) -> None:
     """Process the clinical record file and extract clinical history in chronological order."""
     try:
@@ -36,7 +37,9 @@ def process_clinical_record(
         gpt_client = GPTClient(api_key=openai_api_key)
 
         # Extract clinical history
-        history = extract_conditions_from_record(clinical_record_file, gpt_client)
+        history = extract_conditions_from_record(
+            clinical_record_file, gpt_client, refresh_cache
+        )
 
         # Log history
         logger.info(f"Extracted {len(history)} clinical history items:")
@@ -60,9 +63,15 @@ if __name__ == "__main__":
         help="OpenAI API key",
         default=os.getenv("OPENAI_API_KEY"),
     )
+    parser.add_argument(
+        "--refresh-cache",
+        action="store_true",
+        help="Refresh the cache of GPT responses",
+    )
     args = parser.parse_args()
 
     process_clinical_record(
         clinical_record_file=args.clinical_record_file,
         openai_api_key=args.openai_api_key,
+        refresh_cache=args.refresh_cache,
     )

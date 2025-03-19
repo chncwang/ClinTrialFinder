@@ -139,6 +139,7 @@ def analyze_drugs_and_get_recommendation(
     trial: ClinicalTrial,
     perplexity_client: "PerplexityClient",
     gpt_client: "GPTClient",
+    refresh_cache: bool = False,
 ) -> tuple[RecommendationLevel, str, dict[str, str], float]:
     """
     Analyze drug effectiveness and generate AI recommendation.
@@ -202,6 +203,7 @@ def analyze_drugs_and_get_recommendation(
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
         model="gpt-4o",
         temperature=0.2,
+        refresh_cache=refresh_cache,
     )
     total_cost += cost
 
@@ -253,6 +255,7 @@ def compare_trials(
     trial1: ClinicalTrial,
     trial2: ClinicalTrial,
     gpt_client: "GPTClient",
+    refresh_cache: bool = False,
 ) -> tuple["ClinicalTrial", str, float]:
     """
     Compare two clinical trials and determine which is better for a target patient.
@@ -312,7 +315,7 @@ def compare_trials(
                 model="gpt-4o",
                 temperature=0.2,
                 response_format={"type": "json_object"},
-                refresh_cache=attempt > 0,  # Refresh cache if retried
+                refresh_cache=refresh_cache or attempt > 0,
             )
             total_cost += cost
 
@@ -534,7 +537,10 @@ Example response 2:
 {{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
 
     def evaluate_title(
-        self, trial: ClinicalTrial, conditions: str | list[str]
+        self,
+        trial: ClinicalTrial,
+        conditions: str | list[str],
+        refresh_cache: bool = False,
     ) -> Tuple[float, str, float]:
         """
         Evaluate if a trial title indicates suitability for given conditions.
@@ -542,7 +548,7 @@ Example response 2:
         Args:
             trial: The clinical trial to evaluate
             conditions: Patient condition(s) to check against, either as a single string or list of strings
-
+            refresh_cache: Whether to refresh the cache of GPT responses
         Returns:
             Tuple of:
                 float: Probability of trial suitability (0.0-1.0)
@@ -581,7 +587,8 @@ Example response:
                     prompt,
                     "You are a clinical trial analyst focused on evaluating titles.",
                     temperature=0.1,
-                    refresh_cache=(attempt > 0),  # Refresh cache on retries
+                    refresh_cache=(attempt > 0)
+                    or refresh_cache,  # Refresh cache on retries
                 )
                 total_cost += cost
                 result = self._parse_gpt_response(response_content)
@@ -685,7 +692,9 @@ Example response 2:
             logger.error(f"Failed to evaluate criterion: {str(e)}")
             raise
 
-    def split_inclusion_criteria(self, criteria: str) -> List[str]:
+    def split_inclusion_criteria(
+        self, criteria: str, refresh_cache: bool = False
+    ) -> List[str]:
         """Split the inclusion criteria into individual statements using GPT."""
         prompt = f"""You are analyzing clinical trial inclusion criteria text.
 
@@ -737,6 +746,7 @@ Example response:
             prompt,
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
             temperature=0.0,
+            refresh_cache=refresh_cache,
         )
         try:
             result = self._parse_gpt_response(response_content)
@@ -782,7 +792,7 @@ Example response:
 
         return inclusion_text
 
-    def _is_or_criterion(self, criterion: str) -> bool:
+    def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
         """Check if a criterion contains top-level OR logic using GPT."""
         prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
 
@@ -796,6 +806,7 @@ Does this criterion contain multiple alternative options connected by OR at the 
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
                 temperature=0.0,
+                refresh_cache=refresh_cache,
             )
             result = self._parse_gpt_response(response_content)
             return result.get("is_or_criterion", False)
@@ -810,7 +821,9 @@ Does this criterion contain multiple alternative options connected by OR at the 
             result = self._parse_gpt_response(response_content)
             return result.get("is_or_criterion", False)
 
-    def _split_or_branches(self, criterion: str) -> List[str]:
+    def _split_or_branches(
+        self, criterion: str, refresh_cache: bool = False
+    ) -> List[str]:
         """Split a criterion with top-level OR logic into individual branches."""
         prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
 
@@ -829,6 +842,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
             prompt,
             "You are a clinical trial analyst specializing in logical structure analysis.",
             temperature=0.0,
+            refresh_cache=refresh_cache,
         )
         result = self._parse_gpt_response(response_content)
         return result.get("branches", [criterion])
@@ -928,6 +942,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         conditions: List[str],
         trial_title: str,
         num_conditions: int = 3,
+        refresh_cache: bool = False,
     ) -> List[str]:
         """
         Choose the most relevant conditions from a list of conditions for a given branch.
@@ -963,6 +978,7 @@ Return ONLY a JSON object with this structure:
             prompt,
             "You are a clinical trial analyst specializing in patient condition relevance.",
             temperature=0.0,
+            refresh_cache=refresh_cache,
         )
 
         try:
@@ -1093,7 +1109,10 @@ Return ONLY a JSON object with this structure:
         return overall_probability, failure_reason, total_cost
 
     def evaluate_trial(
-        self, trial: ClinicalTrial, conditions: list[str]
+        self,
+        trial: ClinicalTrial,
+        conditions: list[str],
+        refresh_cache: bool = False,
     ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
         Evaluate a trial's eligibility based on title and inclusion criteria.
@@ -1112,7 +1131,7 @@ Return ONLY a JSON object with this structure:
         """
         # 1) Evaluate the title first
         title_probability, title_reason, title_cost = self.evaluate_title(
-            trial, conditions
+            trial, conditions, refresh_cache
         )
 
         # If the trial fails at the title level
@@ -1194,6 +1213,7 @@ def process_trials_with_conditions(
     conditions: List[str],
     output_path: str,
     gpt_filter: Optional["GPTTrialFilter"] = None,
+    refresh_cache: bool = False,
 ) -> Tuple[float, int]:
     """Process trials with given conditions and save results.
 
@@ -1202,7 +1222,7 @@ def process_trials_with_conditions(
         conditions: List of conditions to filter trials
         output_path: Path to save output files
         gpt_filter: Optional GPTTrialFilter instance for condition evaluation
-
+        refresh_cache: Whether to refresh the cache of GPT responses
     Returns:
         Tuple of (total API cost, number of eligible trials)
     """
@@ -1226,7 +1246,7 @@ def process_trials_with_conditions(
             )
 
             is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-                trial, conditions
+                trial, conditions, refresh_cache
             )
             total_cost += cost
 
