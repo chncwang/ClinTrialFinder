@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -834,11 +833,11 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         result = self._parse_gpt_response(response_content)
         return result.get("branches", [criterion])
 
-    async def _evaluate_branch_async(
+    def _evaluate_branch(
         self, branch: str, conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
         """
-        Async version of _evaluate_branch method.
+        Evaluate a branch against given conditions.
         """
         cost_sum = 0.0
         branch_condition_evaluations = {}
@@ -849,12 +848,12 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         )
 
         # Evaluate the branch against the most relevant conditions
-        probability, reason, cost = await self.evaluate_inclusion_criterion_async(
+        probability, reason, cost = self.evaluate_inclusion_criterion(
             branch, most_relevant_conditions, trial_title
         )
         cost_sum += cost
         logger.info(
-            f"GPTTrialFilter._evaluate_branch_async: Branch evaluation:\n"
+            f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
             + json.dumps(
                 {
                     "branch": branch,
@@ -884,29 +883,21 @@ Return ONLY JSON with a "branches" list containing the split criteria:
 
         return probability, branch_condition_evaluations, cost_sum
 
-    async def process_branches_async(
+    def process_branches(
         self, branches: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
         """
-        Async version of process_branches that evaluates branches concurrently.
+        Process branches sequentially.
         """
         branch_max_prob = 0.0
         branch_cost_sum = 0.0
         branch_results = {condition: [] for condition in conditions}
 
-        # Create tasks for all branches
-        tasks = [
-            self._evaluate_branch_async(branch, conditions, trial_title)
-            for branch in branches
-        ]
-
-        # Execute all tasks concurrently
-        branch_evaluations = await asyncio.gather(*tasks)
-
-        # Process results
-        for branch, (branch_prob, branch_condition_evaluations, branch_cost) in zip(
-            branches, branch_evaluations
-        ):
+        # Process each branch sequentially
+        for branch in branches:
+            branch_prob, branch_condition_evaluations, branch_cost = (
+                self._evaluate_branch(branch, conditions, trial_title)
+            )
             branch_cost_sum += branch_cost
             branch_max_prob = max(branch_max_prob, branch_prob)
 
@@ -1060,16 +1051,9 @@ Return ONLY a JSON object with this structure:
                     f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
                 )
 
-                # Create event loop if it doesn't exist
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                # Run process_branches_async and get results
-                branch_max_prob, branch_results, branch_cost = loop.run_until_complete(
-                    self.process_branches_async(branches, conditions, trial_title)
+                # Run process_branches and get results
+                branch_max_prob, branch_results, branch_cost = self.process_branches(
+                    branches, conditions, trial_title
                 )
                 total_cost += branch_cost
 
@@ -1203,27 +1187,6 @@ Return ONLY a JSON object with this structure:
 
         # Otherwise, the trial is eligible
         return True, total_cost, None
-
-    async def evaluate_inclusion_criterion_async(
-        self, criterion: str, conditions: List[str], title: str
-    ) -> Tuple[float, str, float]:
-        """
-        Asynchronous version of evaluate_inclusion_criterion method.
-
-        Args:
-            criterion: The inclusion criterion to evaluate
-            conditions: List of conditions to check against the criterion
-            title: Title of the clinical trial for context
-
-        Returns:
-            Tuple containing:
-                - float: Overall probability of eligibility (best match among conditions)
-                - str: Reason for the evaluation
-                - float: Cost of the GPT API call
-        """
-        # This is a simple async wrapper around the synchronous method
-        # In a more optimized implementation, this would use an async GPT client
-        return self.evaluate_inclusion_criterion(criterion, conditions, title)
 
 
 def process_trials_with_conditions(
