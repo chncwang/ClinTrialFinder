@@ -15,14 +15,14 @@ def read_input_file(file_path: str) -> str:
     try:
         with open(file_path, "r") as file:
             content = file.read().strip()
-            logger.info(f"Read input file from {file_path}")
-            logger.info(f"File Content: {content[:200]}...")
+            logger.info(f"read_input_file: Read input file from {file_path}")
+            logger.info(f"read_input_file: File Content: {content}")
             return content
     except FileNotFoundError:
-        logger.error(f"Input file not found: {file_path}")
+        logger.error(f"read_input_file: Input file not found: {file_path}")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Error reading input file: {e}")
+        logger.error(f"read_input_file: Error reading input file: {e}")
         sys.exit(1)
 
 
@@ -63,8 +63,10 @@ def parse_json_response(
             return result, cost
 
         except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"Invalid JSON structure detected: {e}")
-            logger.warning(f"Attempting to correct response: {cleaned_response}")
+            logger.warning(f"parse_json_response: Invalid JSON structure detected: {e}")
+            logger.warning(
+                f"parse_json_response: Attempting to correct response: {cleaned_response}"
+            )
 
             # Attempt correction using GPT-4o-mini
             correction_prompt = (
@@ -90,8 +92,10 @@ def parse_json_response(
                 return result, total_cost
 
             except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"Failed to correct JSON: {e}")
-                logger.error(f"Failed to convert to valid JSON: {completion}")
+                logger.error(f"parse_json_response: Failed to correct JSON: {e}")
+                logger.error(
+                    f"parse_json_response: Failed to convert to valid JSON: {completion}"
+                )
                 raise ValueError(
                     f"Failed to convert to valid JSON: {e}. Response content: {completion}"
                 )

@@ -35,6 +35,7 @@ def extract_disease_from_record(
             prompt=prompt,
             system_role="You are a medical expert focused on identifying primary medical conditions.",
             temperature=0.1,
+            response_format={"type": "json_object"},
         )
         if completion is None:
             logger.error("Failed to extract disease from clinical record")
@@ -85,6 +86,7 @@ def get_parent_disease_categories(
             system_role="You are a medical expert with comprehensive knowledge of disease classification and taxonomy.",
             model="gpt-4o",
             temperature=0.1,
+            response_format={"type": "json_object"},
         )
         if completion is None:
             logger.error(f"Failed to get parent disease categories for {disease_name}")
@@ -182,7 +184,8 @@ def extract_conditions_from_record(
             '  "Myocardial infarction 4 years ago",\n'
             '  "Osteoarthritis of the knee",\n'
             '  "Hypothyroidism on levothyroxine",\n'
-            '  "COPD with occasional exacerbations"\n'
+            '  "COPD with occasional exacerbations",\n'
+            '  "<other conditions relevant to eligibility>",\n'
             "]\n\n"
             "Guidelines:\n"
             "1. Always include demographic information as the first item\n"
@@ -200,6 +203,7 @@ def extract_conditions_from_record(
             system_role="You are a medical expert specialized in extracting clinical history from medical records.",
             temperature=0.1,
             model="gpt-4o",
+            response_format={"type": "json_object"},
         )
 
         if completion:
