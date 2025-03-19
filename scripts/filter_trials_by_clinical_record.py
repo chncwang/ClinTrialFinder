@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -19,38 +20,26 @@ logs_dir = Path("logs")
 logs_dir.mkdir(exist_ok=True)
 log_file = logs_dir / f"filter_trials_by_clinical_record_{timestamp}.log"
 
-# Configure root logger first
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-)
-
-# Create and configure file handler
+# Create handlers
 file_handler = logging.FileHandler(str(log_file))
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 )
-file_handler.setLevel(logging.INFO)
 
-# Create and configure console handler
-console_handler = logging.StreamHandler()
+console_handler = logging.StreamHandler(sys.stdout)  # Explicitly use stdout
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 )
-console_handler.setLevel(logging.INFO)
 
-# Get and configure the module logger
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[file_handler, console_handler],
+    force=True,  # Force reconfiguration of the root logger
+)
+
+# Get the module logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
-# Configure other loggers
-for module in ["base.disease_expert", "base.trial_expert", "base.gpt_client"]:
-    module_logger = logging.getLogger(module)
-    module_logger.setLevel(logging.INFO)
-    module_logger.addHandler(file_handler)
-    module_logger.addHandler(console_handler)
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:

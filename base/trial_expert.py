@@ -988,6 +988,68 @@ Return ONLY a JSON object with this structure:
             )
             return conditions[:num_conditions]
 
+    def _evaluate_branch(
+        self, branch: str, conditions: List[str], trial_title: str
+    ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
+        """
+        Evaluate a single branch of an inclusion criterion against a list of conditions.
+
+        Args:
+            branch: A single branch of an inclusion criterion to evaluate
+            conditions: List of medical conditions to check against the branch
+            trial_title: Title of the clinical trial for context
+
+        Returns:
+            Tuple of (
+                probability: float,
+                condition_evaluations: Dict[str, CriterionEvaluation],
+                cost: float
+            )
+        """
+        cost_sum = 0.0
+        branch_condition_evaluations = {}
+
+        # Get the most relevant conditions
+        most_relevant_conditions = self.choose_most_relevant_conditions(
+            branch, conditions, trial_title
+        )
+
+        # Evaluate the branch against the most relevant conditions
+        probability, reason, cost = self.evaluate_inclusion_criterion(
+            branch, most_relevant_conditions, trial_title
+        )
+        cost_sum += cost
+        logger.info(
+            f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
+            + json.dumps(
+                {
+                    "branch": branch,
+                    "conditions": most_relevant_conditions,
+                    "probability": probability,
+                    "cost": cost,
+                }
+            )
+        )
+
+        # Store the evaluation result for all relevant conditions
+        for condition in most_relevant_conditions:
+            branch_condition_evaluations[condition] = CriterionEvaluation(
+                criterion=branch,
+                reason=reason,
+                eligibility=probability,
+            )
+
+        # For other conditions, mark them as fully compatible
+        for condition in conditions:
+            if condition not in most_relevant_conditions:
+                branch_condition_evaluations[condition] = CriterionEvaluation(
+                    criterion=branch,
+                    reason="Not among the most relevant conditions for this criterion - assumed compatible",
+                    eligibility=1.0,
+                )
+
+        return probability, branch_condition_evaluations, cost_sum
+
     def process_branches(
         self, branches: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:

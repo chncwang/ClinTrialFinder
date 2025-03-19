@@ -83,6 +83,7 @@ def get_parent_disease_categories(
         completion, cost = gpt_client.call_gpt(
             prompt=prompt,
             system_role="You are a medical expert with comprehensive knowledge of disease classification and taxonomy.",
+            model="gpt-4o",
             temperature=0.1,
         )
         if completion is None:
@@ -168,7 +169,8 @@ def extract_conditions_from_record(
             "- Demographic features (age, sex, etc.)\n"
             "- Major medical conditions\n"
             "- Significant treatments and their status\n"
-            "- Current clinical status\n\n"
+            "- Current clinical status\n"
+            "- Other conditions relevant to eligibility\n\n"
             "Example format:\n"
             "[\n"
             '  "65-year-old female",\n'
@@ -187,7 +189,8 @@ def extract_conditions_from_record(
             "2. Focus on the condition and its current status\n"
             "3. Include relevant treatment information if applicable\n"
             "4. Use relative time references (e.g., '2 years ago' instead of '2021')\n"
-            "5. Keep descriptions concise and medically relevant\n\n"
+            "5. Keep descriptions concise and medically relevant\n"
+            "6. Include any other conditions relevant to trial eligibility\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
             "Return only the JSON array, without any additional text or explanation."
         )
