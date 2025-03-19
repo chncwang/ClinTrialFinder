@@ -988,125 +988,6 @@ Return ONLY a JSON object with this structure:
             )
             return conditions[:num_conditions]
 
-    def _evaluate_branch(
-        self, branch: str, conditions: List[str], trial_title: str
-    ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
-        """
-        Evaluate a single branch of an inclusion criterion against a list of conditions.
-
-        Args:
-            branch: A single branch of an inclusion criterion to evaluate
-            conditions: List of medical conditions to check against the branch
-            trial_title: Title of the clinical trial for context
-
-        Returns:
-            Tuple of (
-                probability: float,
-                condition_evaluations: Dict[str, CriterionEvaluation],
-                cost: float
-            )
-        """
-        cost_sum = 0.0
-        branch_condition_evaluations = {}
-
-        # Get the most relevant conditions
-        most_relevant_conditions = self.choose_most_relevant_conditions(
-            branch, conditions, trial_title
-        )
-
-        # Evaluate the branch against the most relevant conditions
-        probability, reason, cost = self.evaluate_inclusion_criterion(
-            branch, most_relevant_conditions, trial_title
-        )
-        cost_sum += cost
-        logger.info(
-            f"GPTTrialFilter._evaluate_branch: Branch evaluation:\n"
-            + json.dumps(
-                {
-                    "branch": branch,
-                    "conditions": most_relevant_conditions,
-                    "probability": probability,
-                    "cost": cost,
-                }
-            )
-        )
-
-        # Store the evaluation result for all relevant conditions
-        for condition in most_relevant_conditions:
-            branch_condition_evaluations[condition] = CriterionEvaluation(
-                criterion=branch,
-                reason=reason,
-                eligibility=probability,
-            )
-
-        # For other conditions, mark them as fully compatible
-        for condition in conditions:
-            if condition not in most_relevant_conditions:
-                branch_condition_evaluations[condition] = CriterionEvaluation(
-                    criterion=branch,
-                    reason="Not among the most relevant conditions for this criterion - assumed compatible",
-                    eligibility=1.0,
-                )
-
-        return probability, branch_condition_evaluations, cost_sum
-
-    def process_branches(
-        self, branches: List[str], conditions: List[str], trial_title: str
-    ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
-        """
-        Process multiple branches and return the best probability and results.
-
-        Args:
-            branches: List of branch criteria to evaluate
-            conditions: List of conditions to check against
-            trial_title: Title of the clinical trial
-
-        Returns:
-            Tuple of (
-                max_probability: float,
-                condition_results: Dict[str, List[CriterionEvaluation]],
-                total_cost: float
-            )
-        """
-        branch_max_prob = 0.0
-        branch_cost_sum = 0.0
-        branch_results = {condition: [] for condition in conditions}
-
-        for branch in branches:
-            branch_prob: float
-            branch_condition_evaluations: Dict[
-                str, CriterionEvaluation
-            ]  # Maps condition (str) to evaluation found for that condition
-            branch_prob, branch_condition_evaluations, branch_cost = (
-                self._evaluate_branch(branch, conditions, trial_title)
-            )
-            branch_cost_sum += branch_cost
-            branch_max_prob = max(branch_max_prob, branch_prob)
-
-            # Record which conditions met this branch
-            for condition in conditions:
-                # Get the individual condition's probability for this branch
-                if condition in branch_condition_evaluations:
-                    condition_evaluation: CriterionEvaluation = (
-                        branch_condition_evaluations[condition]
-                    )
-                    branch_results[condition].append(
-                        CriterionEvaluation(
-                            criterion=branch,
-                            reason=condition_evaluation.reason,
-                            eligibility=condition_evaluation.eligibility,
-                        )
-                    )
-
-            # Early exit if we found a fully compatible branch
-            if branch_max_prob >= 1.0:
-                logger.info(
-                    f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
-                )
-                break
-
-        return branch_max_prob, branch_results, branch_cost_sum
-
     def _get_or_criterion_failure_reason(
         self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
     ) -> Tuple[str, str, str]:
@@ -1182,8 +1063,8 @@ Return ONLY a JSON object with this structure:
                 branch_max_prob: float
                 branch_results: Dict[str, List[CriterionEvaluation]]
                 branch_cost: float
-                branch_max_prob, branch_results, branch_cost = self.process_branches(
-                    branches, conditions, trial_title
+                branch_max_prob, branch_results, branch_cost = (
+                    self.process_branches_async(branches, conditions, trial_title)
                 )
                 total_cost += branch_cost
 
@@ -1206,7 +1087,7 @@ Return ONLY a JSON object with this structure:
                 )
 
                 # Only evaluate the most relevant condition
-                probability, reason, cost = self.evaluate_inclusion_criterion(
+                probability, reason, cost = self.evaluate_inclusion_criterion_async(
                     criterion, most_relevant_conditions, trial_title
                 )
                 overall_probability *= probability
