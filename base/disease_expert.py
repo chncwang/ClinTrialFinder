@@ -21,8 +21,7 @@ def extract_disease_from_record(
     - gpt_client (GPTClient): Initialized GPT client for making API calls
 
     Returns:
-    - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found)
-                               and the cost of the API call
+    - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found) and the cost of the API call
     """
     prompt = (
         "Extract the primary disease or medical condition from the following clinical record. "
@@ -35,7 +34,6 @@ def extract_disease_from_record(
             prompt=prompt,
             system_role="You are a medical expert focused on identifying primary medical conditions.",
             temperature=0.1,
-            response_format={"type": "json_object"},
         )
         if completion is None:
             logger.error("Failed to extract disease from clinical record")
@@ -203,7 +201,6 @@ def extract_conditions_from_record(
             system_role="You are a medical expert specialized in extracting clinical history from medical records.",
             temperature=0.1,
             model="gpt-4o",
-            response_format={"type": "json_object"},
         )
 
         if completion:
