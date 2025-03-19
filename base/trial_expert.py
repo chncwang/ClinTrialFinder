@@ -1060,10 +1060,15 @@ Return ONLY a JSON object with this structure:
                     f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
                 )
 
-                branch_max_prob: float
-                branch_results: Dict[str, List[CriterionEvaluation]]
-                branch_cost: float
-                branch_max_prob, branch_results, branch_cost = (
+                # Create event loop if it doesn't exist
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                # Run process_branches_async and get results
+                branch_max_prob, branch_results, branch_cost = loop.run_until_complete(
                     self.process_branches_async(branches, conditions, trial_title)
                 )
                 total_cost += branch_cost
@@ -1087,7 +1092,7 @@ Return ONLY a JSON object with this structure:
                 )
 
                 # Only evaluate the most relevant condition
-                probability, reason, cost = self.evaluate_inclusion_criterion_async(
+                probability, reason, cost = self.evaluate_inclusion_criterion(
                     criterion, most_relevant_conditions, trial_title
                 )
                 overall_probability *= probability
