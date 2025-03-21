@@ -1099,7 +1099,11 @@ Return ONLY a JSON object with this structure:
                 total_cost += cost
 
                 if probability <= 0.0:
-                    failure_reason = (most_relevant_conditions[0], criterion, reason)
+                    failure_reason = (
+                        ", ".join(most_relevant_conditions),
+                        criterion,
+                        reason,
+                    )
                     break
 
         if overall_probability <= 0.0 and failure_reason is None:
@@ -1126,8 +1130,7 @@ Return ONLY a JSON object with this structure:
 
             - is_eligible: Whether the trial is eligible.
             - total_cost: Estimated GPT API cost for the calls.
-            - failure_reason: If ineligible, a TrialFailureReason object describing why it failed.
-                            If eligible, None.
+            - failure_reason: If ineligible, a TrialFailureReason object describing why it failed. If eligible, None.
         """
         # 1) Evaluate the title first
         title_probability, title_reason, title_cost = self.evaluate_title(
