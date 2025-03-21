@@ -29,7 +29,7 @@ def analyze_drug_effectiveness(
         "to evaluate drug efficacy for specific conditions.</role>\n\n"
         "<task>Analyze and summarize the effectiveness of a specific drug for treating a given disease "
         "based on available research and clinical evidence. Focus on key findings regarding efficacy, "
-        "safety, and comparative effectiveness with standard treatments.</task>"
+        "safety, and current research status.</task>"
     )
 
     user_prompt = (
@@ -38,8 +38,7 @@ def analyze_drug_effectiveness(
         f"Include information about:\n"
         f"1. Clinical trial results and outcomes\n"
         f"2. Safety profile and major side effects\n"
-        f"3. Comparison with standard treatments\n"
-        f"4. Current research status and evidence quality\n"
+        f"3. Current research status and evidence quality\n"
         f"Base your analysis on published research and clinical evidence.\n"
         f"</drug_analysis_request>"
     )

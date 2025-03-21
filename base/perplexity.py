@@ -59,7 +59,7 @@ class PerplexityClient:
     def get_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "sonar-pro",
+        model: str = "sonar",
         max_tokens: int = 1000,
         temperature: float = 0.2,
         top_p: float = 0.9,
@@ -68,7 +68,7 @@ class PerplexityClient:
 
         Args:
             messages: List of message dictionaries with 'role' and 'content'
-            model: Model to use (default: sonar-pro)
+            model: Model to use (default: sonar)
             max_tokens: Maximum tokens in response (default: 1000)
             temperature: Temperature parameter (default: 0.2)
             top_p: Top p parameter (default: 0.9)
