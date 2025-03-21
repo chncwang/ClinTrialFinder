@@ -19,8 +19,8 @@ class PerplexityClient:
     CACHE_FILE = "perplexity_cache.pkl"
     MAX_CACHE_SIZE = 1000  # Set maximum cache size
     EXPIRATION_DURATION = timedelta(
-        days=1
-    ).total_seconds()  # Set expiration duration to one day
+        days=30
+    ).total_seconds()  # Set expiration duration to one month
 
     def __init__(self, api_key: str):
         """Initialize the Perplexity client.
