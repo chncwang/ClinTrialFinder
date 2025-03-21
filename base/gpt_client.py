@@ -110,6 +110,7 @@ class GPTClient:
         temperature: Optional[float] = None,
         response_format: Optional[Dict[str, str]] = None,
         validate_json: bool = False,
+        model: str = "gpt-4o-mini",
     ) -> Tuple[Union[str, Dict], float]:
         """
         Make a GPT API call with retry logic.
@@ -120,7 +121,7 @@ class GPTClient:
             temperature: Temperature setting (uses default if None)
             response_format: Optional response format specification
             validate_json: Whether to validate and parse JSON response
-
+            model: GPT model to use
         Returns:
             Tuple of (response_content or parsed_json, cost)
         """
@@ -131,6 +132,7 @@ class GPTClient:
                 response, cost = self.call_gpt(
                     prompt,
                     system_role,
+                    model=model,
                     temperature=temperature,
                     refresh_cache=(attempt > 0),
                     response_format=response_format,

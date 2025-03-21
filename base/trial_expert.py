@@ -578,7 +578,7 @@ Example response:
                 response_content, cost = self._call_gpt(
                     prompt,
                     "You are a clinical trial analyst focused on evaluating titles.",
-                    model="gpt-4o",  # Use GPT-4 for title evaluation
+                    model="gpt-4o-mini",  # Use GPT-4 for title evaluation
                     temperature=0.1,
                     refresh_cache=(attempt > 0) or refresh_cache,
                 )
@@ -639,7 +639,7 @@ Example response 2:
             response_content, cost = self._call_gpt_with_retry(
                 prompt,
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
-                model="gpt-4o",  # Use GPT-4 for criterion evaluation
+                model="gpt-4o-mini",  # Use GPT-4 for criterion evaluation
             )
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
@@ -763,7 +763,7 @@ Return ONLY a JSON object with this structure:
         response_content, _ = self._call_gpt(
             prompt,
             "You are a clinical trial analyst specializing in patient condition relevance.",
-            model="gpt-4o",
+            model="gpt-4o-mini",
             temperature=0.0,
             refresh_cache=refresh_cache,
         )
