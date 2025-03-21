@@ -414,12 +414,12 @@ class GPTTrialFilter:
             temperature=0.1,
             max_retries=3,
         )
-        self.model = "gpt-4o-mini"
 
     def _call_gpt(
         self,
         prompt: str,
         system_role: str,
+        model: str,  # Required model parameter
         temperature: float = 0.1,
         refresh_cache: bool = False,
     ) -> Tuple[str, float]:
@@ -427,18 +427,19 @@ class GPTTrialFilter:
         return self.gpt_client.call_gpt(
             prompt,
             system_role,
-            model=self.model,
+            model=model,
             temperature=temperature,
             refresh_cache=refresh_cache,
             response_format={"type": "json_object"},
         )
 
     def _call_gpt_with_retry(
-        self, prompt: str, system_role: str, max_retries: int = 3
+        self, prompt: str, system_role: str, model: str, max_retries: int = 3
     ) -> Tuple[str, float]:
         return self.gpt_client.call_with_retry(
             prompt,
             system_role,
+            model=model,
             response_format={"type": "json_object"},
             validate_json=True,
         )
@@ -544,16 +545,7 @@ Example response 2:
     ) -> Tuple[float, str, float]:
         """
         Evaluate if a trial title indicates suitability for given conditions.
-
-        Args:
-            trial: The clinical trial to evaluate
-            conditions: Patient condition(s) to check against, either as a single string or list of strings
-            refresh_cache: Whether to refresh the cache of GPT responses
-        Returns:
-            Tuple of:
-                float: Probability of trial suitability (0.0-1.0)
-                str: Explanation of the evaluation
-                float: Cost of the GPT API call
+        Uses GPT-4 for accurate evaluation.
         """
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
@@ -586,9 +578,9 @@ Example response:
                 response_content, cost = self._call_gpt(
                     prompt,
                     "You are a clinical trial analyst focused on evaluating titles.",
+                    model="gpt-4o",  # Use GPT-4 for title evaluation
                     temperature=0.1,
-                    refresh_cache=(attempt > 0)
-                    or refresh_cache,  # Refresh cache on retries
+                    refresh_cache=(attempt > 0) or refresh_cache,
                 )
                 total_cost += cost
                 result = self._parse_gpt_response(response_content)
@@ -612,17 +604,7 @@ Example response:
     ) -> Tuple[float, str, float]:
         """
         Evaluate an inclusion criterion against multiple conditions at once.
-
-        Args:
-            criterion: The inclusion criterion to evaluate
-            conditions: List of conditions to check against the criterion
-            title: Title of the clinical trial for context
-
-        Returns:
-            Tuple containing:
-                - float: Overall probability of eligibility (best match among conditions)
-                - str: Reason for the evaluation
-                - float: Cost of the GPT API call
+        Uses GPT-4 for accurate evaluation.
         """
         prompt = f"""You are evaluating a clinical trial inclusion criterion against multiple patient conditions.
 
@@ -657,6 +639,7 @@ Example response 2:
             response_content, cost = self._call_gpt_with_retry(
                 prompt,
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
+                model="gpt-4o",  # Use GPT-4 for criterion evaluation
             )
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
@@ -691,6 +674,113 @@ Example response 2:
         except Exception as e:
             logger.error(f"Failed to evaluate criterion: {str(e)}")
             raise
+
+    def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
+        """Check if a criterion contains top-level OR logic using GPT."""
+        prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
+
+Criterion: {criterion}
+
+Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
+{{"is_or_criterion": true/false}}"""
+
+        try:
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+                temperature=0.0,
+                refresh_cache=refresh_cache,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
+        except json.JSONDecodeError:
+            # Retry with cache refresh on parse error
+            response_content, _ = self._call_gpt(
+                prompt,
+                "You are a clinical trial analyst specializing in logical structure analysis.",
+                model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+                temperature=0.0,
+                refresh_cache=True,
+            )
+            result = self._parse_gpt_response(response_content)
+            return result.get("is_or_criterion", False)
+
+    def _split_or_branches(
+        self, criterion: str, refresh_cache: bool = False
+    ) -> List[str]:
+        """Split a criterion with top-level OR logic into individual branches."""
+        prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
+
+Original Criterion:
+{criterion}
+
+Rules:
+1. Split only at TOP-LEVEL OR connections
+2. Maintain nested AND/OR structures within branches
+3. Preserve all original requirements in each branch
+
+Return ONLY JSON with a "branches" list containing the split criteria:
+{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in logical structure analysis.",
+            model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+            temperature=0.0,
+            refresh_cache=refresh_cache,
+        )
+        result = self._parse_gpt_response(response_content)
+        return result.get("branches", [criterion])
+
+    def choose_most_relevant_conditions(
+        self,
+        branch: str,
+        conditions: List[str],
+        trial_title: str,
+        num_conditions: int = 3,
+        refresh_cache: bool = False,
+    ) -> List[str]:
+        """Choose the most relevant conditions from a list of conditions for a given branch."""
+        if num_conditions >= len(conditions):
+            return conditions
+
+        prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
+
+Trial Title: {trial_title}
+
+Inclusion Criterion Branch:
+{branch}
+
+Patient Conditions:
+{json.dumps(conditions, indent=2)}
+
+Task: Choose the {num_conditions} most relevant conditions that should be evaluated against this inclusion criterion branch, ordered by relevance.
+
+Return ONLY a JSON object with this structure:
+{{"relevant_conditions": ["condition1", "condition2", ...]}}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst specializing in patient condition relevance.",
+            model="gpt-4o",
+            temperature=0.0,
+            refresh_cache=refresh_cache,
+        )
+
+        try:
+            result = self._parse_gpt_response(response_content)
+            logger.info(
+                f"GPTTrialFilter.choose_most_relevant_condition: Branch: {branch}, Result: {result}"
+            )
+            relevant_conditions = result.get("relevant_conditions", [conditions[0]])
+            # Ensure we don't return more conditions than requested
+            return relevant_conditions[:num_conditions]
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(
+                f"Failed to parse most relevant conditions response: {e}. Using first {num_conditions} conditions as fallback."
+            )
+            return conditions[:num_conditions]
 
     def split_inclusion_criteria(
         self, criteria: str, refresh_cache: bool = False
@@ -745,6 +835,7 @@ Example response:
         response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
+            model="gpt-4o-mini",  # Use GPT-4 Mini for parsing
             temperature=0.0,
             refresh_cache=refresh_cache,
         )
@@ -791,61 +882,6 @@ Example response:
             )
 
         return inclusion_text
-
-    def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
-        """Check if a criterion contains top-level OR logic using GPT."""
-        prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
-
-Criterion: {criterion}
-
-Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
-{{"is_or_criterion": true/false}}"""
-
-        try:
-            response_content, _ = self._call_gpt(
-                prompt,
-                "You are a clinical trial analyst specializing in logical structure analysis.",
-                temperature=0.0,
-                refresh_cache=refresh_cache,
-            )
-            result = self._parse_gpt_response(response_content)
-            return result.get("is_or_criterion", False)
-        except json.JSONDecodeError:
-            # Retry with cache refresh on parse error
-            response_content, _ = self._call_gpt(
-                prompt,
-                "You are a clinical trial analyst specializing in logical structure analysis.",
-                temperature=0.0,
-                refresh_cache=True,
-            )
-            result = self._parse_gpt_response(response_content)
-            return result.get("is_or_criterion", False)
-
-    def _split_or_branches(
-        self, criterion: str, refresh_cache: bool = False
-    ) -> List[str]:
-        """Split a criterion with top-level OR logic into individual branches."""
-        prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
-
-Original Criterion:
-{criterion}
-
-Rules:
-1. Split only at TOP-LEVEL OR connections
-2. Maintain nested AND/OR structures within branches
-3. Preserve all original requirements in each branch
-
-Return ONLY JSON with a "branches" list containing the split criteria:
-{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
-
-        response_content, _ = self._call_gpt(
-            prompt,
-            "You are a clinical trial analyst specializing in logical structure analysis.",
-            temperature=0.0,
-            refresh_cache=refresh_cache,
-        )
-        result = self._parse_gpt_response(response_content)
-        return result.get("branches", [criterion])
 
     def _evaluate_branch(
         self, branch: str, conditions: List[str], trial_title: str
@@ -935,102 +971,6 @@ Return ONLY JSON with a "branches" list containing the split criteria:
                 break
 
         return branch_max_prob, branch_results, branch_cost_sum
-
-    def choose_most_relevant_conditions(
-        self,
-        branch: str,
-        conditions: List[str],
-        trial_title: str,
-        num_conditions: int = 3,
-        refresh_cache: bool = False,
-    ) -> List[str]:
-        """
-        Choose the most relevant conditions from a list of conditions for a given branch.
-
-        Args:
-            branch: A single branch of an inclusion criterion to evaluate
-            conditions: List of medical conditions to check against the branch
-            trial_title: Title of the clinical trial for context
-            num_conditions: Number of most relevant conditions to return (default: 1)
-
-        Returns:
-            List of the most relevant conditions, ordered by relevance
-        """
-        if num_conditions >= len(conditions):
-            return conditions
-
-        prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
-
-Trial Title: {trial_title}
-
-Inclusion Criterion Branch:
-{branch}
-
-Patient Conditions:
-{json.dumps(conditions, indent=2)}
-
-Task: Choose the {num_conditions} most relevant conditions that should be evaluated against this inclusion criterion branch, ordered by relevance.
-
-Return ONLY a JSON object with this structure:
-{{"relevant_conditions": ["condition1", "condition2", ...]}}"""
-
-        response_content, _ = self._call_gpt(
-            prompt,
-            "You are a clinical trial analyst specializing in patient condition relevance.",
-            temperature=0.0,
-            refresh_cache=refresh_cache,
-        )
-
-        try:
-            result = self._parse_gpt_response(response_content)
-            logger.info(
-                f"GPTTrialFilter.choose_most_relevant_condition: Branch: {branch}, Result: {result}"
-            )
-            relevant_conditions = result.get("relevant_conditions", [conditions[0]])
-            # Ensure we don't return more conditions than requested
-            return relevant_conditions[:num_conditions]
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(
-                f"Failed to parse most relevant conditions response: {e}. Using first {num_conditions} conditions as fallback."
-            )
-            return conditions[:num_conditions]
-
-    def _get_or_criterion_failure_reason(
-        self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
-    ) -> Tuple[str, str, str]:
-        """
-        Find and format the failure reason when all branches of an OR criterion fail.
-
-        Args:
-            branch_results: Dictionary mapping conditions to their branch evaluations
-            criterion: The original OR criterion being evaluated
-
-        Returns:
-            Tuple of (failed_condition, criterion, detailed_reason)
-        """
-        # Find the first condition that failed all branches
-        failed_condition = None
-        failed_branch_evaluations = []
-        for condition, branch_evaluations in branch_results.items():
-            # Check if all branches failed for this condition
-            if all(evaluation.eligibility <= 0.0 for evaluation in branch_evaluations):
-                # Found a condition that failed all branches
-                failed_condition = condition
-                failed_branch_evaluations = branch_evaluations
-                break
-
-        # Format the detailed failure reason
-        branch_reasons = [
-            f"Branch {i+1}: {evaluation.reason}"
-            for i, evaluation in enumerate(failed_branch_evaluations)
-        ]
-        detailed_reason = "Failed all OR branches:\n" + "\n".join(branch_reasons)
-
-        logger.info(
-            f"Condition failed all branches:\n{json.dumps({'condition': failed_condition, 'criterion': criterion, 'detailed_reason': detailed_reason}, indent=2)}"
-        )
-
-        return (failed_condition, criterion, detailed_reason)
 
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
