@@ -15,6 +15,7 @@ setup(
         "fake-useragent>=2.0.3",
         "playwright>=1.50.0",
         "tqdm>=4.67.1",
+        "openai",
     ],
     author="Wang Qiansheng",
     author_email="chncwang@gmail.com",
