@@ -156,6 +156,35 @@ def extract_conditions_from_record(
         clinical_record = read_input_file(clinical_record_file)
         logger.info(f"Read clinical record from {clinical_record_file}")
 
+        # Use the existing function to extract conditions from content
+        return extract_conditions_from_content(
+            clinical_record=clinical_record,
+            gpt_client=gpt_client,
+            refresh_cache=refresh_cache,
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing clinical record: {e}")
+        raise
+
+    return []
+
+
+def extract_conditions_from_content(
+    clinical_record: str, gpt_client: GPTClient, refresh_cache: bool = False
+) -> List[str]:
+    """
+    Extract the patient's clinical history directly from clinical record content in chronological order.
+
+    Parameters:
+    - clinical_record (str): The clinical record content
+    - gpt_client (GPTClient): Initialized GPT client for making API calls
+    - refresh_cache (bool): Whether to refresh the GPT cache
+
+    Returns:
+    - List[str]: List of clinical history items in chronological order
+    """
+    try:
         # Get current time for relative time calculations
         current_time = datetime.now()
         current_time_str = current_time.strftime("%Y-%m-%d")
@@ -217,7 +246,7 @@ def extract_conditions_from_record(
             return history
 
     except Exception as e:
-        logger.error(f"Error processing clinical record: {e}")
+        logger.error(f"Error processing clinical record content: {e}")
         raise
 
     return []
