@@ -28,14 +28,14 @@ class AITokenPricing:
 
     @classmethod
     def calculate_cost(
-        cls, prompt: str, response: str, model: str = "gpt-4o-mini"
+        cls, prompt: str, response: str, model: str = "gpt-4.1-mini"
     ) -> float:
         """Calculate the approximate cost for API usage.
 
         Args:
             prompt: Input text
             response: Output text
-            model: Model name (defaults to gpt-4o-mini)
+            model: Model name (defaults to gpt-4.1-mini)
 
         Returns:
             float: Estimated cost in USD
