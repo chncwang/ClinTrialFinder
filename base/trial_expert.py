@@ -201,7 +201,7 @@ def analyze_drugs_and_get_recommendation(
     completion, cost = gpt_client.call_gpt(
         prompt=prompt,
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
-        model="gpt-4o",
+        model="gpt-4.1",
         temperature=0.2,
         refresh_cache=refresh_cache,
     )
@@ -220,7 +220,7 @@ def analyze_drugs_and_get_recommendation(
             )
     except json.JSONDecodeError:
         logger.warning("Invalid JSON structure detected, attempting to correct it.")
-        # Use gpt-4o-mini to convert to valid JSON
+        # Use gpt-4.1-mini to convert to valid JSON
         correction_prompt = (
             f"Please convert the following text into a valid JSON object. "
             f"Ensure no additional text or formatting is included:\n{completion}"
@@ -228,7 +228,7 @@ def analyze_drugs_and_get_recommendation(
         completion, correction_cost = gpt_client.call_gpt(
             prompt=correction_prompt,
             system_role="You are a JSON expert.",
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             temperature=0.0,
         )
         total_cost += correction_cost
@@ -312,7 +312,7 @@ def compare_trials(
             completion, cost = gpt_client.call_gpt(
                 prompt=comparison_prompt,
                 system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
-                model="gpt-4o",
+                model="gpt-4.1",
                 temperature=0.2,
                 response_format={"type": "json_object"},
                 refresh_cache=refresh_cache or attempt > 0,
@@ -578,7 +578,7 @@ Example response:
                 response_content, cost = self._call_gpt(
                     prompt,
                     "You are a clinical trial analyst focused on evaluating titles.",
-                    model="gpt-4o-mini",  # Use GPT-4 for title evaluation
+                    model="gpt-4.1-mini",  # Use GPT-4 for title evaluation
                     temperature=0.1,
                     refresh_cache=(attempt > 0) or refresh_cache,
                 )
@@ -639,7 +639,7 @@ Example response 2:
             response_content, cost = self._call_gpt_with_retry(
                 prompt,
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
-                model="gpt-4o-mini",  # Use GPT-4 for criterion evaluation
+                model="gpt-4.1-mini",  # Use GPT-4 for criterion evaluation
             )
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Response content: {response_content}"
@@ -688,7 +688,7 @@ Does this criterion contain multiple alternative options connected by OR at the 
             response_content, _ = self._call_gpt(
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
-                model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+                model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
                 temperature=0.0,
                 refresh_cache=refresh_cache,
             )
@@ -699,7 +699,7 @@ Does this criterion contain multiple alternative options connected by OR at the 
             response_content, _ = self._call_gpt(
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
-                model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+                model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
                 temperature=0.0,
                 refresh_cache=True,
             )
@@ -726,7 +726,7 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         response_content, _ = self._call_gpt(
             prompt,
             "You are a clinical trial analyst specializing in logical structure analysis.",
-            model="gpt-4o-mini",  # Use GPT-4 Mini for simple parsing
+            model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
             temperature=0.0,
             refresh_cache=refresh_cache,
         )
@@ -763,7 +763,7 @@ Return ONLY a JSON object with this structure:
         response_content, _ = self._call_gpt(
             prompt,
             "You are a clinical trial analyst specializing in patient condition relevance.",
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             temperature=0.0,
             refresh_cache=refresh_cache,
         )
@@ -835,7 +835,7 @@ Example response:
         response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
-            model="gpt-4o-mini",  # Use GPT-4 Mini for parsing
+            model="gpt-4.1-mini",  # Use GPT-4 Mini for parsing
             temperature=0.0,
             refresh_cache=refresh_cache,
         )

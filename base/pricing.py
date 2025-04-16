@@ -14,6 +14,8 @@ class AITokenPricing:
     MODEL_COSTS: Dict[str, Tuple[float, float]] = {
         "gpt-4o-mini": (0.15e-3, 0.60e-3),  # $0.15 input, $0.60 output per 1K tokens
         "gpt-4o": (2.5e-3, 10e-3),  # $2.50 input, $10.00 output per 1K tokens
+        "gpt-4.1-mini": (0.4e-3, 1.6e-3),  # $0.40 input, $1.60 output per 1K tokens
+        "gpt-4.1": (2.0e-3, 8.0e-3),  # $2.00 input, $8.00 output per 1K tokens
         "sonar-pro": (0.3e-3, 1.5e-3),  # $0.30 input, $1.50 output per 1K tokens
     }
 

@@ -42,7 +42,7 @@ class GPTClient:
         self,
         prompt: str,
         system_role: str,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1-mini",
         temperature: Optional[float] = None,
         refresh_cache: bool = False,
         response_format: Optional[Dict[str, str]] = None,
@@ -110,7 +110,7 @@ class GPTClient:
         temperature: Optional[float] = None,
         response_format: Optional[Dict[str, str]] = None,
         validate_json: bool = False,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1-mini",
     ) -> Tuple[Union[str, Dict], float]:
         """
         Make a GPT API call with retry logic.

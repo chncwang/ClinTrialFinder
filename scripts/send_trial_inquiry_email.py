@@ -108,7 +108,7 @@ Return ONLY the title text without any additional text or formatting."""
             prompt=prompt,
             system_role=system_role,
             temperature=0.1,
-            model="gpt-4o",
+            model="gpt-4.1",
         )
         return title.strip(), cost
     except Exception as e:
@@ -164,7 +164,7 @@ Return ONLY the email body without any additional text or formatting."""
             prompt=prompt,
             system_role=system_role,
             temperature=0.1,
-            model="gpt-4o",
+            model="gpt-4.1",
         )
         return body.strip(), cost
     except Exception as e:

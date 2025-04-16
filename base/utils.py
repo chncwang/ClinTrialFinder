@@ -68,7 +68,7 @@ def parse_json_response(
                 f"parse_json_response: Attempting to correct response: {cleaned_response}"
             )
 
-            # Attempt correction using GPT-4o-mini
+            # Attempt correction using GPT-4.1-mini
             correction_prompt = (
                 f"Please convert the following text into a valid JSON {expected_type.__name__}. "
                 f"Ensure no additional text or formatting is included:\n{cleaned_response}"
@@ -76,7 +76,7 @@ def parse_json_response(
             completion, correction_cost = gpt_client.call_gpt(
                 prompt=correction_prompt,
                 system_role="You are a JSON expert.",
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 temperature=0.0,
             )
             total_cost = cost + correction_cost

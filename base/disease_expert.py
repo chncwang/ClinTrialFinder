@@ -82,7 +82,7 @@ def get_parent_disease_categories(
         completion, cost = gpt_client.call_gpt(
             prompt=prompt,
             system_role="You are a medical expert with comprehensive knowledge of disease classification and taxonomy.",
-            model="gpt-4o",
+            model="gpt-4.1",
             temperature=0.1,
             response_format={"type": "json_object"},
         )
@@ -229,7 +229,7 @@ def extract_conditions_from_content(
             prompt=prompt,
             system_role="You are a medical expert specialized in extracting clinical history from medical records.",
             temperature=0.1,
-            model="gpt-4o",
+            model="gpt-4.1",
             refresh_cache=refresh_cache,
         )
 
