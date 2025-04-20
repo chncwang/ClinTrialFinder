@@ -800,9 +800,9 @@ YES
 Example response 2:
 NO"""
 
-        response_content, cost = self._call_gpt(
-            prompt,
-            "You are a medical terminology expert specializing in semantic matching.",
+        response_content, cost = self.gpt_client.call_gpt(
+            prompt=prompt,
+            system_role="You are a medical terminology expert specializing in semantic matching.",
             model="gpt-4.1-mini",
             temperature=0.0,
             refresh_cache=refresh_cache,
