@@ -733,6 +733,82 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         result = self._parse_gpt_response(response_content)
         return result.get("branches", [criterion])
 
+    def _validate_condition_with_gpt(
+        self, condition: str, condition_list: List[str], refresh_cache: bool = False
+    ) -> Tuple[bool, str, float]:
+        """
+        Use GPT to validate if a condition is semantically present in a list of conditions.
+
+        Args:
+            condition: The candidate condition to validate
+            condition_list: The reference list of valid conditions
+            refresh_cache: Whether to refresh the GPT cache
+
+        Returns:
+            Tuple of (is_valid, matched_condition, cost)
+            - is_valid: Whether the condition is semantically present in the list
+            - matched_condition: The exact condition from the list that matched, or empty if none
+            - cost: The API cost incurred
+        """
+        # Prepare prompt with the condition and reference list
+        prompt = f"""You are validating if a candidate condition is present in a reference list of valid conditions.
+
+Candidate condition to validate:
+"{condition}"
+
+Reference list of valid conditions:
+{json.dumps(condition_list, indent=2)}
+
+Task: Determine if the candidate condition is semantically equivalent to any condition in the reference list.
+If it is, respond with the word "YES".
+If there is no semantic match, respond only with the word "NO".
+
+IMPORTANT:
+- A match should represent the same medical concept/condition
+- Minor rewording, abbreviation expansion, or formatting differences can be ignored
+- The condition must refer to the same disease, symptom, or health state
+- Don't match conditions that are merely related or in the same category but different
+
+Example response 1:
+YES
+
+Example response 2:
+NO"""
+
+        response_content, cost = self._call_gpt(
+            prompt,
+            "You are a medical terminology expert specializing in semantic matching.",
+            model="gpt-4.1-mini",
+            temperature=0.0,
+            refresh_cache=refresh_cache,
+        )
+
+        logger.debug(f"Validation response for '{condition}': {response_content}")
+
+        # Parse the simple YES/NO response
+        response_text = response_content.strip()
+
+        if response_text.upper() == "YES":
+            # Find the best matching condition in the list
+            for valid_condition in condition_list:
+                if (
+                    valid_condition.lower() in condition.lower()
+                    or condition.lower() in valid_condition.lower()
+                ):
+                    logger.info(
+                        f"Found close match condition: '{condition}' -> '{valid_condition}'"
+                    )
+                    return True, valid_condition, cost
+
+            # If we get here, no close match was found
+            logger.warning(
+                f"GPT returned YES but no matching condition found in the list"
+            )
+            return False, "", cost
+        else:
+            logger.info(f"No semantic match found for condition: '{condition}'")
+            return False, "", cost
+
     def choose_most_relevant_conditions(
         self,
         branch: str,
@@ -740,10 +816,25 @@ Return ONLY JSON with a "branches" list containing the split criteria:
         trial_title: str,
         num_conditions: int = 3,
         refresh_cache: bool = False,
+        need_to_note_list: List[str] = None,
     ) -> List[str]:
         """Choose the most relevant conditions from a list of conditions for a given branch."""
         if num_conditions >= len(conditions):
             return conditions
+
+        # Initialize need-to-note list if none provided
+        if need_to_note_list is None:
+            need_to_note_list = []
+
+        # Build note for previous failures if any
+        validation_note = ""
+        if need_to_note_list:
+            validation_note = (
+                "\n\nIMPORTANT NOTE: Previous responses had the following issues:\n"
+            )
+            for i, note in enumerate(need_to_note_list, 1):
+                validation_note += f"{i}. {note}\n"
+            validation_note += "\nYou MUST only select conditions that are exactly present in the provided list. Do not modify, paraphrase, or create new conditions."
 
         prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
 
@@ -757,10 +848,12 @@ Patient Conditions:
 
 Task: Choose the {num_conditions} most relevant conditions that should be evaluated against this inclusion criterion branch, ordered by relevance.
 
+IMPORTANT: You MUST ONLY select conditions that EXACTLY match entries in the provided Patient Conditions list. Do not modify the text of any condition, do not paraphrase, and do not create new conditions.{validation_note}
+
 Return ONLY a JSON object with this structure:
 {{"relevant_conditions": ["condition1", "condition2", ...]}}"""
 
-        response_content, _ = self._call_gpt(
+        response_content, cost = self._call_gpt(
             prompt,
             "You are a clinical trial analyst specializing in patient condition relevance.",
             model="gpt-4.1-mini",
@@ -768,14 +861,75 @@ Return ONLY a JSON object with this structure:
             refresh_cache=refresh_cache,
         )
 
+        total_cost = cost
+
         try:
             result = self._parse_gpt_response(response_content)
             logger.info(
                 f"GPTTrialFilter.choose_most_relevant_condition: Branch: {branch}, Result: {result}"
             )
             relevant_conditions = result.get("relevant_conditions", [conditions[0]])
+
+            # Validate each condition using GPT
+            validated_conditions = []
+            invalid_conditions = []
+
+            for condition in relevant_conditions:
+                # First check for exact match for efficiency
+                if condition in conditions:
+                    validated_conditions.append(condition)
+                    continue
+
+                # If not an exact match, use GPT to check for semantic match
+                is_match, matched_condition, validation_cost = (
+                    self._validate_condition_with_gpt(
+                        condition, conditions, refresh_cache
+                    )
+                )
+                total_cost += validation_cost
+
+                if is_match and matched_condition:
+                    # Use the exact condition text from the reference list
+                    validated_conditions.append(matched_condition)
+                    logger.info(
+                        f"Condition semantically matched: '{condition}' -> '{matched_condition}'"
+                    )
+                else:
+                    invalid_conditions.append(condition)
+                    logger.warning(
+                        f"No semantic match found for condition: '{condition}'"
+                    )
+
+            # If there are invalid conditions, add them to need-to-note list and retry
+            if invalid_conditions:
+                error_message = f"Found conditions that are not in the original list: {', '.join(invalid_conditions)}"
+                logger.warning(
+                    f"GPTTrialFilter.choose_most_relevant_conditions: {error_message}"
+                )
+
+                # Add to need-to-note list
+                need_to_note_list.append(error_message)
+
+                # Retry with updated need-to-note list
+                if (
+                    len(need_to_note_list) <= 3
+                ):  # Limit retries to prevent infinite loops
+                    return self.choose_most_relevant_conditions(
+                        branch,
+                        conditions,
+                        trial_title,
+                        num_conditions,
+                        True,  # Force refresh cache on retry
+                        need_to_note_list,
+                    )
+                else:
+                    logger.error(
+                        "GPTTrialFilter.choose_most_relevant_conditions: Too many retries, falling back to first conditions"
+                    )
+                    return conditions[:num_conditions]
+
             # Ensure we don't return more conditions than requested
-            return relevant_conditions[:num_conditions]
+            return validated_conditions[:num_conditions]
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(
                 f"Failed to parse most relevant conditions response: {e}. Using first {num_conditions} conditions as fallback."
@@ -892,9 +1046,10 @@ Example response:
         cost_sum = 0.0
         branch_condition_evaluations = {}
 
-        # Get the most relevant conditions
+        # Get the most relevant conditions with validation
+        need_to_note_list = []
         most_relevant_conditions = self.choose_most_relevant_conditions(
-            branch, conditions, trial_title
+            branch, conditions, trial_title, need_to_note_list=need_to_note_list
         )
 
         # Evaluate the branch against the most relevant conditions
@@ -942,9 +1097,12 @@ Example response:
         branch_max_prob = 0.0
         branch_cost_sum = 0.0
         branch_results = {condition: [] for condition in conditions}
+        global_need_to_note_list = []
 
         # Process each branch sequentially
         for branch in branches:
+            # Evaluate branch without passing need_to_note_list to _evaluate_branch
+            # since it already manages its own need_to_note_list
             branch_prob, branch_condition_evaluations, branch_cost = (
                 self._evaluate_branch(branch, conditions, trial_title)
             )
@@ -1066,9 +1224,13 @@ Example response:
             else:
                 logger.info(f"Non-OR criterion detected: {criterion}")
                 # Choose the most relevant condition for this criterion
+                need_to_note_list = []
                 most_relevant_conditions: List[str] = (
                     self.choose_most_relevant_conditions(
-                        criterion, conditions, trial_title
+                        criterion,
+                        conditions,
+                        trial_title,
+                        need_to_note_list=need_to_note_list,
                     )
                 )
 
