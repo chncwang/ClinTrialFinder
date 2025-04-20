@@ -107,6 +107,9 @@ class PerplexityClient:
             "return_images": False,
             "return_related_questions": False,
             "stream": False,
+            "web_search_options": {
+                "search_context_size": "high",
+            },
         }
 
         try:

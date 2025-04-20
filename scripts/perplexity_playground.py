@@ -40,6 +40,11 @@ def main():
         default=1000,
         help="Maximum number of tokens in the response",
     )
+    parser.add_argument(
+        "--model",
+        default="sonar",
+        help="Model to use (default: sonar)",
+    )
 
     args = parser.parse_args()
 
@@ -70,7 +75,7 @@ def main():
     # Call the API
     logger.info("Sending request to Perplexity API...")
     completion, citations, cost = perplexity_client.get_completion(
-        messages, max_tokens=args.max_tokens
+        messages, model=args.model, max_tokens=args.max_tokens
     )
 
     if completion is None:
