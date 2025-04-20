@@ -447,10 +447,35 @@ class GPTTrialFilter:
     def _parse_gpt_response(self, response_content: str) -> dict:
         """Parse GPT response content into JSON, with error handling."""
         try:
+            # First try to parse the response directly
             return json.loads(response_content)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse GPT response: {response_content}")
-            raise
+
+            # Try to clean the response by removing any potential markdown formatting
+            cleaned_response = response_content.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            try:
+                # Try parsing the cleaned response
+                return json.loads(cleaned_response)
+            except json.JSONDecodeError:
+                # If still failing, try to extract just the JSON object using regex
+                import re
+
+                json_match = re.search(r"\{.*\}", cleaned_response, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        pass
+
+                # If all attempts fail, raise the original error
+                raise ValueError(f"Failed to parse GPT response as JSON: {str(e)}")
 
     def _parse_gpt_response_with_fallback(self, response_content: str) -> dict:
         try:
