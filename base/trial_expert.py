@@ -972,6 +972,47 @@ Example response:
 
         return branch_max_prob, branch_results, branch_cost_sum
 
+    def _get_or_criterion_failure_reason(
+        self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
+    ) -> Tuple[str, str, str]:
+        """
+        Analyze branch results to determine why a condition failed all branches of an OR criterion.
+
+        Args:
+            branch_results: Dictionary mapping conditions to their evaluations for each branch
+            criterion: The original OR criterion that was evaluated
+
+        Returns:
+            Tuple containing:
+            - The condition that failed
+            - The criterion that failed
+            - A detailed explanation of why it failed
+        """
+        # Find the condition that had the highest eligibility across all branches
+        best_condition = None
+        best_eligibility = -1.0
+        best_reason = ""
+
+        for condition, evaluations in branch_results.items():
+            if not evaluations:
+                continue
+
+            # Get the best evaluation for this condition across all branches
+            best_eval = max(evaluations, key=lambda x: x.eligibility)
+            if best_eval.eligibility > best_eligibility:
+                best_eligibility = best_eval.eligibility
+                best_condition = condition
+                best_reason = best_eval.reason
+
+        if best_condition is None:
+            return (
+                "",
+                criterion,
+                "No conditions were evaluated against this criterion",
+            )
+
+        return (best_condition, criterion, best_reason)
+
     def evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
