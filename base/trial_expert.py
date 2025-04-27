@@ -745,8 +745,8 @@ Rules:
 2. Maintain nested AND/OR structures within branches
 3. Preserve all original requirements in each branch
 
-Return ONLY JSON with a "branches" list containing the split criteria:
-{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
+Return ONLY a JSON object with a "branches" list containing the split criteria:
+{"branches": ["branch 1 text", "branch 2 text", ...]}"""
 
         response_content, _ = self._call_gpt(
             prompt,
