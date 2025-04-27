@@ -219,7 +219,9 @@ def analyze_drugs_and_get_recommendation(
                 "JSON response missing 'reason' or 'recommendation' fields"
             )
     except json.JSONDecodeError:
-        logger.warning("Invalid JSON structure detected, attempting to correct it.")
+        logger.warning(
+            "analyze_drugs_and_get_recommendation: Invalid JSON structure detected, attempting to correct it."
+        )
         # Use gpt-4.1-mini to convert to valid JSON
         correction_prompt = (
             f"Please convert the following text into a valid JSON object. "
@@ -235,8 +237,12 @@ def analyze_drugs_and_get_recommendation(
         try:
             json.loads(completion)  # Re-validate the corrected JSON
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to correct JSON: {e}")
-            logger.error(f"Failed to convert to valid JSON: {completion}")
+            logger.error(
+                f"analyze_drugs_and_get_recommendation: Failed to correct JSON: {e}"
+            )
+            logger.error(
+                f"analyze_drugs_and_get_recommendation: Failed to convert to valid JSON: {completion}"
+            )
             raise ValueError("Failed to convert to valid JSON")
 
     recommendation: RecommendationLevel
@@ -330,11 +336,11 @@ def compare_trials(
 
                 if not better_trial_id or not reason:
                     logger.error(
-                        f"Response missing required fields. Response content: {completion}"
+                        f"compare_trials: Response missing required fields. Response content: {completion}"
                     )
                     if attempt < max_retries - 1:
                         logger.info(
-                            f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                            f"compare_trials: Retrying comparison (attempt {attempt + 1}/{max_retries})"
                         )
                         continue
                     raise ValueError(
@@ -358,20 +364,22 @@ def compare_trials(
 
             except json.JSONDecodeError:
                 logger.error(
-                    f"Invalid JSON response on attempt {attempt + 1}/{max_retries}: {completion}"
+                    f"compare_trials: Invalid JSON response on attempt {attempt + 1}/{max_retries}: {completion}"
                 )
                 if attempt < max_retries - 1:
                     logger.info(
-                        f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                        f"compare_trials: Retrying comparison (attempt {attempt + 1}/{max_retries})"
                     )
                     continue
                 raise ValueError(f"Invalid JSON response: {completion}")
 
         except Exception as e:
-            logger.error(f"Error on attempt {attempt + 1}/{max_retries}: {str(e)}")
+            logger.error(
+                f"compare_trials: Error on attempt {attempt + 1}/{max_retries}: {str(e)}"
+            )
             if attempt < max_retries - 1:
                 logger.info(
-                    f"Retrying comparison (attempt {attempt + 1}/{max_retries})"
+                    f"compare_trials: Retrying comparison (attempt {attempt + 1}/{max_retries})"
                 )
                 continue
             raise
@@ -450,7 +458,9 @@ class GPTTrialFilter:
             # First try to parse the response directly
             return json.loads(response_content)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse GPT response: {response_content}")
+            logger.error(
+                f"GPTTrialFilter._parse_gpt_response: Failed to parse GPT response: {response_content}"
+            )
 
             # Try to clean the response by removing any potential markdown formatting
             cleaned_response = response_content.strip()
@@ -499,7 +509,7 @@ class GPTTrialFilter:
 
             # If all parsing fails, return a conservative default
             logger.warning(
-                f"Failed to parse GPT response, using default values: {response_content}"
+                f"GPTTrialFilter._parse_gpt_response_with_fallback: Failed to parse GPT response, using default values: {response_content}"
             )
             return {
                 "suitability_probability": 0.5,  # Conservative middle value
@@ -697,7 +707,9 @@ Example response 2:
                 cost,
             )
         except Exception as e:
-            logger.error(f"Failed to evaluate criterion: {str(e)}")
+            logger.error(
+                f"GPTTrialFilter.evaluate_inclusion_criterion: Failed to evaluate criterion: {str(e)}"
+            )
             raise
 
     def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
@@ -818,7 +830,9 @@ NO"""
             refresh_cache=refresh_cache,
         )
 
-        logger.debug(f"Validation response for '{condition}': {response_content}")
+        logger.debug(
+            f"GPTTrialFilter._validate_condition_with_gpt: Validation response for '{condition}': {response_content}"
+        )
 
         # Parse the simple YES/NO response
         response_text = response_content.strip()
@@ -831,17 +845,19 @@ NO"""
                     or condition.lower() in valid_condition.lower()
                 ):
                     logger.info(
-                        f"Found close match condition: '{condition}' -> '{valid_condition}'"
+                        f"GPTTrialFilter._validate_condition_with_gpt: Found close match condition: '{condition}' -> '{valid_condition}'"
                     )
                     return True, valid_condition, cost
 
             # If we get here, no close match was found
             logger.warning(
-                f"GPT returned YES but no matching condition found in the list"
+                f"GPTTrialFilter._validate_condition_with_gpt: GPT returned YES but no matching condition found in the list"
             )
             return False, "", cost
         else:
-            logger.info(f"No semantic match found for condition: '{condition}'")
+            logger.info(
+                f"GPTTrialFilter._validate_condition_with_gpt: No semantic match found for condition: '{condition}'"
+            )
             return False, "", cost
 
     def choose_most_relevant_conditions(
@@ -901,7 +917,7 @@ Return ONLY a JSON object with this structure:
         try:
             result = self._parse_gpt_response(response_content)
             logger.info(
-                f"GPTTrialFilter.choose_most_relevant_condition: Branch: {branch}, Result: {result}"
+                f"GPTTrialFilter.choose_most_relevant_conditions: Branch: {branch}, Result: {result}"
             )
             relevant_conditions = result.get("relevant_conditions", [conditions[0]])
 
@@ -927,12 +943,12 @@ Return ONLY a JSON object with this structure:
                     # Use the exact condition text from the reference list
                     validated_conditions.append(matched_condition)
                     logger.info(
-                        f"Condition semantically matched: '{condition}' -> '{matched_condition}'"
+                        f"GPTTrialFilter.choose_most_relevant_conditions: Condition semantically matched: '{condition}' -> '{matched_condition}'"
                     )
                 else:
                     invalid_conditions.append(condition)
                     logger.warning(
-                        f"No semantic match found for condition: '{condition}'"
+                        f"GPTTrialFilter.choose_most_relevant_conditions: No semantic match found for condition: '{condition}'"
                     )
 
             # If there are invalid conditions, add them to need-to-note list and retry
@@ -967,7 +983,7 @@ Return ONLY a JSON object with this structure:
             return validated_conditions[:num_conditions]
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(
-                f"Failed to parse most relevant conditions response: {e}. Using first {num_conditions} conditions as fallback."
+                f"GPTTrialFilter.choose_most_relevant_conditions: Failed to parse most relevant conditions response: {e}. Using first {num_conditions} conditions as fallback."
             )
             return conditions[:num_conditions]
 
@@ -1035,10 +1051,10 @@ Example response:
                 f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
             )
             raise
-        logger.debug(
+        logger.info(
             f"GPTTrialFilter.split_inclusion_criteria: original criteria: {criteria}"
         )
-        logger.debug(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
+        logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
         return result["criteria"]
 
     def _extract_inclusion_criteria(self, criteria: str) -> str:
