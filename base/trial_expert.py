@@ -1031,10 +1031,22 @@ Split this text into individual inclusion criterion statements following these r
 
 Return ONLY valid JSON with criteria list.
 
+Example original criteria:
+"Inclusion Criteria:
+- Patient must have the following:
+  * Histologically confirmed malignancy with one of the following:
+    - Triple-negative breast cancer with PD-L1 CPS ≥10 and progression after prior therapy
+    - Advanced endometrial cancer with MSI-H/dMMR and platinum-therapy failure
+  * Adequate organ function per laboratory parameters
+- ECOG performance status 0-1
+- Life expectancy ≥12 weeks"
+
 Example response:
 {{"criteria": [
     "Patient must have one of the following: (a) Triple-negative breast cancer with PD-L1 CPS ≥10 and progression after prior therapy; OR (b) Advanced endometrial cancer with MSI-H/dMMR and platinum-therapy failure",
-    "Adequate organ function per laboratory parameters"
+    "Adequate organ function per laboratory parameters",
+    "ECOG performance status 0-1",
+    "Life expectancy ≥12 weeks"
 ]}}"""
 
         response_content, cost = self._call_gpt(
