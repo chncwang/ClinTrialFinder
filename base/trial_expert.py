@@ -745,13 +745,23 @@ Rules:
 2. Maintain nested AND/OR structures within branches
 3. Preserve all original requirements in each branch
 
+Example:
+Input: "Patient must have diabetes mellitus, hypertension, or chronic kidney disease"
+Output: {{
+    "branches": [
+        "Patient must have diabetes mellitus",
+        "Patient must have hypertension",
+        "Patient must have chronic kidney disease"
+    ]
+}}
+
 Return ONLY a JSON object with a "branches" list containing the split criteria:
-{"branches": ["branch 1 text", "branch 2 text", ...]}"""
+{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
 
         response_content, _ = self._call_gpt(
             prompt,
             "You are a clinical trial analyst specializing in logical structure analysis.",
-            model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
+            model="gpt-4.1-mini",
             temperature=0.0,
             refresh_cache=refresh_cache,
         )
