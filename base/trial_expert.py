@@ -547,15 +547,6 @@ class GPTTrialFilter:
         """Build the prompt for evaluating an inclusion criterion."""
         return f"""You are evaluating a clinical trial inclusion criterion against one of the patient's conditions.
 
-Study Title:
-{title}
-
-Inclusion Criterion:
-{criterion}
-
-Patient Condition to Evaluate:
-{condition}
-
 Please determine if this inclusion criterion aligns with this specific condition provided, considering the context from the study title.
 Focus only on evaluating this single condition, even though the patient may have other conditions.
 If this condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
@@ -570,7 +561,16 @@ Example response 1:
 {{"reason": "[specific reasons]", "suitability_probability": 0.8}}
 
 Example response 2:
-{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
+{{"reason": "The patient condition does not mention any information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}
+
+Study Title:
+{title}
+
+Inclusion Criterion:
+{criterion}
+
+Patient Condition to Evaluate:
+{condition}"""
 
     def evaluate_title(
         self,
@@ -587,12 +587,6 @@ Example response 2:
 
         prompt = f"""You are filtering clinical trials based on patient conditions and trial title.
 
-Trial Details:
-- Title: {trial.identification.brief_title}
-
-Patient Conditions to Evaluate:
-{conditions_text}
-
 Please determine if the trial is potentially suitable for the patient conditions.
 
 Return a JSON object containing:
@@ -603,7 +597,13 @@ Return a JSON object containing:
   - 1.0: Completely suitable
 
 Example response:
-{{"reason": "[specific reasons]", "suitability_probability": 0.8}}"""
+{{"reason": "[specific reasons]", "suitability_probability": 0.8}}
+
+Trial Details:
+- Title: {trial.identification.brief_title}
+
+Patient Conditions to Evaluate:
+{conditions_text}"""
 
         max_retries = 3
         total_cost = 0.0
