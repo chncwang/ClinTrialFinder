@@ -1,6 +1,5 @@
 import hashlib
 import json
-import pickle
 from collections import OrderedDict
 from pathlib import Path
 
@@ -10,42 +9,39 @@ class PromptCache:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
-        self.cache_index = OrderedDict()
-        self._load_cache_index()
+        self.cache_data = OrderedDict()
+        self._load_cache()
 
-    def _load_cache_index(self):
-        """Load the cache index from disk."""
-        index_path = self.cache_dir / "cache_index.pkl"
-        if index_path.exists():
-            with open(index_path, "rb") as f:
-                self.cache_index = pickle.load(f)
+    def _load_cache(self):
+        """Load the cache from disk."""
+        cache_path = self.cache_dir / "prompt_cache.json"
+        if cache_path.exists():
+            try:
+                with open(cache_path, "r") as f:
+                    data = json.load(f)
+                    self.cache_data = OrderedDict(data)
+            except (json.JSONDecodeError, IOError):
+                self.cache_data = OrderedDict()
 
-    def _save_cache_index(self):
-        """Save the cache index to disk."""
-        with open(self.cache_dir / "cache_index.pkl", "wb") as f:
-            pickle.dump(self.cache_index, f)
+    def _save_cache(self):
+        """Save the cache to disk."""
+        with open(self.cache_dir / "prompt_cache.json", "w") as f:
+            json.dump(list(self.cache_data.items()), f)
 
     def get(self, cache_key: str) -> dict | None:
         """Get cached result for a given cache key."""
-        if cache_key in self.cache_index:
-            cache_file = self.cache_dir / f"{cache_key}.json"
-            if cache_file.exists():
-                with open(cache_file, "r") as f:
-                    return json.load(f)
+        if cache_key in self.cache_data:
+            return self.cache_data[cache_key]
         return None
 
     def set(self, cache_key: str, result: dict):
         """Cache result for a given cache key."""
 
         # Enforce cache size limit
-        while len(self.cache_index) >= self.max_size:
+        while len(self.cache_data) >= self.max_size:
             # Remove oldest entry
-            oldest_key, _ = self.cache_index.popitem(last=False)
-            (self.cache_dir / f"{oldest_key}.json").unlink(missing_ok=True)
+            self.cache_data.popitem(last=False)
 
         # Save new entry
-        with open(self.cache_dir / f"{cache_key}.json", "w") as f:
-            json.dump(result, f)
-
-        self.cache_index[cache_key] = True
-        self._save_cache_index()
+        self.cache_data[cache_key] = result
+        self._save_cache()
