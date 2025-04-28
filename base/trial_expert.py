@@ -996,38 +996,7 @@ Return ONLY a JSON object with this structure:
 Inclusion Criteria Text:
 {criteria}
 
-Split this text into individual inclusion criterion statements following these rules:
-
-1. **Disease-Specific Consolidation**:
-   - Combine ALL disease type requirements into a single criterion using "OR" logic, even if:
-     - They appear as separate bullet points
-     - They have different biomarker/therapy requirements
-     - They have mixed prior therapy rules (naïve vs. treated)
-   - Structure as: "Patients must have one of the following: (a) [Disease A] with [requirements]; OR (b) [Disease B] with [different requirements]..."
-   - Preserve ALL disease-specific details (biomarker thresholds, prior therapy sequences, progression requirements)
-
-2. **Multi-Level Requirements**:
-   - For complex disease requirements, use nested logic:
-     '''
-     Patients must have:
-     a) [Disease 1] with:
-        - [Requirement 1]
-        - [Requirement 2]
-     OR
-     b) [Disease 2] with:
-        - [Requirement 3]
-        - [Requirement 4]
-     '''
-
-3. **Separate Non-Disease Criteria**:
-   - Keep non-disease requirements (organ function, performance status) as distinct criteria
-   - Each requirement will be treated as a separate criterion connected by AND logic
-
-4. **Logical Structure**:
-   - Use clear alphanumeric labeling (a), b), c)) for complex criteria
-   - Employ AND/OR relationships within disease subgroups as needed
-   - Maintain all temporal sequence requirements (e.g., "prior X then Y")
-   - All separate criteria are implicitly connected with AND logic
+Split this text into individual inclusion criterion statements. Preserve logical structure and relationships between criteria.
 
 Return ONLY valid JSON with criteria list.
 
@@ -1044,6 +1013,27 @@ Example response:
     "Adequate organ function per laboratory parameters",
     "ECOG performance status 0-1",
     "Life expectancy ≥12 weeks"
+]}}
+
+Example original criteria:
+"Inclusion Criteria:
+* Age:18-75 years, male or female.
+* ECOG 0-2
+* Histologically or cytologically confirmed de novo metastatic nasopharyngeal carcinoma.(stage IVb, AJCC 8th)
+* Complete response or partial response after at least 3 cycles (no more than 6 cycles) of chemotherapy combined with immunotherapy
+* Measurable disease based on Response Evaluation Criteria In Solid Tumors (RECIST) 1.1.
+* Adequate organ function.
+* Patient has given written informed consent."
+
+Example response:
+{{"criteria": [
+    "Age 18-75 years, male or female",
+    "ECOG performance status 0-2",
+    "Histologically or cytologically confirmed de novo metastatic nasopharyngeal carcinoma (stage IVb, AJCC 8th)",
+    "Complete response or partial response after at least 3 cycles (no more than 6 cycles) of chemotherapy combined with immunotherapy",
+    "Measurable disease based on Response Evaluation Criteria In Solid Tumors (RECIST) 1.1",
+    "Adequate organ function",
+    "Patient has given written informed consent"
 ]}}"""
 
         response_content, cost = self._call_gpt(
