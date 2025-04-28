@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 # Set base.gpt_client logger to DEBUG level
 logging.getLogger("base.gpt_client").setLevel(logging.DEBUG)
 
+# Set base.prompt_cache logger to DEBUG level
+logging.getLogger("base.prompt_cache").setLevel(logging.DEBUG)
+
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:
     """Load trials from a JSON file."""
