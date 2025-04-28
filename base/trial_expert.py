@@ -643,15 +643,6 @@ Patient Conditions to Evaluate:
         """
         prompt = f"""You are evaluating a clinical trial inclusion criterion against multiple patient conditions.
 
-Study Title:
-{title}
-
-Inclusion Criterion:
-{criterion}
-
-Patient Conditions to Evaluate:
-{json.dumps(conditions, indent=2)}
-
 Please determine if this inclusion criterion aligns with any of the provided conditions, considering the context from the study title.
 Choose the BEST MATCHING condition and evaluate the criterion against it.
 If none of the conditions provide information related to the criterion, consider it as fully compatible (probability 1.0).
@@ -667,7 +658,16 @@ Example response 1:
 {{"reason": "Condition X is most relevant. [specific reasons]", "suitability_probability": 0.8}}
 
 Example response 2:
-{{"reason": "None of the conditions mention information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}"""
+{{"reason": "None of the conditions mention information related to the inclusion criterion, so it is fully compatible.", "suitability_probability": 1.0}}
+
+Study Title:
+{title}
+
+Inclusion Criterion:
+{criterion}
+
+Patient Conditions to Evaluate:
+{json.dumps(conditions, indent=2)}"""
 
         try:
             # Try with retries first
@@ -749,9 +749,6 @@ Does this criterion contain multiple alternative options connected by OR at the 
         """Split a criterion with top-level OR logic into individual branches."""
         prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
 
-Original Criterion:
-{criterion}
-
 Rules:
 1. Split only at TOP-LEVEL OR connections
 2. Maintain nested AND/OR structures within branches
@@ -768,7 +765,10 @@ Output: {{
 }}
 
 Return ONLY a JSON object with a "branches" list containing the split criteria:
-{{"branches": ["branch 1 text", "branch 2 text", ...]}}"""
+{{"branches": ["branch 1 text", "branch 2 text", ...]}}
+
+Original Criterion:
+{criterion}"""
 
         response_content, _ = self._call_gpt(
             prompt,
@@ -800,12 +800,6 @@ Return ONLY a JSON object with a "branches" list containing the split criteria:
         # Prepare prompt with the condition and reference list
         prompt = f"""You are validating if a candidate condition is present in a reference list of valid conditions.
 
-Candidate condition to validate:
-"{condition}"
-
-Reference list of valid conditions:
-{json.dumps(condition_list, indent=2)}
-
 Task: Determine if the candidate condition is semantically equivalent to any condition in the reference list.
 If it is, respond with the word "YES".
 If there is no semantic match, respond only with the word "NO".
@@ -820,7 +814,13 @@ Example response 1:
 YES
 
 Example response 2:
-NO"""
+NO
+
+Candidate condition to validate:
+"{condition}"
+
+Reference list of valid conditions:
+{json.dumps(condition_list, indent=2)}"""
 
         response_content, cost = self.gpt_client.call_gpt(
             prompt=prompt,
@@ -889,20 +889,20 @@ NO"""
 
         prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
 
+Task: Choose the {num_conditions} most relevant conditions that should be evaluated against this inclusion criterion branch, ordered by relevance.
+
+IMPORTANT: You MUST ONLY select conditions that EXACTLY match entries in the provided Patient Conditions list. Do not modify the text of any condition, do not paraphrase, and do not create new conditions.{validation_note}
+
+Return ONLY a JSON object with this structure:
+{{"relevant_conditions": ["condition1", "condition2", ...]}}
+
 Trial Title: {trial_title}
 
 Inclusion Criterion Branch:
 {branch}
 
 Patient Conditions:
-{json.dumps(conditions, indent=2)}
-
-Task: Choose the {num_conditions} most relevant conditions that should be evaluated against this inclusion criterion branch, ordered by relevance.
-
-IMPORTANT: You MUST ONLY select conditions that EXACTLY match entries in the provided Patient Conditions list. Do not modify the text of any condition, do not paraphrase, and do not create new conditions.{validation_note}
-
-Return ONLY a JSON object with this structure:
-{{"relevant_conditions": ["condition1", "condition2", ...]}}"""
+{json.dumps(conditions, indent=2)}"""
 
         response_content, cost = self._call_gpt(
             prompt,
@@ -993,9 +993,6 @@ Return ONLY a JSON object with this structure:
         """Split the inclusion criteria into individual statements using GPT."""
         prompt = f"""You are analyzing clinical trial inclusion criteria text.
 
-Inclusion Criteria Text:
-{criteria}
-
 Split this text into individual inclusion criterion statements. Preserve logical structure and relationships between criteria.
 
 Return ONLY valid JSON with criteria list.
@@ -1034,7 +1031,10 @@ Example response:
     "Measurable disease based on Response Evaluation Criteria In Solid Tumors (RECIST) 1.1",
     "Adequate organ function",
     "Patient has given written informed consent"
-]}}"""
+]}}
+
+Inclusion Criteria Text:
+{criteria}"""
 
         response_content, cost = self._call_gpt(
             prompt,
