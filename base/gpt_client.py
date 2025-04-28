@@ -71,6 +71,8 @@ class GPTClient:
         """
         start_time = time.time()
         temp = temperature if temperature is not None else self.default_temperature
+        cache_check_time = 0.0
+        cache_set_time = 0.0
 
         # Construct a cache key from relevant parameters
         cache_string = f"{model}:{system_role}:{prompt}:{temp}"
