@@ -112,7 +112,10 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
     - ValueError: If the response is not valid JSON or missing required fields
     """
     try:
-        data = json.loads(response)
+        # Attempt to clean the response of any control characters first
+        cleaned_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
+        
+        data = json.loads(cleaned_response)
         recommendation_str = data.get("recommendation")
         reason = data.get("reason")
 
