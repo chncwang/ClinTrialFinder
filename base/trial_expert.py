@@ -203,6 +203,7 @@ def analyze_drugs_and_get_recommendation(
         system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
         model="gpt-4.1",
         temperature=0.2,
+        response_format={"type": "json_object"},
         refresh_cache=refresh_cache,
     )
     total_cost += cost
@@ -210,40 +211,21 @@ def analyze_drugs_and_get_recommendation(
     if completion is None:
         raise RuntimeError("Failed to get AI analysis")
 
-    # Validate JSON structure
+    # Use the existing parse_json_response utility for robust error handling
     try:
-        data = json.loads(completion)
+        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
+        total_cost += correction_cost
+        
         # Ensure required fields are present
         if "reason" not in data or "recommendation" not in data:
             raise ValueError(
                 "JSON response missing 'reason' or 'recommendation' fields"
             )
-    except json.JSONDecodeError:
-        logger.warning(
-            "analyze_drugs_and_get_recommendation: Invalid JSON structure detected, attempting to correct it."
+    except ValueError as e:
+        logger.error(
+            f"analyze_drugs_and_get_recommendation: Failed to convert to valid JSON: {completion}"
         )
-        # Use gpt-4.1-mini to convert to valid JSON
-        correction_prompt = (
-            f"Please convert the following text into a valid JSON object. "
-            f"Ensure no additional text or formatting is included:\n{completion}"
-        )
-        completion, correction_cost = gpt_client.call_gpt(
-            prompt=correction_prompt,
-            system_role="You are a JSON expert.",
-            model="gpt-4.1-mini",
-            temperature=0.0,
-        )
-        total_cost += correction_cost
-        try:
-            json.loads(completion)  # Re-validate the corrected JSON
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"analyze_drugs_and_get_recommendation: Failed to correct JSON: {e}"
-            )
-            logger.error(
-                f"analyze_drugs_and_get_recommendation: Failed to convert to valid JSON: {completion}"
-            )
-            raise ValueError("Failed to convert to valid JSON")
+        raise ValueError("Failed to convert to valid JSON")
 
     recommendation: RecommendationLevel
     reason: str
