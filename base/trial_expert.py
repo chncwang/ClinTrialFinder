@@ -115,7 +115,52 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         # Attempt to clean the response of any control characters first
         cleaned_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
         
-        data = json.loads(cleaned_response)
+        try:
+            data = json.loads(cleaned_response)
+        except json.JSONDecodeError:
+            # Last resort - if JSON parsing still fails, manually extract the fields using regex
+            logger.warning("parse_recommendation_response: JSON parsing failed, attempting manual extraction")
+            
+            # Extract recommendation field
+            rec_match = re.search(r'"recommendation"\s*:\s*"([^"]+)"', cleaned_response)
+            recommendation_str = rec_match.group(1) if rec_match else None
+            
+            # Extract reason field (this handles multiline text)
+            reason_start = cleaned_response.find('"reason"')
+            if reason_start != -1:
+                # Find the first quote after "reason":
+                quote_start = cleaned_response.find('"', reason_start + 8)
+                if quote_start != -1:
+                    # Find the closing quote for the reason field
+                    depth = 0
+                    for i in range(quote_start + 1, len(cleaned_response)):
+                        if cleaned_response[i] == '"' and cleaned_response[i-1] != '\\':
+                            # Only count this quote as closing if we're at the root level
+                            if depth == 0:
+                                reason = cleaned_response[quote_start+1:i]
+                                break
+                            depth -= 1
+                        elif cleaned_response[i] == '{':
+                            depth += 1
+                        elif cleaned_response[i] == '}':
+                            depth -= 1
+                    else:
+                        reason = None
+                else:
+                    reason = None
+            else:
+                reason = None
+            
+            if not recommendation_str or not reason:
+                raise ValueError("Failed to extract required fields from malformed JSON response")
+                
+            # Create data dictionary manually
+            data = {
+                "recommendation": recommendation_str,
+                "reason": reason
+            }
+            logger.info(f"parse_recommendation_response: Manually extracted data: {data}")
+        
         recommendation_str = data.get("recommendation")
         reason = data.get("reason")
 
@@ -135,6 +180,10 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         logger.error(f"parse_recommendation_response: Invalid JSON response: {e}")
         logger.error(f"parse_recommendation_response: Response content: {response}")
         raise ValueError(f"Invalid JSON response: {e}. Response content: {response}")
+    except Exception as e:
+        logger.error(f"parse_recommendation_response: Unexpected error: {e}")
+        logger.error(f"parse_recommendation_response: Response content: {response}")
+        raise ValueError(f"Error parsing response: {e}. Response content: {response}")
 
 
 def analyze_drugs_and_get_recommendation(
