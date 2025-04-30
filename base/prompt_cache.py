@@ -102,6 +102,3 @@ class PromptCache:
         self.modified_since_save = True
         self._save_cache()
         
-    def __del__(self):
-        """Ensure cache is saved when object is destroyed."""
-        self._save_cache(force=True)
