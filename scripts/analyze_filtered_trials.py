@@ -14,8 +14,10 @@ from base.utils import read_input_file
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up file handler
-file_handler = logging.FileHandler("analyze_filtered_trials.log")
+# Set up file handler with timestamp
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_filename = f"analyze_filtered_trials_{timestamp}.log"
+file_handler = logging.FileHandler(log_filename)
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -26,13 +28,18 @@ stream_handler = logging.StreamHandler()
 stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(logging.Formatter("%(message)s"))
 
+# Add handlers to root logger to capture all logs
+root_logger = logging.getLogger()
+root_logger.addHandler(file_handler)
+root_logger.addHandler(stream_handler)
+
 # Set up logger for base.trial_expert
 trial_expert_logger = logging.getLogger("base.trial_expert")
 trial_expert_logger.setLevel(logging.INFO)
+trial_expert_logger.propagate = True  # Allow propagation to root logger
 
-# Add handlers to the trial_expert_logger if needed
-trial_expert_logger.addHandler(stream_handler)
-trial_expert_logger.addHandler(file_handler)
+# Log the filename being used
+logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
 
 
 def process_trials_file(
