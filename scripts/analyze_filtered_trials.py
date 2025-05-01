@@ -11,32 +11,39 @@ from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recomme
 from base.utils import read_input_file
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Create logs directory if it doesn't exist
+logs_dir = Path("logs")
+logs_dir.mkdir(exist_ok=True)
 
-# Set up file handler with timestamp
+# Set up timestamp for log files
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"analyze_filtered_trials_{timestamp}.log"
-file_handler = logging.FileHandler(log_filename)
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+log_filename = f"logs/analyze_filtered_trials_{timestamp}.log"
+
+# Configure the root logger first
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler()  # Output to console
+    ],
+    force=True  # Force reconfiguration to ensure our settings take effect
 )
 
-# Set up stream handler for console output
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-stream_handler.setFormatter(logging.Formatter("%(message)s"))
+# Get the module logger
+logger = logging.getLogger(__name__)
 
-# Add handlers to root logger to capture all logs
+# Ensure the root logger level is set to INFO
 root_logger = logging.getLogger()
-root_logger.addHandler(file_handler)
-root_logger.addHandler(stream_handler)
+root_logger.setLevel(logging.INFO)
 
-# Set up logger for base.trial_expert
+# Configure base.trial_expert logger
 trial_expert_logger = logging.getLogger("base.trial_expert")
 trial_expert_logger.setLevel(logging.INFO)
-trial_expert_logger.propagate = True  # Allow propagation to root logger
+trial_expert_logger.propagate = True  # Ensure logs propagate to root logger
+
+# Make sure sys.stdout is flushed after each write
+sys.stdout.reconfigure(line_buffering=True)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
@@ -120,6 +127,14 @@ def process_trials_file(
         logger.info(f"Results saved to: {output_filename if output_filename else 'N/A'}")
         logger.info(f"Log file: {os.path.abspath(log_filename)}")
         logger.info("=" * 50)
+        
+        # Force flush all handlers
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+            
+        # Also flush stdout/stderr explicitly
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 if __name__ == "__main__":
@@ -146,17 +161,42 @@ if __name__ == "__main__":
         "--output",
         help="Output JSON file path (default: analyzed_[input_filename])",
     )
+    parser.add_argument(
+        "--max-trials",
+        type=int,
+        default=None,
+        help="Maximum number of trials to process",
+    )
     args = parser.parse_args()
 
-    # Initialize clients
-    gpt_client = GPTClient(api_key=args.openai_api_key)
-    perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
+    try:
+        # Initialize clients
+        gpt_client = GPTClient(api_key=args.openai_api_key)
+        perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
 
-    clinical_record = read_input_file(args.clinical_record_file)
-    process_trials_file(
-        args.trials_json_file,
-        gpt_client,
-        perplexity_client,
-        clinical_record,
-        args.output,
-    )
+        clinical_record = read_input_file(args.clinical_record_file)
+        
+        # Process the trials
+        process_trials_file(
+            args.trials_json_file,
+            gpt_client,
+            perplexity_client,
+            clinical_record,
+            args.output,
+        )
+        
+        # Final message just to be sure
+        logger.info("Main process completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}", exc_info=True)
+        raise
+        
+    finally:
+        # Final flush of all logs
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        
+        logger.info("Script execution finished.")
