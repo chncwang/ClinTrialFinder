@@ -2,7 +2,9 @@ import argparse
 import json
 import logging
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
