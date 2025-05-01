@@ -46,10 +46,18 @@ def process_trials_file(
     filename, gpt_client, perplexity_client, clinical_record, output_filename=None
 ):
     """Read and process the trials JSON file."""
+    updated_trials = []
+    trials = []
+    total_cost = 0.0
+    output_file = None
+    
     try:
         with open(filename, "r") as f:
             trials = json.load(f)
 
+        if output_filename is None:
+            output_filename = f"analyzed_{os.path.basename(filename)}"
+            
         logger.info(f"Starting to process {len(trials)} trials from {filename}")
 
         # Prepare a list to store updated trial data
@@ -62,8 +70,8 @@ def process_trials_file(
             recommendation: RecommendationLevel
             reason: str
             drug_analyses: dict[str, str]
-            total_cost: float
-            recommendation, reason, drug_analyses, total_cost = (
+            cost: float
+            recommendation, reason, drug_analyses, cost = (
                 analyze_drugs_and_get_recommendation(
                     clinical_record,
                     trial=trial,
@@ -71,10 +79,12 @@ def process_trials_file(
                     gpt_client=gpt_client,
                 )
             )
+            total_cost += cost
             logger.info(f"Recommendation: {recommendation}")
             logger.info(f"Reason: {reason}")
             logger.info(f"Drug Analyses: {drug_analyses}")
-            logger.info(f"Total Cost: ${total_cost:.6f}")
+            logger.info(f"Cost for this trial: ${cost:.6f}")
+            logger.info(f"Total cost so far: ${total_cost:.6f}")
 
             # Add recommendation, reason, and drug analysis to the trial data
             trial_dict["recommendation_level"] = str(recommendation)
@@ -83,8 +93,6 @@ def process_trials_file(
             updated_trials.append(trial_dict)
 
         # Write the analyzed trials to a new JSON file
-        if output_filename is None:
-            output_filename = f"analyzed_{os.path.basename(filename)}"
         with open(output_filename, "w") as f:
             json.dump(updated_trials, f, indent=4)
 
@@ -101,6 +109,17 @@ def process_trials_file(
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise
+    
+    finally:
+        # Always log final summary
+        logger.info("=" * 50)
+        logger.info("Filtering process completed")
+        logger.info(f"Total trials processed: {len(trials)}")
+        logger.info(f"Eligible trials found: {len(updated_trials)}")
+        logger.info(f"Total API cost: ${total_cost:.2f}")
+        logger.info(f"Results saved to: {output_filename if output_filename else 'N/A'}")
+        logger.info(f"Log file: {os.path.abspath(log_filename)}")
+        logger.info("=" * 50)
 
 
 if __name__ == "__main__":
