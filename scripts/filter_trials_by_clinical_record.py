@@ -103,6 +103,10 @@ def main():
             "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
         )
 
+    total_cost = 0.0
+    eligible_count = 0
+    trials = []
+
     try:
         # Initialize GPT client and filter
         logger.info("Initializing GPT client and filter")
@@ -138,7 +142,11 @@ def main():
             refresh_cache=args.refresh_cache,
         )
 
-        # Log final results
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}", exc_info=True)
+    
+    finally:
+        # Always log final results, even if an error occurred
         logger.info("=" * 50)
         logger.info("Filtering process completed")
         logger.info(f"Total trials processed: {len(trials)}")
@@ -150,10 +158,10 @@ def main():
         )
         logger.info(f"Log file: {log_file}")
         logger.info("=" * 50)
-
-    except Exception as e:
-        logger.error(f"An error occurred: {str(e)}", exc_info=True)
-        raise
+        
+        # Re-raise any exceptions in the try block
+        if sys.exc_info()[0] is not None:
+            raise
 
 
 if __name__ == "__main__":
