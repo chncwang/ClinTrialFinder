@@ -113,18 +113,22 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
     """
     try:
         # Attempt to clean the response of any control characters first
-        cleaned_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
-        
+        cleaned_response = "".join(
+            char for char in response if ord(char) >= 32 or char in "\n\r\t"
+        )
+
         try:
             data = json.loads(cleaned_response)
         except json.JSONDecodeError:
             # Last resort - if JSON parsing still fails, manually extract the fields using regex
-            logger.warning("parse_recommendation_response: JSON parsing failed, attempting manual extraction")
-            
+            logger.warning(
+                "parse_recommendation_response: JSON parsing failed, attempting manual extraction"
+            )
+
             # Extract recommendation field
             rec_match = re.search(r'"recommendation"\s*:\s*"([^"]+)"', cleaned_response)
             recommendation_str = rec_match.group(1) if rec_match else None
-            
+
             # Extract reason field (this handles multiline text)
             reason_start = cleaned_response.find('"reason"')
             if reason_start != -1:
@@ -134,15 +138,18 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
                     # Find the closing quote for the reason field
                     depth = 0
                     for i in range(quote_start + 1, len(cleaned_response)):
-                        if cleaned_response[i] == '"' and cleaned_response[i-1] != '\\':
+                        if (
+                            cleaned_response[i] == '"'
+                            and cleaned_response[i - 1] != "\\"
+                        ):
                             # Only count this quote as closing if we're at the root level
                             if depth == 0:
-                                reason = cleaned_response[quote_start+1:i]
+                                reason = cleaned_response[quote_start + 1 : i]
                                 break
                             depth -= 1
-                        elif cleaned_response[i] == '{':
+                        elif cleaned_response[i] == "{":
                             depth += 1
-                        elif cleaned_response[i] == '}':
+                        elif cleaned_response[i] == "}":
                             depth -= 1
                     else:
                         reason = None
@@ -150,17 +157,18 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
                     reason = None
             else:
                 reason = None
-            
+
             if not recommendation_str or not reason:
-                raise ValueError("Failed to extract required fields from malformed JSON response")
-                
+                raise ValueError(
+                    "Failed to extract required fields from malformed JSON response"
+                )
+
             # Create data dictionary manually
-            data = {
-                "recommendation": recommendation_str,
-                "reason": reason
-            }
-            logger.info(f"parse_recommendation_response: Manually extracted data: {data}")
-        
+            data = {"recommendation": recommendation_str, "reason": reason}
+            logger.info(
+                f"parse_recommendation_response: Manually extracted data: {data}"
+            )
+
         recommendation_str = data.get("recommendation")
         reason = data.get("reason")
 
@@ -267,7 +275,7 @@ def analyze_drugs_and_get_recommendation(
     try:
         data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
         total_cost += correction_cost
-        
+
         # Ensure required fields are present
         if "reason" not in data or "recommendation" not in data:
             raise ValueError(
@@ -929,6 +937,34 @@ IMPORTANT: You MUST ONLY select conditions that EXACTLY match entries in the pro
 
 Return ONLY a JSON object with this structure:
 {{"relevant_conditions": ["condition1", "condition2", ...]}}
+
+Example 1:
+If the inclusion criterion branch is:
+"Patient must have histologically or cytologically confirmed non-small cell lung cancer (NSCLC) with at least one measurable lesion according to RECIST 1.1 criteria."
+
+And the patient conditions include:
+1. "65-year-old female"
+2. "Type 2 Diabetes Mellitus diagnosed 13 years ago, managed with Metformin"
+3. "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy"
+4. "Liver metastasis detected 6 months ago, stable on recent imaging"
+5. "Hypertension, well-controlled on Lisinopril"
+6. "Chronic kidney disease (Stage 2) with eGFR 75 mL/min"
+7. "Myocardial infarction 4 years ago, treated with stent placement"
+8. "Osteoarthritis of the right knee, managed with NSAIDs as needed"
+9. "Hypothyroidism, on levothyroxine"
+10. "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"
+
+Your response should be:
+{{"relevant_conditions": ["Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy", "Liver metastasis detected 6 months ago, stable on recent imaging", "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"]}}
+
+Example 2:
+If the inclusion criterion branch is:
+"Patient must NOT have any history of lung cancer or respiratory conditions."
+
+And the patient conditions include the same list as above, your response should be:
+{{"relevant_conditions": ["Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy", "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler", "Liver metastasis detected 6 months ago, stable on recent imaging"]}}
+
+Note that even though these conditions would make the patient ineligible, they are still the most relevant to evaluate against this criterion.
 
 Trial Title: {trial_title}
 
