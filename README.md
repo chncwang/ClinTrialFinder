@@ -1,16 +1,16 @@
 # ClinTrialFinder
 
-ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4o-mini and evidence-based analysis using Perplexity AI to help researchers and medical professionals find relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4o-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level.
+ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4.1-mini and evidence-based analysis using Perplexity AI to help researchers and medical professionals find relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4.1-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level.
 
 ## Features
 
 - **Automated Data Collection**: Crawls ClinicalTrials.gov using their API v2 to fetch trial data based on disease name
-- **Smart Filtering**: Uses GPT-4o-mini to evaluate trial eligibility based on:
+- **Smart Filtering**: Uses GPT-4.1-mini to evaluate trial eligibility based on:
   - Trial titles
   - Inclusion criteria
 - **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
-- **Intelligent Recommendations**: Uses GPT-4o to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
-- **Clinical Record Analysis**: Extracts relevant conditions, demographics, and clinical status from patient records using GPT-4o.
+- **Intelligent Recommendations**: Uses GPT-4.1 to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
+- **Clinical Record Analysis**: Extracts relevant conditions, demographics, and clinical status from patient records using GPT-4.1.
 - **Flexible Search Options**: Filter trials by:
   - Recruitment status
   - Trial phase
@@ -27,8 +27,8 @@ graph TD
     B[Disease: Metastatic Breast Cancer]
     C[Trial: A Study of T-DXd as Monotherapy or in Combination With Anti-cancer Agents in Patients With Selected HER2-expressing Tumors]
     D[Novel Drug: T-DXd]
-    A -->|gpt-4o-mini| B
-    C -->|gpt-4o-mini| D
+    A -->|gpt-4.1-mini| B
+    C -->|gpt-4.1-mini| D
     E[Evidence for T-DXd effectiveness in treating Metastatic Breast Cancer?]
     B --> E
     D --> E
@@ -45,7 +45,7 @@ graph TD
     F --> G
     H[Strongly Recommend
     Reason: The patient is a 58-year-old female with HER2-positive metastatic breast cancer with bone metastases ...]
-    G -->|gpt-4o| H
+    G -->|gpt-4.1| H
 ```
 
 ## Installation
@@ -320,7 +320,7 @@ The analyzed trials JSON file contains the filtered trial records with the follo
 
 ## GPT and Perplexity AI Integration
 
-The system uses GPT-4o-mini to:
+The system uses GPT-4.1-mini to:
 
 1. Evaluate trial titles against conditions
 2. Parse and split inclusion criteria
@@ -333,7 +333,7 @@ The system uses Perplexity AI to:
 
 1. Search for and retrieve current medical evidence related to the novel drug and the patient's condition.
 
-The system uses GPT-4o to:
+The system uses GPT-4.1 to:
 
 1. Provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
 
@@ -384,7 +384,7 @@ This software is provided for research and informational purposes only. It is no
 ### Important Notes
 
 1. The information retrieved by this tool from ClinicalTrials.gov may be incomplete, outdated, or inaccurate.
-2. The GPT-4o-mini filtering system, while sophisticated, may occasionally:
+2. The GPT-4.1-mini filtering system, while sophisticated, may occasionally:
    - Miss relevant trials
    - Include irrelevant trials
    - Misinterpret eligibility criteria
