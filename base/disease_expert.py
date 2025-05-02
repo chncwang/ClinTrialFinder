@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -253,6 +254,11 @@ def extract_conditions_from_content(
                 completion, expected_type=list, gpt_client=gpt_client, cost=cost
             )
 
+            # Process the history to ensure all times are relative
+            history = convert_absolute_to_relative_time(
+                history, current_time, gpt_client
+            )
+
             # Log history
             logger.info(f"Extracted {len(history)} clinical history items:")
             for item in history:
@@ -265,3 +271,109 @@ def extract_conditions_from_content(
         raise
 
     return []
+
+
+def has_absolute_time_reference(item: str, gpt_client: GPTClient) -> bool:
+    """
+    Check if a clinical history item contains absolute time references (years, dates) using GPT.
+
+    Parameters:
+    - item (str): The clinical history item to check
+    - gpt_client (GPTClient): Initialized GPT client for making API calls
+
+    Returns:
+    - bool: True if the item contains absolute time references, False otherwise
+    """
+    prompt = (
+        "Determine if the following text contains any absolute time references (specific years, dates, or month-year combinations).\n\n"
+        f'Text: "{item}"\n\n'
+        "Answer with only a single word - either 'yes' or 'no'."
+    )
+
+    try:
+        completion, _ = gpt_client.call_gpt(
+            prompt=prompt,
+            system_role="You are a text analysis expert specialized in identifying time references in medical text.",
+            temperature=0.0,
+        )
+
+        if completion is None:
+            logger.warning(f"Failed to check time references for item: {item}")
+            return False
+
+        response = completion.strip().lower()
+        return response == "yes"
+
+    except Exception as e:
+        logger.error(f"Error checking for absolute time references: {e}")
+        return False
+
+
+def convert_absolute_to_relative_time(
+    history_items: List[str], current_time: datetime, gpt_client: GPTClient
+) -> List[str]:
+    """
+    Process clinical history items to convert any absolute time references to relative ones.
+
+    Parameters:
+    - history_items (List[str]): List of clinical history items
+    - current_time (datetime): Current datetime for relative time calculation
+    - gpt_client (GPTClient): Initialized GPT client for making API calls
+
+    Returns:
+    - List[str]: Updated list with all time references in relative format
+    """
+    current_date_str = current_time.strftime("%Y-%m-%d")
+    updated_items = []
+
+    for item in history_items:
+        if has_absolute_time_reference(item, gpt_client):
+            updated_item, _ = convert_item_to_relative_time(
+                item, current_date_str, gpt_client
+            )
+            updated_items.append(updated_item)
+        else:
+            updated_items.append(item)
+
+    return updated_items
+
+
+def convert_item_to_relative_time(
+    item: str, current_date: str, gpt_client: GPTClient
+) -> Tuple[str, float]:
+    """
+    Convert a single clinical history item with absolute time references to use relative time.
+
+    Parameters:
+    - item (str): The clinical history item to convert
+    - current_date (str): Current date string in YYYY-MM-DD format
+    - gpt_client (GPTClient): Initialized GPT client for making API calls
+
+    Returns:
+    - Tuple[str, float]: Updated item with relative time and the cost of the API call
+    """
+    prompt = (
+        f"Convert the following clinical history item to use relative time references (like 'X years ago', 'X months ago') "
+        f"instead of absolute dates or years. Today's date is {current_date}.\n\n"
+        f'Original: "{item}"\n\n'
+        "Return only the converted text without any additional explanation or quotation marks."
+    )
+
+    try:
+        completion, cost = gpt_client.call_gpt(
+            prompt=prompt,
+            system_role="You are a clinical data specialist converting absolute time references to relative ones.",
+            temperature=0.1,
+        )
+
+        if completion is None:
+            logger.warning(f"Failed to convert time references for item: {item}")
+            return item, cost
+
+        updated_item = completion.strip().strip("\"'")
+        logger.info(f"Converted time reference: '{item}' → '{updated_item}'")
+        return updated_item, cost
+
+    except Exception as e:
+        logger.error(f"Error converting time references: {e}")
+        return item, 0.0
