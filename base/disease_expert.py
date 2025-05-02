@@ -200,19 +200,34 @@ def extract_conditions_from_content(
             "- Significant treatments and their status\n"
             "- Current clinical status\n"
             "- Other conditions relevant to eligibility\n\n"
-            "Example format:\n"
+            "Example original record:\n"
+            "<original record>\n"
+            "Patient: Jane Doe\n"
+            "DOB: 05/15/1958 (65 years old)\n"
+            "Sex: Female\n"
+            "Medical History:\n"
+            "- Type 2 Diabetes Mellitus diagnosed in 2010, currently managed with Metformin 1000mg BID\n"
+            "- Non-small cell lung cancer (Stage 3) diagnosed in April 2023, currently on cycle 4 of chemotherapy\n"
+            "- Liver metastasis detected in June 2023, stable on recent imaging\n"
+            "- Hypertension, well-controlled on Lisinopril 20mg daily\n"
+            "- Chronic kidney disease (Stage 2) with eGFR 75 mL/min\n"
+            "- Myocardial infarction in 2019, treated with stent placement\n"
+            "- Osteoarthritis of the right knee, managed with NSAIDs as needed\n"
+            "- Hypothyroidism, on levothyroxine 100mcg daily\n"
+            "- COPD with history of 2 exacerbations in the past year, uses albuterol inhaler\n\n"
+            "</original record>\n"
+            "Given the above record and the current date of 2023-12-01, the result should be:\n"
             "[\n"
             '  "65-year-old female",\n'
-            '  "Type 2 Diabetes, stable with medication",\n'
-            '  "Stage 3 lung cancer with ongoing chemotherapy",\n'
-            '  "Liver metastasis under monitoring",\n'
-            '  "Hypertension managed with medication",\n'
-            '  "Chronic kidney disease stage 2",\n'
-            '  "Myocardial infarction 4 years ago",\n'
-            '  "Osteoarthritis of the knee",\n'
-            '  "Hypothyroidism on levothyroxine",\n'
-            '  "COPD with occasional exacerbations",\n'
-            '  "<other conditions relevant to eligibility>",\n'
+            '  "Type 2 Diabetes Mellitus diagnosed 13 years ago, managed with Metformin",\n'
+            '  "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy",\n'
+            '  "Liver metastasis detected 6 months ago, stable on recent imaging",\n'
+            '  "Hypertension, well-controlled on Lisinopril",\n'
+            '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
+            '  "Myocardial infarction 4 years ago, treated with stent placement",\n'
+            '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
+            '  "Hypothyroidism, on levothyroxine",\n'
+            '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
             "]\n\n"
             "Guidelines:\n"
             "1. Always include demographic information as the first item\n"
