@@ -191,7 +191,7 @@ def extract_conditions_from_content(
 
         # Extract clinical history in chronological order
         prompt = (
-            f"Extract at most 10 most important key conditions AND demographic features from the patient's clinical record for clinical trials filtering. "
+            f"Extract at most 20 most important key conditions AND demographic features from the patient's clinical record for clinical trials filtering. "
             f"Use relative time references based on today's date ({current_time_str}). "
             "Present the results as a JSON array of strings. Include relevant demographic information (age, sex, etc.) as the first item.\n\n"
             "Focus on:\n"
