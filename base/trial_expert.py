@@ -907,7 +907,7 @@ Reference list of valid conditions:
         branch: str,
         conditions: List[str],
         trial_title: str,
-        num_conditions: int = 3,
+        num_conditions: int = 5,
         refresh_cache: bool = False,
         need_to_note_list: List[str] = None,
     ) -> List[str]:
