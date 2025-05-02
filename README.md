@@ -138,7 +138,7 @@ Options:
 - `--recruiting`: Filter for only recruiting trials
 - `--phase`: Filter by trial phase (1-4)
 - `--exclude-study-type`: Exclude specific study types
-- `--recommendation-level`: Filter by recommendation level ("Strongly Recommended", "Recommended", "Neutral", "Not Recommended")
+- `--recommendation-level`: Filter by recommendation level(s) ("Strongly Recommended", "Recommended", "Neutral", "Not Recommended"). Can specify multiple levels at once.
 - `--output`: Specify output file path
 - `--cache-size`: Set maximum number of cached responses (default: 10000)
 - `--api-key`: Provide OpenAI API key (alternatively, use OPENAI_API_KEY environment variable)
@@ -157,9 +157,12 @@ python -m scripts.filter_trials her2_positive_trials.json "ECOG score is 1" --ou
 
 # Filter for only strongly recommended trials
 python -m scripts.filter_trials analyzed_filtered_trials.json --recommendation-level "Strongly Recommended" -o strongly_recommended_trials.json
+
+# Filter for both recommended and strongly recommended trials in a single command
+python -m scripts.filter_trials analyzed_filtered_trials.json --recommendation-level "Strongly Recommended" "Recommended" -o recommended_trials.json
 ```
 
-This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps. The recommendation level filter can be used after analyzing trials to focus on the most promising ones.
+This approach allows for incremental refinement of the trial set and can help break down complex filtering requirements into simpler steps. The recommendation level filter can be used after analyzing trials to focus on the most promising ones, and you can filter for multiple recommendation levels in a single command.
 
 ### Filtering Trials Based on Clinical Records
 

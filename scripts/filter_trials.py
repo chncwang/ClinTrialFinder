@@ -14,6 +14,7 @@ from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.trial_expert import (
     GPTTrialFilter,
+    RecommendationLevel,
     TrialFailureReason,
     process_trials_with_conditions,
 )
@@ -87,7 +88,8 @@ def main():
     parser.add_argument(
         "--recommendation-level",
         choices=["Strongly Recommended", "Recommended", "Neutral", "Not Recommended"],
-        help="Filter trials by recommendation level (from previous analysis)",
+        nargs="+",  # Changed to allow multiple values
+        help="Filter trials by recommendation level(s) (from previous analysis)",
     )
     parser.add_argument(
         "--has-novel-drug-analysis",
@@ -137,12 +139,18 @@ def main():
         )
 
     if args.recommendation_level:
-        recommendation_filtered = trials_parser.get_trials_by_recommendation_level(
-            args.recommendation_level
-        )
-        trials = [t for t in trials if t in recommendation_filtered]
+        # For multiple recommendation levels, collect trials that match any of the specified levels
+        filtered_trials = []
+        for level in args.recommendation_level:
+            level_filtered = trials_parser.get_trials_by_recommendation_level(level)
+            # Add trials that aren't already in filtered_trials
+            filtered_trials.extend(
+                [t for t in level_filtered if t not in filtered_trials]
+            )
+
+        trials = filtered_trials
         logger.info(
-            f"main: Filtered for recommendation level '{args.recommendation_level}': {len(trials)} found"
+            f"main: Filtered for recommendation levels {', '.join(args.recommendation_level)}: {len(trials)} found"
         )
 
     if args.has_novel_drug_analysis:
