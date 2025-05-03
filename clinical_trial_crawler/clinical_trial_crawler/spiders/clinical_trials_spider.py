@@ -248,10 +248,10 @@ class ClinicalTrialsSpider(scrapy.Spider):
             "contacts_locations": {
                 "locations": [
                     {
-                        "facility": self.safe_get(loc, "facility", "name"),
-                        "city": self.safe_get(loc, "facility", "city"),
-                        "state": self.safe_get(loc, "facility", "state"),
-                        "country": self.safe_get(loc, "facility", "country"),
+                        "facility": self.safe_get(loc, "facility", "name") or self.safe_get(loc, "name"),
+                        "city": self.safe_get(loc, "facility", "city") or self.safe_get(loc, "city"),
+                        "state": self.safe_get(loc, "facility", "state") or self.safe_get(loc, "state"),
+                        "country": self.safe_get(loc, "facility", "country") or self.safe_get(loc, "country"),
                         "status": self.safe_get(loc, "status"),
                     }
                     for loc in self.safe_get(
