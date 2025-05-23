@@ -53,10 +53,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
             )
 
             if self.exclude_completed:
-                params["filter.overallStatus"] = (
-                    "ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION|"
-                    "NOT_YET_RECRUITING|RECRUITING|SUSPENDED"
-                )
+                params["filter.overallStatus"] = "NOT_YET_RECRUITING|RECRUITING"
 
         return params
 

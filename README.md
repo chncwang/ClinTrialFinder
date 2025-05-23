@@ -83,7 +83,7 @@ python -m scripts.download_trials --condition "breast cancer" --exclude-complete
 Options:
 
 - `--condition`: Disease or condition to search for (required if not using --specific-trial)
-- `--exclude-completed`: Exclude completed trials (optional)
+- `--exclude-completed`: Only include trials that are 'Not Yet Recruiting' or 'Recruiting' (optional)
 - `--output-file`: Output file path (default: {condition}_trials.json)
 - `--specific-trial`: Download a specific trial by NCT ID (required if not using --condition)
 - `--log-level`: Set the Scrapy log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -96,7 +96,7 @@ Examples:
 # Download all trials for breast cancer
 python -m scripts.download_trials --condition "breast cancer"
 
-# Download only active/recruiting trials for breast cancer
+# Download only 'Not Yet Recruiting' or 'Recruiting' trials for breast cancer
 python -m scripts.download_trials --condition "breast cancer" --exclude-completed
 
 # Download a specific trial by NCT ID
