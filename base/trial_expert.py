@@ -346,10 +346,11 @@ def compare_trials(
         f"<trial2_info>\n{trial2_info}\n</trial2_info>\n\n"
         "<output_format>\nProvide your response as a JSON object with the following structure:\n"
         "{\n"
-        '  "reason": "detailed explanation of why this trial is better, considering both trials\' recommendations, drug analyses, and other relevant factors",\n'
-        '  "better_trial": "nct_id of the better trial"\n'
+        '  "reason": "detailed explanation of why this trial is better, or why neither trial is suitable, considering both trials\' recommendations, drug analyses, and other relevant factors",\n'
+        '  "better_trial": "nct_id of the better trial, or \'neither\' if both trials are equally unsuitable"\n'
         "}\n</output_format>\n\n"
         "<output_request>\nBased on the clinical record and both trials' analyses, determine which trial would be better for the patient. "
+        "If both trials are unsuitable or equally poor matches, respond with 'neither' for better_trial. "
         "Consider the recommendation levels, drug effectiveness analyses, and any other relevant factors. "
         "Provide a detailed explanation of your decision.</output_request>"
     )
@@ -390,11 +391,15 @@ def compare_trials(
                     )
 
                 # Determine which trial is better
-                better_trial = (
-                    trial1
-                    if better_trial_id == trial1.identification.nct_id
-                    else trial2
-                )
+                if better_trial_id == "neither":
+                    # Neither trial is suitable - return trial1 as default but note in reason
+                    better_trial = trial1
+                else:
+                    better_trial = (
+                        trial1
+                        if better_trial_id == trial1.identification.nct_id
+                        else trial2
+                    )
 
                 logger.info(
                     f"compare_trials: Better trial: {better_trial.identification.nct_id}"
