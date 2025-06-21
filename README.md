@@ -16,6 +16,7 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
   - Trial phase
   - Study type
   - Custom conditions and criteria
+- **Email Service**: Send clinical summaries via email for instant trial matching without any setup
 
 ## Analyzing Clinical Trials
 
@@ -249,6 +250,43 @@ This feature is particularly useful for:
 1. Preparing patient information for trial matching
 2. Standardizing clinical record data for analysis
 3. Identifying key eligibility criteria from patient records
+
+## 📬 Try the Email Service (No Setup Required)
+
+You can now use ClinTrialFinder directly by email — no coding needed.
+
+### ✅ What it does
+
+Just send a clinical summary (plain text) to the AI.
+The system will:
+1. Understand your disease and treatment history
+2. Search trials from ClinicalTrials.gov
+3. Filter and rank based on eligibility and clinical evidence
+4. Reply with a structured summary + a ranked list of trial recommendations (as JSON)
+
+### ✉️ How to use
+
+Send an email to:
+**ai@mail.clintrialfinder.info**
+
+**Subject:** anything you like  
+**Body:** your clinical history, for example:
+
+```
+I'm a 47-year-old woman diagnosed with intrahepatic cholangiocarcinoma in Feb 2024.  
+Had gemcitabine + cisplatin, then FOLFOX. No metastasis. Looking for clinical trials to prevent recurrence.
+```
+
+### 📎 What you'll receive
+
+A reply email with:
+- Extracted disease + clinical features
+- An attached JSON file with ranked trial recommendations
+
+### 💡 Notes
+- **Language:** currently supports English only
+- **Privacy:** please avoid sending real names or identifiers
+- **Status:** MVP stage — feedback welcome!
 
 ## Output File Formats
 
