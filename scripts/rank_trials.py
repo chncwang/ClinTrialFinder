@@ -230,6 +230,11 @@ def main():
         default=42,
         help="Random seed for deterministic shuffling (default: 42)",
     )
+    parser.add_argument(
+        "--csv-output",
+        action="store_true",
+        help="Also output results in CSV format",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -266,12 +271,25 @@ def main():
             json.dump([trial.to_dict() for trial in ranked_trials], f, indent=2)
         logger.info(f"\nRanked trials saved to: {output_file}")
 
+        # Generate CSV output if requested
+        if args.csv_output:
+            try:
+                from scripts.json_to_csv_converter import convert_json_to_csv
+                csv_output_file = convert_json_to_csv(output_file)
+                logger.info(f"CSV output saved to: {csv_output_file}")
+            except ImportError:
+                logger.warning("CSV conversion module not available. Skipping CSV output.")
+            except Exception as e:
+                logger.error(f"Error generating CSV output: {e}")
+
         # Log summary
         logger.info("\n" + "=" * 80)
         logger.info(f"TRIAL RANKING SUMMARY")
         logger.info(f"Total number of trials ranked: {len(ranked_trials)}")
         logger.info(f"Total cost of ranking: ${total_cost:.6f}")
         logger.info(f"Output file: {output_file}")
+        if args.csv_output:
+            logger.info(f"CSV output: {csv_output_file}")
         logger.info("=" * 80)
 
     except Exception as e:
