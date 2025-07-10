@@ -163,9 +163,9 @@ class ClinicalTrialsSpider(scrapy.Spider):
     def extract_trial_data(self, protocol):
         """Extract trial data from protocol section."""
         # Debug logging for arms
-        design_module = protocol.get("designModule", {})
-        arms_data = design_module.get("arms", [])
-        self.logger.info(f"Design module keys: {list(design_module.keys())}")
+        arms_interventions_module = protocol.get("armsInterventionsModule", {})
+        arms_data = arms_interventions_module.get("armGroups", [])
+        self.logger.info(f"Arms interventions module keys: {list(arms_interventions_module.keys())}")
         self.logger.info(f"Arms data: {arms_data}")
         
         return {
@@ -221,7 +221,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 ),
                 "arms": [
                     {
-                        "name": self.safe_get(arm, "name"),
+                        "name": self.safe_get(arm, "label"),
                         "type": self.safe_get(arm, "type"),
                         "description": self.safe_get(arm, "description"),
                         "interventions": self.safe_get(
@@ -229,7 +229,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                         ),
                     }
                     for arm in self.safe_get(
-                        protocol, "designModule", "arms", default=[]
+                        protocol, "armsInterventionsModule", "armGroups", default=[]
                     )
                 ],
             },
