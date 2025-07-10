@@ -39,7 +39,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
         """Get common request parameters"""
         params = {
             "format": "json",
-            "fields": "ProtocolSection",
+            "fields": "ProtocolSection,ArmsInterventionsModule",
             "markupFormat": "markdown",
         }
 
@@ -104,8 +104,9 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             for study in studies:
-                if "protocolSection" in study:
-                    yield self.extract_trial_data(study["protocolSection"])
+                protocol_section = study.get("protocolSection", {})
+                arms_interventions = study.get("armsInterventionsModule", {})
+                yield self.extract_trial_data(protocol_section, arms_interventions)
 
             # Handle pagination
             next_page_token = data.get("nextPageToken")
@@ -139,8 +140,11 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             data = json.loads(response.text)
 
-            if "protocolSection" in data:
-                trial_data = self.extract_trial_data(data["protocolSection"])
+            protocol_section = data.get("protocolSection", {})
+            arms_interventions = data.get("armsInterventionsModule", {})
+            
+            if protocol_section:
+                trial_data = self.extract_trial_data(protocol_section, arms_interventions)
                 if self.output_file:
                     with open(self.output_file, "w") as f:
                         json.dump([trial_data], f)
@@ -160,8 +164,10 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             self.logger.error(f"Traceback: {traceback.format_exc()}")
 
-    def extract_trial_data(self, protocol):
-        """Extract trial data from protocol section."""
+    def extract_trial_data(self, protocol, arms_interventions=None):
+        """Extract trial data from protocol section and arms interventions module."""
+        if arms_interventions is None:
+            arms_interventions = {}
         return {
             "identification": {
                 "nct_id": self.safe_get(protocol, "identificationModule", "nctId"),
@@ -223,7 +229,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
                         ),
                     }
                     for arm in self.safe_get(
-                        protocol, "designModule", "arms", default=[]
+                        arms_interventions, "arms", default=[]
                     )
                 ],
             },
