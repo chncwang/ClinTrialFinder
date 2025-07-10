@@ -39,7 +39,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
         """Get common request parameters"""
         params = {
             "format": "json",
-            "fields": "ProtocolSection,ArmsInterventionsModule",
+            "fields": "NCTId,BriefTitle,OfficialTitle,Acronym,OrgStudyId,OverallStatus,StartDate,CompletionDate,PrimaryCompletionDate,BriefSummary,DetailedDescription,Condition,Keyword,StudyType,Phase,EnrollmentCount,MinimumAge,MaximumAge,Sex,HealthyVolunteers,EligibilityCriteria,LeadSponsorName,CollaboratorName,LocationFacility,LocationCity,LocationState,LocationCountry,LocationStatus,ArmName,ArmType,ArmDescription,InterventionName",
             "markupFormat": "markdown",
         }
 
@@ -104,9 +104,11 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             for study in studies:
-                protocol_section = study.get("protocolSection", {})
-                arms_interventions = study.get("armsInterventionsModule", {})
-                yield self.extract_trial_data(protocol_section, arms_interventions)
+                # Debug logging
+                self.logger.info(f"Study keys: {list(study.keys())}")
+                self.logger.info(f"Study data: {study}")
+                
+                yield self.extract_trial_data(study)
 
             # Handle pagination
             next_page_token = data.get("nextPageToken")
@@ -140,11 +142,8 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             data = json.loads(response.text)
 
-            protocol_section = data.get("protocolSection", {})
-            arms_interventions = data.get("armsInterventionsModule", {})
-            
-            if protocol_section:
-                trial_data = self.extract_trial_data(protocol_section, arms_interventions)
+            if data:
+                trial_data = self.extract_trial_data(data)
                 if self.output_file:
                     with open(self.output_file, "w") as f:
                         json.dump([trial_data], f)
@@ -164,116 +163,80 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             self.logger.error(f"Traceback: {traceback.format_exc()}")
 
-    def extract_trial_data(self, protocol, arms_interventions=None):
-        """Extract trial data from protocol section and arms interventions module."""
+    def extract_trial_data(self, study_data, arms_interventions=None):
+        """Extract trial data from flattened study data."""
         if arms_interventions is None:
             arms_interventions = {}
+            
+        # Extract arms information from the flattened structure
+        arms = []
+        arm_names = study_data.get("armName", [])
+        arm_types = study_data.get("armType", [])
+        arm_descriptions = study_data.get("armDescription", [])
+        intervention_names = study_data.get("interventionName", [])
+        
+        # Group arms by their index
+        max_arms = max(len(arm_names), len(arm_types), len(arm_descriptions))
+        for i in range(max_arms):
+            arm = {
+                "name": arm_names[i] if i < len(arm_names) else None,
+                "type": arm_types[i] if i < len(arm_types) else None,
+                "description": arm_descriptions[i] if i < len(arm_descriptions) else None,
+                "interventions": [intervention_names[i]] if i < len(intervention_names) and intervention_names[i] else [],
+            }
+            arms.append(arm)
+            
         return {
             "identification": {
-                "nct_id": self.safe_get(protocol, "identificationModule", "nctId"),
+                "nct_id": study_data.get("nctId"),
                 "url": (
-                    f"https://clinicaltrials.gov/study/{self.safe_get(protocol, 'identificationModule', 'nctId')}"
-                    if self.safe_get(protocol, "identificationModule", "nctId")
+                    f"https://clinicaltrials.gov/study/{study_data.get('nctId')}"
+                    if study_data.get("nctId")
                     else None
                 ),
-                "brief_title": self.safe_get(
-                    protocol, "identificationModule", "briefTitle"
-                ),
-                "official_title": self.safe_get(
-                    protocol, "identificationModule", "officialTitle"
-                ),
-                "acronym": self.safe_get(protocol, "identificationModule", "acronym"),
-                "org_study_id": self.safe_get(
-                    protocol, "identificationModule", "orgStudyIdInfo", "id"
-                ),
+                "brief_title": study_data.get("briefTitle"),
+                "official_title": study_data.get("officialTitle"),
+                "acronym": study_data.get("acronym"),
+                "org_study_id": study_data.get("orgStudyId"),
             },
             "status": {
-                "overall_status": self.safe_get(
-                    protocol, "statusModule", "overallStatus"
-                ),
-                "start_date": self.safe_get(
-                    protocol, "statusModule", "startDateStruct", "date"
-                ),
-                "completion_date": self.safe_get(
-                    protocol, "statusModule", "completionDateStruct", "date"
-                ),
-                "primary_completion_date": self.safe_get(
-                    protocol, "statusModule", "primaryCompletionDateStruct", "date"
-                ),
+                "overall_status": study_data.get("overallStatus"),
+                "start_date": study_data.get("startDate"),
+                "completion_date": study_data.get("completionDate"),
+                "primary_completion_date": study_data.get("primaryCompletionDate"),
             },
             "description": {
-                "brief_summary": self.safe_get(
-                    protocol, "descriptionModule", "briefSummary"
-                ),
-                "detailed_description": self.safe_get(
-                    protocol, "descriptionModule", "detailedDescription"
-                ),
-                "conditions": self.safe_get(
-                    protocol, "descriptionModule", "conditions"
-                ),
-                "keywords": self.safe_get(protocol, "descriptionModule", "keywords"),
+                "brief_summary": study_data.get("briefSummary"),
+                "detailed_description": study_data.get("detailedDescription"),
+                "conditions": study_data.get("condition"),
+                "keywords": study_data.get("keyword"),
             },
             "design": {
-                "study_type": self.safe_get(protocol, "designModule", "studyType"),
-                "phases": self.safe_get(protocol, "designModule", "phases", default=[]),
-                "enrollment": self.safe_get(
-                    protocol, "designModule", "enrollmentInfo", "count"
-                ),
-                "arms": [
-                    {
-                        "name": self.safe_get(arm, "name"),
-                        "type": self.safe_get(arm, "type"),
-                        "description": self.safe_get(arm, "description"),
-                        "interventions": self.safe_get(
-                            arm, "interventionNames", default=[]
-                        ),
-                    }
-                    for arm in self.safe_get(
-                        arms_interventions, "arms", default=[]
-                    )
-                ],
+                "study_type": study_data.get("studyType"),
+                "phases": study_data.get("phase", []),
+                "enrollment": study_data.get("enrollmentCount"),
+                "arms": arms,
             },
             "eligibility": {
-                "criteria": self.safe_get(
-                    protocol, "eligibilityModule", "eligibilityCriteria"
-                ),
-                "gender": self.safe_get(protocol, "eligibilityModule", "sex"),
-                "minimum_age": self.safe_get(
-                    protocol, "eligibilityModule", "minimumAge"
-                ),
-                "maximum_age": self.safe_get(
-                    protocol, "eligibilityModule", "maximumAge"
-                ),
-                "healthy_volunteers": self.safe_get(
-                    protocol, "eligibilityModule", "healthyVolunteers"
-                ),
+                "criteria": study_data.get("eligibilityCriteria"),
+                "gender": study_data.get("sex"),
+                "minimum_age": study_data.get("minimumAge"),
+                "maximum_age": study_data.get("maximumAge"),
+                "healthy_volunteers": study_data.get("healthyVolunteers"),
             },
             "contacts_locations": {
                 "locations": [
                     {
-                        "facility": self.safe_get(loc, "facility", "name") or self.safe_get(loc, "name"),
-                        "city": self.safe_get(loc, "facility", "city") or self.safe_get(loc, "city"),
-                        "state": self.safe_get(loc, "facility", "state") or self.safe_get(loc, "state"),
-                        "country": self.safe_get(loc, "facility", "country") or self.safe_get(loc, "country"),
-                        "status": self.safe_get(loc, "status"),
+                        "facility": study_data.get("locationFacility"),
+                        "city": study_data.get("locationCity"),
+                        "state": study_data.get("locationState"),
+                        "country": study_data.get("locationCountry"),
+                        "status": study_data.get("locationStatus"),
                     }
-                    for loc in self.safe_get(
-                        protocol, "contactsLocationsModule", "locations", default=[]
-                    )
                 ],
             },
             "sponsor": {
-                "lead_sponsor": self.safe_get(
-                    protocol, "sponsorCollaboratorsModule", "leadSponsor", "name"
-                ),
-                "collaborators": [
-                    self.safe_get(collab, "name", default="")
-                    for collab in self.safe_get(
-                        protocol,
-                        "sponsorCollaboratorsModule",
-                        "collaborators",
-                        default=[],
-                    )
-                ],
+                "lead_sponsor": study_data.get("leadSponsorName"),
+                "collaborators": study_data.get("collaboratorName", []),
             },
         }
