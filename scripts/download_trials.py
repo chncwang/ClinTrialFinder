@@ -131,15 +131,19 @@ def download_trials(args, condition=None, output_file=None):
     condition = condition or args.condition
 
     # Use provided output file or generate from condition
-    output_file = output_file or os.path.join(
-        project_root, get_output_filename(condition, args)
-    )
+    if output_file is None:
+        if condition:
+            output_file = os.path.join(project_root, get_output_filename(condition, args))
+        else:
+            # For specific trials, use the trial ID as filename
+            output_file = os.path.join(project_root, f"{args.specific_trial}.json")
 
     # Build the scrapy command
     cmd = "python -m scrapy crawl clinical_trials"
 
-    # Add condition
-    cmd += f' -a condition="{condition}"'
+    # Add condition if provided
+    if condition:
+        cmd += f' -a condition="{condition}"'
 
     # Add specific trial if provided
     if args.specific_trial:
