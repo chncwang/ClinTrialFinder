@@ -98,6 +98,30 @@ def build_recommendation_prompt(
     )
 
 
+def build_trial_info(trial: ClinicalTrial, include_recommendation_levels: bool = True) -> str:
+    """
+    Build trial information string for comparison.
+    
+    Args:
+        trial: The clinical trial to build info for
+        include_recommendation_levels: Whether to include recommendation level in the info
+        
+    Returns:
+        Formatted trial information string
+    """
+    info_lines = [
+        f"NCT ID: {trial.identification.nct_id}",
+        f"Title: {trial.identification.brief_title}",
+    ]
+    if include_recommendation_levels:
+        info_lines.append(f"Recommendation Level: {trial.recommendation_level}")
+    info_lines.extend([
+        f"Reason: {trial.analysis_reason}",
+        f"Drug Analyses: {json.dumps(trial.drug_analysis, indent=2)}"
+    ])
+    return "\n".join(info_lines)
+
+
 def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, str]:
     """
     Parses the JSON response from the AI recommendation.
@@ -304,6 +328,7 @@ def compare_trials(
     trial2: ClinicalTrial,
     gpt_client: "GPTClient",
     refresh_cache: bool = False,
+    include_recommendation_levels: bool = True,
 ) -> tuple["ClinicalTrial", str, float]:
     """
     Compare two clinical trials and determine which is better for a target patient.
@@ -313,6 +338,8 @@ def compare_trials(
         trial1 (ClinicalTrial): First trial to compare
         trial2 (ClinicalTrial): Second trial to compare
         gpt_client (GPTClient): Client for GPT-4 analysis
+        refresh_cache (bool): Whether to refresh the cache
+        include_recommendation_levels (bool): Whether to include recommendation levels in the comparison prompt
 
     Returns:
         tuple containing:
@@ -324,21 +351,8 @@ def compare_trials(
     max_retries = 3
 
     # Build comparison prompt using existing drug analyses
-    trial1_info = (
-        f"NCT ID: {trial1.identification.nct_id}\n"
-        f"Title: {trial1.identification.brief_title}\n"
-        f"Recommendation Level: {trial1.recommendation_level}\n"
-        f"Reason: {trial1.analysis_reason}\n"
-        f"Drug Analyses: {json.dumps(trial1.drug_analysis, indent=2)}"
-    )
-
-    trial2_info = (
-        f"NCT ID: {trial2.identification.nct_id}\n"
-        f"Title: {trial2.identification.brief_title}\n"
-        f"Recommendation Level: {trial2.recommendation_level}\n"
-        f"Reason: {trial2.analysis_reason}\n"
-        f"Drug Analyses: {json.dumps(trial2.drug_analysis, indent=2)}"
-    )
+    trial1_info = build_trial_info(trial1, include_recommendation_levels)
+    trial2_info = build_trial_info(trial2, include_recommendation_levels)
 
     comparison_prompt = (
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
@@ -351,7 +365,7 @@ def compare_trials(
         "}\n</output_format>\n\n"
         "<output_request>\nBased on the clinical record and both trials' analyses, determine which trial would be better for the patient. "
         "If both trials are unsuitable or equally poor matches, respond with 'neither' for better_trial. "
-        "Consider the recommendation levels, drug effectiveness analyses, and any other relevant factors. "
+        f"{'Consider the recommendation levels, ' if include_recommendation_levels else ''}drug effectiveness analyses, and any other relevant factors. "
         "Provide a detailed explanation of your decision.</output_request>"
     )
 
