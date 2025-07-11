@@ -32,6 +32,29 @@ CLINICAL_TRIAL_SYSTEM_PROMPT = (
     "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
 )
 
+TRIAL_COMPARISON_SYSTEM_PROMPT = (
+    "<role>You are an experienced oncologist and clinical trial specialist with expertise in personalized medicine and evidence-based treatment selection. "
+    "Your role is to act as the patient's advocate, carefully analyzing clinical trial options to determine which would provide the best potential outcome for the specific patient.</role>\n\n"
+    "<task>Your task is to compare two clinical trials and determine which one would be better suited for a specific patient based on their clinical record. "
+    "You will analyze both trials' characteristics, drug effectiveness data, recommendation levels, and other relevant factors to make an informed decision. "
+    "You must provide your assessment in a JSON format with detailed reasoning for your choice.</task>\n\n"
+    "<evaluation_criteria>Consider the following factors when comparing trials:\n\n"
+    "- Patient's specific conditions and how they align with trial eligibility\n"
+    "- Trial design and methodology (phase, study type, arms)\n"
+    "- Drug effectiveness evidence and safety profiles\n"
+    "- Recommendation levels and supporting analyses\n"
+    "- Potential benefits vs. risks for the specific patient\n"
+    "- Trial status and availability</evaluation_criteria>\n\n"
+    "<output_format>You must respond with a JSON object containing:\n"
+    "- reason: A detailed explanation of why one trial is better, or why neither trial is suitable\n"
+    "- better_trial: The NCT ID of the better trial, or 'neither' if both trials are equally unsuitable</output_format>\n\n"
+    "<decision_guidance>When making your decision:\n"
+    "- Prioritize patient safety and potential benefit\n"
+    "- Consider the strength of evidence supporting each trial\n"
+    "- If both trials are equally poor matches or unsuitable, choose 'neither'\n"
+    "- Provide clear, evidence-based reasoning for your choice</decision_guidance>\n\n"
+)
+
 
 class RecommendationLevel(Enum):
     STRONGLY_RECOMMENDED = "Strongly Recommended"
@@ -374,16 +397,7 @@ def compare_trials(
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f"<trial1_info>\n{trial1_info}\n</trial1_info>\n\n"
         f"<trial2_info>\n{trial2_info}\n</trial2_info>\n\n"
-        "<output_format>\nProvide your response as a JSON object with the following structure:\n"
-        "{\n"
-        '  "reason": "detailed explanation of why this trial is better, or why neither trial is suitable, considering both trials\' recommendations, drug analyses, and other relevant factors",\n'
-        '  "better_trial": "nct_id of the better trial, or \'neither\' if both trials are equally unsuitable"\n'
-        "}\n</output_format>\n\n"
-        "<output_request>\nBased on the clinical record and both trials' analyses, determine which trial would be better for the patient. "
-        "If both trials are unsuitable or equally poor matches, respond with 'neither' for better_trial. "
-        f"{'Consider the recommendation levels, ' if include_recommendation_levels else ''}drug effectiveness analyses, "
-        f"{'treatment arms and interventions, ' if include_arms else ''}and any other relevant factors. "
-        "Provide a detailed explanation of your decision.</output_request>"
+        "Please compare these two clinical trials and determine which would be better for this patient, or if neither is suitable."
     )
     logger.info(f"compare_trials: Comparison Prompt:\n{comparison_prompt}")
 
@@ -392,7 +406,7 @@ def compare_trials(
             # Get comparison from GPT-4
             completion, cost = gpt_client.call_gpt(
                 prompt=comparison_prompt,
-                system_role=CLINICAL_TRIAL_SYSTEM_PROMPT,
+                system_role=TRIAL_COMPARISON_SYSTEM_PROMPT,
                 model="gpt-4.1",
                 temperature=0.2,
                 response_format={"type": "json_object"},
