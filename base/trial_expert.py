@@ -385,6 +385,7 @@ def compare_trials(
         f"{'treatment arms and interventions, ' if include_arms else ''}and any other relevant factors. "
         "Provide a detailed explanation of your decision.</output_request>"
     )
+    logger.info(f"compare_trials: Comparison Prompt:\n{comparison_prompt}")
 
     for attempt in range(max_retries):
         try:
