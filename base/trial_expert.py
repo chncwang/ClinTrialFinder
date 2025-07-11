@@ -98,13 +98,14 @@ def build_recommendation_prompt(
     )
 
 
-def build_trial_info(trial: ClinicalTrial, include_recommendation_levels: bool = True) -> str:
+def build_trial_info(trial: ClinicalTrial, include_recommendation_levels: bool = True, include_arms: bool = True) -> str:
     """
     Build trial information string for comparison.
     
     Args:
         trial: The clinical trial to build info for
         include_recommendation_levels: Whether to include recommendation level in the info
+        include_arms: Whether to include arms data in the info
         
     Returns:
         Formatted trial information string
@@ -119,6 +120,19 @@ def build_trial_info(trial: ClinicalTrial, include_recommendation_levels: bool =
         f"Reason: {trial.analysis_reason}",
         f"Drug Analyses: {json.dumps(trial.drug_analysis, indent=2)}"
     ])
+    
+    # Add arms information if requested and available
+    if include_arms and trial.design.arms:
+        arms_info = []
+        for i, arm in enumerate(trial.design.arms, 1):
+            arm_str = f"Arm {i}: {arm.get('name', 'N/A')} ({arm.get('type', 'N/A')})"
+            if arm.get('description'):
+                arm_str += f" - {arm['description']}"
+            if arm.get('interventions'):
+                arm_str += f" - Interventions: {', '.join(arm['interventions'])}"
+            arms_info.append(arm_str)
+        info_lines.append(f"Arms: {'; '.join(arms_info)}")
+    
     return "\n".join(info_lines)
 
 
@@ -329,6 +343,7 @@ def compare_trials(
     gpt_client: "GPTClient",
     refresh_cache: bool = False,
     include_recommendation_levels: bool = True,
+    include_arms: bool = True,
 ) -> tuple["ClinicalTrial", str, float]:
     """
     Compare two clinical trials and determine which is better for a target patient.
@@ -340,6 +355,7 @@ def compare_trials(
         gpt_client (GPTClient): Client for GPT-4 analysis
         refresh_cache (bool): Whether to refresh the cache
         include_recommendation_levels (bool): Whether to include recommendation levels in the comparison prompt
+        include_arms (bool): Whether to include arms data in the comparison prompt
 
     Returns:
         tuple containing:
@@ -351,8 +367,8 @@ def compare_trials(
     max_retries = 3
 
     # Build comparison prompt using existing drug analyses
-    trial1_info = build_trial_info(trial1, include_recommendation_levels)
-    trial2_info = build_trial_info(trial2, include_recommendation_levels)
+    trial1_info = build_trial_info(trial1, include_recommendation_levels, include_arms)
+    trial2_info = build_trial_info(trial2, include_recommendation_levels, include_arms)
 
     comparison_prompt = (
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
@@ -365,7 +381,8 @@ def compare_trials(
         "}\n</output_format>\n\n"
         "<output_request>\nBased on the clinical record and both trials' analyses, determine which trial would be better for the patient. "
         "If both trials are unsuitable or equally poor matches, respond with 'neither' for better_trial. "
-        f"{'Consider the recommendation levels, ' if include_recommendation_levels else ''}drug effectiveness analyses, and any other relevant factors. "
+        f"{'Consider the recommendation levels, ' if include_recommendation_levels else ''}drug effectiveness analyses, "
+        f"{'treatment arms and interventions, ' if include_arms else ''}and any other relevant factors. "
         "Provide a detailed explanation of your decision.</output_request>"
     )
 

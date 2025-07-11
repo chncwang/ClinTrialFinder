@@ -82,6 +82,7 @@ def partition(
     high: int,
     gpt_client: GPTClient,
     include_recommendation_levels: bool = True,
+    include_arms: bool = True,
 ) -> tuple[int, float]:
     """
     Partition trials using the last element as pivot.
@@ -99,6 +100,7 @@ def partition(
             pivot,
             gpt_client,
             include_recommendation_levels=include_recommendation_levels,
+            include_arms=include_arms,
         )
         total_cost += cost
 
@@ -131,6 +133,7 @@ def quicksort(
     high: int,
     gpt_client: GPTClient,
     include_recommendation_levels: bool = True,
+    include_arms: bool = True,
 ) -> float:
     """
     Sort trials using quicksort algorithm.
@@ -140,14 +143,14 @@ def quicksort(
     if low < high:
         # Find pivot position
         pivot_pos, partition_cost = partition(
-            trials, clinical_record, low, high, gpt_client, include_recommendation_levels
+            trials, clinical_record, low, high, gpt_client, include_recommendation_levels, include_arms
         )
         total_cost += partition_cost
 
         # Recursively sort sub-arrays
-        total_cost += quicksort(trials, clinical_record, low, pivot_pos - 1, gpt_client, include_recommendation_levels)
+        total_cost += quicksort(trials, clinical_record, low, pivot_pos - 1, gpt_client, include_recommendation_levels, include_arms)
         total_cost += quicksort(
-            trials, clinical_record, pivot_pos + 1, high, gpt_client, include_recommendation_levels
+            trials, clinical_record, pivot_pos + 1, high, gpt_client, include_recommendation_levels, include_arms
         )
 
     return total_cost
@@ -159,6 +162,7 @@ def rank_trials(
     gpt_client: GPTClient,
     seed: int = 42,  # Default seed for reproducibility
     include_recommendation_levels: bool = True,
+    include_arms: bool = True,
 ) -> tuple[List[ClinicalTrial], float]:
     """
     Rank trials using quicksort with compare_trials for comparison.
@@ -170,6 +174,7 @@ def rank_trials(
         gpt_client: GPT client for comparisons
         seed: Random seed for deterministic shuffling (default: 42)
         include_recommendation_levels: Whether to include recommendation levels in comparison (default: True)
+        include_arms: Whether to include arms data in comparison (default: True)
     """
     if not trials:
         return [], 0.0
@@ -209,6 +214,7 @@ def rank_trials(
         len(trial_objects) - 1,
         gpt_client,
         include_recommendation_levels,
+        include_arms,
     )
     logger.info(f"Total cost of ranking: ${total_cost:.6f}")
 
@@ -246,6 +252,11 @@ def main():
         action="store_true",
         help="Exclude recommendation levels from trial comparison (default: include recommendation levels)",
     )
+    parser.add_argument(
+        "--include-arms",
+        action="store_true",
+        help="Include arms data in trial comparison (default: include arms)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -269,9 +280,13 @@ def main():
         include_recommendation_levels = not args.no_recommendation_levels
         logger.info(f"Recommendation levels will be {'included' if include_recommendation_levels else 'excluded'} in trial comparisons")
         
+        # Determine whether to include arms data
+        include_arms = args.include_arms
+        logger.info(f"Arms data will be {'included' if include_arms else 'excluded'} in trial comparisons")
+
         # Rank trials with specified seed
         ranked_trials, total_cost = rank_trials(
-            trials, clinical_record, gpt_client, seed=args.seed, include_recommendation_levels=include_recommendation_levels
+            trials, clinical_record, gpt_client, seed=args.seed, include_recommendation_levels=include_recommendation_levels, include_arms=include_arms
         )
 
         # Log ranked trials
@@ -302,6 +317,7 @@ def main():
         logger.info(f"TRIAL RANKING SUMMARY")
         logger.info(f"Total number of trials ranked: {len(ranked_trials)}")
         logger.info(f"Recommendation levels included: {include_recommendation_levels}")
+        logger.info(f"Arms data included: {include_arms}")
         logger.info(f"Total cost of ranking: ${total_cost:.6f}")
         logger.info(f"Output file: {output_file}")
         if args.csv_output:
