@@ -1,6 +1,6 @@
 # ClinTrialFinder
 
-ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzing clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4.1-mini and evidence-based analysis using Perplexity AI to help researchers and medical professionals find relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4.1-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level.
+ClinTrialFinder is a sophisticated tool for downloading, filtering, analyzing, and ranking clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4.1-mini, evidence-based analysis using Perplexity AI, and AI-powered ranking to help researchers and medical professionals find the most relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4.1-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level, and finally ranks the trials from best to worst match for the patient using pairwise comparisons.
 
 ## Features
 
@@ -10,6 +10,7 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, and analyzin
   - Inclusion criteria
 - **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
 - **Intelligent Recommendations**: Uses GPT-4.1 to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
+- **AI-Powered Ranking**: Uses GPT-4.1 with quicksort algorithm to rank trials from best to worst match for the patient through pairwise comparisons.
 - **Clinical Record Analysis**: Extracts relevant conditions, demographics, and clinical status from patient records using GPT-4.1.
 - **Flexible Search Options**: Filter trials by:
   - Recruitment status
@@ -218,6 +219,46 @@ python -m scripts.analyze_filtered_trial filtered_trials.json clinical_record.tx
 
 This script will add `recommendation_level` and `reason` fields to each trial in the JSON output file (e.g., `analyzed_filtered_trials.json`).
 
+### Ranking Trials
+
+To rank analyzed trials from best to worst based on their suitability for the patient:
+
+```bash
+python -m scripts.rank_trials analyzed_filtered_trials.json clinical_record.txt --openai-api-key $OPENAI_API_KEY
+```
+
+Options:
+- `analyzed_filtered_trials.json`: The JSON file containing the analyzed trials (output from the analysis step)
+- `clinical_record.txt`: A text file containing the patient's clinical record
+- `--openai-api-key`: Your OpenAI API Key (required)
+- `--seed`: Random seed for deterministic shuffling (default: 42)
+- `--csv-output`: Also output results in CSV format
+
+This script uses a quicksort algorithm with GPT-powered pairwise comparisons to rank trials. The ranking process:
+
+1. **Randomizes trials** before sorting to ensure fair comparison regardless of input order
+2. **Compares trials pairwise** using GPT to determine which trial is better suited for the patient
+3. **Sorts trials** from best to worst based on these comparisons
+4. **Generates detailed logs** of each comparison and the reasoning behind rankings
+5. **Outputs ranked results** in JSON format (and optionally CSV)
+
+The script provides comprehensive logging including:
+- Trial comparison details and reasoning
+- API costs for each comparison
+- Final ranking order
+- Total cost of the ranking process
+
+Example usage:
+```bash
+# Basic ranking with default seed
+python -m scripts.rank_trials analyzed_trials.json patient_record.txt --openai-api-key $OPENAI_API_KEY
+
+# Ranking with custom seed and CSV output
+python -m scripts.rank_trials analyzed_trials.json patient_record.txt --openai-api-key $OPENAI_API_KEY --seed 123 --csv-output
+```
+
+The output file will be named `ranked_trials_YYYYMMDD_HHMMSS.json` and contain the trials sorted from best to worst match for the patient.
+
 ### Extracting Conditions from Clinical Records
 
 To extract relevant conditions, demographics, and clinical status from a patient's clinical record:
@@ -299,6 +340,10 @@ The analysis process generates a new JSON file:
 
 3. **Analyzed Trials** (`analyzed_filtered_trials.json`): Contains the filtered trial records with added `recommendation_level` and `reason` fields.
 
+The ranking process generates a new JSON file:
+
+4. **Ranked Trials** (`ranked_trials_YYYYMMDD_HHMMSS.json`): Contains the analyzed trial records sorted from best to worst match for the patient.
+
 ### Filtered Trials Format
 
 The filtered trials JSON file contains the complete trial records that passed all criteria checks. Each trial entry preserves all fields from the original ClinicalTrials.gov data structure.
@@ -359,6 +404,18 @@ The analyzed trials JSON file contains the filtered trial records with the follo
 - `recommendation_level`: The recommendation level for the trial (e.g., "strongly recommend", "recommend", "neutral", "not recommend").
 - `reason`: The reasoning behind the recommendation.
 
+### Ranked Trials Format
+
+The ranked trials JSON file contains the analyzed trial records sorted from best to worst match for the patient. The file structure is identical to the analyzed trials format, but the order of trials reflects their ranking based on pairwise comparisons using GPT.
+
+The ranking process uses a quicksort algorithm with GPT-powered comparisons to determine the optimal order. Each trial comparison considers:
+- Patient's specific condition and clinical history
+- Trial characteristics and eligibility criteria
+- Recommendation level and reasoning from the analysis phase
+- Overall suitability for the patient's situation
+
+Trials are ordered from most suitable (rank 1) to least suitable (rank N) for the patient.
+
 ## GPT and Perplexity AI Integration
 
 The system uses GPT-4.1-mini to:
@@ -377,21 +434,23 @@ The system uses Perplexity AI to:
 The system uses GPT-4.1 to:
 
 1. Provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
+2. Compare trials pairwise to determine which is better suited for a specific patient during the ranking process.
 
 Responses are cached to optimize API usage and reduce costs.
 
 ## Logging
 
-When executing `scripts/filter_trials.py` and `scripts/analyze_filtered_trial.py`, the system maintains detailed logs including:
+When executing `scripts/filter_trials.py`, `scripts/analyze_filtered_trial.py`, and `scripts/rank_trials.py`, the system maintains detailed logs including:
 
 - Trial processing progress
 - GPT API costs
 - Perplexity API calls
 - Eligibility decisions and reasons
 - Recommendation levels and reasons
+- Trial comparison details and ranking reasoning
 - Error messages and debugging information
 
-Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log` and `analyze_filtered_trials_YYYYMMDD_HHMMSS.log`
+Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHMMSS.log`, `analyze_filtered_trials_YYYYMMDD_HHMMSS.log`, and `trial_ranking_YYYYMMDD_HHMMSS.log`
 
 ## Future Work
 
