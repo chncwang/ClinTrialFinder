@@ -17,41 +17,13 @@ if TYPE_CHECKING:
     from base.perplexity import PerplexityClient
 
 CLINICAL_TRIAL_SYSTEM_PROMPT = (
-    "<role>You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
-    "Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care.</role>\n\n"
-    "<task>Your task is to assess if a clinical trial would be beneficial for a patient. "
-    "You will analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
-    "You must provide your assessment in a JSON format with a recommendation level and detailed reasoning.</task>\n\n"
-    "<recommendation_levels>The possible recommendation levels are:\n\n"
-    "- Strongly Recommended\n"
-    "- Recommended\n"
-    "- Neutral\n"
-    "- Not Recommended</recommendation_levels>\n\n"
-    "<output_format>You must respond with a JSON object containing:\n"
-    "- reason: A detailed explanation of your recommendation based on the evidence provided\n"
-    "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
+    "You are a clinical research expert with extensive experience in evaluating patient eligibility and treatment outcomes. "
+    "Your expertise includes analyzing clinical trials, published research, and making evidence-based recommendations for patient care."
 )
 
 TRIAL_COMPARISON_SYSTEM_PROMPT = (
-    "<role>You are an experienced oncologist and clinical trial specialist with expertise in personalized medicine and evidence-based treatment selection. "
-    "Your role is to act as the patient's advocate, carefully analyzing clinical trial options to determine which would provide the best potential outcome for the specific patient.</role>\n\n"
-    "<task>Your task is to compare two clinical trials and determine which one would be better suited for a specific patient based on their clinical record. "
-    "You will analyze both trials' characteristics, drug effectiveness data, and other relevant factors to make an informed decision. "
-    "You must provide your assessment in a JSON format with concise reasoning for your choice.</task>\n\n"
-    "<evaluation_criteria>Consider the following factors when comparing trials:\n\n"
-    "- Patient's specific conditions and how they align with trial eligibility\n"
-    "- Trial design and methodology (including phase, study type, and treatment arms), with particular attention to the implications for the patient if assigned to the control arm\n"
-    "- Drug effectiveness evidence and safety profiles\n"
-    "- Potential benefits vs. risks for the specific patient\n"
-    "- Trial status and availability</evaluation_criteria>\n\n"
-    "<output_format>You must respond with a JSON object containing:\n"
-    "- reason: A concise explanation (max 50 words) of why one trial is better, or why neither trial is suitable\n"
-    "- better_trial: The NCT ID of the better trial, or 'neither' if both trials are equally unsuitable</output_format>\n\n"
-    "<decision_guidance>When making your decision:\n"
-    "- Prioritize patient safety and potential benefit\n"
-    "- Consider the strength of evidence supporting each trial\n"
-    "- If both trials are equally poor matches or unsuitable, choose 'neither'\n"
-    "- Keep reasoning concise and focused on key factors</decision_guidance>\n\n"
+    "You are an experienced oncologist and clinical trial specialist with expertise in personalized medicine and evidence-based treatment selection. "
+    "Your role is to act as the patient's advocate, carefully analyzing clinical trial options to determine which would provide the best potential outcome for the specific patient."
 )
 
 
@@ -106,17 +78,23 @@ def build_recommendation_prompt(
         drug_analysis_str += "</drug_analyses>"
 
     return (
+        "<task>Assess if this clinical trial would be beneficial for the patient. "
+        "Analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
+        "You must provide your assessment in a JSON format with a recommendation level and detailed reasoning.</task>\n\n"
+        "<recommendation_levels>The possible recommendation levels are:\n\n"
+        "- Strongly Recommended\n"
+        "- Recommended\n"
+        "- Neutral\n"
+        "- Not Recommended</recommendation_levels>\n\n"
+        "<output_format>You must respond with a JSON object containing:\n"
+        "- reason: A detailed explanation of your recommendation based on the evidence provided\n"
+        "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
+        "<output_request>Based on the clinical record, trial information, and drug effectiveness analysis (if available), "
+        "evaluate if this trial would be beneficial for the patient. Consider both the patient's condition and the evidence "
+        "regarding the trial's treatment approach.</output_request>\n\n"
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>'
-        f"{drug_analysis_str}\n\n"
-        "<output_format>\nProvide your response as a JSON object with the following structure:\n"
-        "{\n"
-        '  "reason": "detailed explanation of your recommendation based on the clinical record, trial information, and drug analyses",\n'
-        '  "recommendation": "one of: Strongly Recommended, Recommended, Neutral, Not Recommended"\n'
-        "}\n</output_format>\n\n"
-        "<output_request>\nBased on the clinical record, trial information, and drug effectiveness analysis (if available), "
-        "evaluate if this trial would be beneficial for the patient. Consider both the patient's condition and the evidence "
-        "regarding the trial's treatment approach.</output_request>"
+        f"{drug_analysis_str}"
     )
 
 
@@ -385,10 +363,25 @@ def compare_trials(
     trial2_info = build_trial_info(trial2)
 
     comparison_prompt = (
+        "<task>Compare these two clinical trials and determine which one would be better suited for this specific patient based on their clinical record. "
+        "Analyze both trials' characteristics, drug effectiveness data, and other relevant factors to make an informed decision.</task>\n\n"
+        "<evaluation_criteria>Consider the following factors when comparing trials:\n\n"
+        "- Patient's specific conditions and how they align with trial eligibility\n"
+        "- Trial design and methodology (including phase, study type, and treatment arms), with particular attention to the implications for the patient if assigned to the control arm\n"
+        "- Drug effectiveness evidence and safety profiles\n"
+        "- Potential benefits vs. risks for the specific patient\n"
+        "- Trial status and availability</evaluation_criteria>\n\n"
+        "<output_format>You must respond with a JSON object containing:\n"
+        "- reason: A concise explanation (max 50 words) of why one trial is better, or why neither trial is suitable\n"
+        "- better_trial: The NCT ID of the better trial, or 'neither' if both trials are equally unsuitable</output_format>\n\n"
+        "<decision_guidance>When making your decision:\n"
+        "- Prioritize patient safety and potential benefit\n"
+        "- Consider the strength of evidence supporting each trial\n"
+        "- If both trials are equally poor matches or unsuitable, choose 'neither'\n"
+        "- Keep reasoning concise and focused on key factors</decision_guidance>\n\n"
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f"<trial1_info>\n{trial1_info}\n</trial1_info>\n\n"
-        f"<trial2_info>\n{trial2_info}\n</trial2_info>\n\n"
-        "Please compare these two clinical trials and determine which would be better for this patient, or if neither is suitable."
+        f"<trial2_info>\n{trial2_info}\n</trial2_info>"
     )
     logger.info(f"compare_trials: Comparison Prompt:\n{comparison_prompt}")
 
@@ -800,10 +793,10 @@ Patient Conditions to Evaluate:
         """Check if a criterion contains top-level OR logic using GPT."""
         prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
 
-Criterion: {criterion}
-
 Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
-{{"is_or_criterion": true/false}}"""
+{{"is_or_criterion": true/false}}
+
+Criterion: {criterion}"""
 
         try:
             response_content, _ = self._call_gpt(
