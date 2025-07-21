@@ -390,7 +390,8 @@ def is_oncology_disease(disease_name: str) -> bool:
     - bool: True if the disease is oncology-related, False otherwise
     """
     oncology_keywords = [
-        'cancer', 'carcinoma', 'sarcoma', 'leukemia', 'lymphoma', 'tumor', 'neoplasm'
+        'cancer', 'carcinoma', 'sarcoma', 'leukemia', 'lymphoma', 'tumor', 'neoplasm',
+        'onco', 'malignancy', 'melanoma', 'blastoma', 'myeloma', 'metastatic'
     ]
     disease_name_lower = disease_name.lower()
     return any(kw in disease_name_lower for kw in oncology_keywords)

@@ -364,6 +364,17 @@ def compare_trials(
     trial1_info = build_trial_info(trial1)
     trial2_info = build_trial_info(trial2)
 
+    if is_oncology_disease(disease):
+        oncology_guidance = (
+            "<oncology_guidance>"
+            "You should infer whether the patient is heavily pretreated or treatment-naive from the clinical record. "
+            "Prioritize Phase 2 trials for heavily pretreated patients, and Phase 3 trials for those with no or minimal prior treatment. "
+            "If both trials are the same phase, or the patient's status is unclear, use your best judgment based on the other criteria."
+            "</oncology_guidance>\n\n"
+        )
+    else:
+        oncology_guidance = ""
+
     comparison_prompt = (
         "<task>Compare these two clinical trials and determine which one would be better suited for this specific patient based on their clinical record. "
         "Analyze both trials' characteristics, drug effectiveness data, and other relevant factors to make an informed decision.</task>\n\n"
@@ -373,6 +384,7 @@ def compare_trials(
         "- Drug effectiveness evidence and safety profiles\n"
         "- Potential benefits vs. risks for the specific patient\n"
         "- Trial status and availability</evaluation_criteria>\n\n"
+        f"{oncology_guidance}"
         "<output_format>You must respond with a JSON object containing:\n"
         "- reason: A concise explanation (max 50 words) of why one trial is better, or why neither trial is suitable\n"
         "- better_trial: The NCT ID of the better trial, or 'neither' if both trials are equally unsuitable</output_format>\n\n"
