@@ -10,6 +10,7 @@ from typing import List, Tuple
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.trial_expert import compare_trials
+from base.disease_expert import extract_disease_from_record
 
 # Global logger instance
 logger = None
@@ -78,6 +79,7 @@ def log_trial_details(trial):
 def partition(
     trials: List[ClinicalTrial],
     clinical_record: str,
+    disease: str,
     low: int,
     high: int,
     gpt_client: GPTClient,
@@ -85,6 +87,13 @@ def partition(
     """
     Partition trials using the last element as pivot.
     Returns the position of the pivot after partitioning and the total cost.
+    Args:
+        trials: List of trials to rank
+        clinical_record: Patient's clinical record
+        disease: Patient's disease
+        low: Low index
+        high: High index
+        gpt_client: GPT client for comparisons
     """
     pivot = trials[high]
     i = low - 1
@@ -94,6 +103,7 @@ def partition(
         # Compare current trial with pivot
         better_trial, _, cost = compare_trials(
             clinical_record,
+            disease,
             trials[j],
             pivot,
             gpt_client,
@@ -125,6 +135,7 @@ def partition(
 def quicksort(
     trials: List[ClinicalTrial],
     clinical_record: str,
+    disease: str,
     low: int,
     high: int,
     gpt_client: GPTClient,
@@ -137,14 +148,14 @@ def quicksort(
     if low < high:
         # Find pivot position
         pivot_pos, partition_cost = partition(
-            trials, clinical_record, low, high, gpt_client
+            trials, clinical_record, disease, low, high, gpt_client
         )
         total_cost += partition_cost
 
         # Recursively sort sub-arrays
-        total_cost += quicksort(trials, clinical_record, low, pivot_pos - 1, gpt_client)
+        total_cost += quicksort(trials, clinical_record, disease, low, pivot_pos - 1, gpt_client)
         total_cost += quicksort(
-            trials, clinical_record, pivot_pos + 1, high, gpt_client
+            trials, clinical_record, disease, pivot_pos + 1, high, gpt_client
         )
 
     return total_cost
@@ -153,6 +164,7 @@ def quicksort(
 def rank_trials(
     trials: List[ClinicalTrial],
     clinical_record: str,
+    disease: str,
     gpt_client: GPTClient,
     seed: int = 42,  # Default seed for reproducibility
 ) -> tuple[List[ClinicalTrial], float]:
@@ -200,6 +212,7 @@ def rank_trials(
     total_cost = quicksort(
         trial_objects,
         clinical_record,
+        disease,
         0,
         len(trial_objects) - 1,
         gpt_client,
@@ -255,9 +268,13 @@ def main():
         # Initialize GPT client
         gpt_client = GPTClient(api_key=args.openai_api_key)
 
+        # Extract disease from clinical record
+        disease, _ = extract_disease_from_record(clinical_record, gpt_client)
+        logger.info(f"Disease: {disease}")
+
         # Rank trials with specified seed
         ranked_trials, total_cost = rank_trials(
-            trials, clinical_record, gpt_client, seed=args.seed
+            trials, clinical_record, disease, gpt_client, seed=args.seed
         )
 
         # Log ranked trials

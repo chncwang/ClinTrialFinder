@@ -6,7 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from base.clinical_trial import ClinicalTrial
-from base.disease_expert import extract_disease_from_record
+from base.disease_expert import extract_disease_from_record, is_oncology_disease
 from base.drug_analyzer import analyze_drug_effectiveness
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, save_json_list_file
@@ -334,6 +334,7 @@ def analyze_drugs_and_get_recommendation(
 
 def compare_trials(
     clinical_record: str,
+    disease: str,
     trial1: ClinicalTrial,
     trial2: ClinicalTrial,
     gpt_client: "GPTClient",
@@ -344,6 +345,7 @@ def compare_trials(
 
     Args:
         clinical_record (str): The patient's clinical record
+        disease (str): The patient's disease
         trial1 (ClinicalTrial): First trial to compare
         trial2 (ClinicalTrial): Second trial to compare
         gpt_client (GPTClient): Client for GPT-4 analysis

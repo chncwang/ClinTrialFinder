@@ -377,3 +377,20 @@ def convert_item_to_relative_time(
     except Exception as e:
         logger.error(f"Error converting time references: {e}")
         return item, 0.0
+
+
+def is_oncology_disease(disease_name: str) -> bool:
+    """
+    Returns True if the disease name is related to oncology (cancer), otherwise False.
+
+    Parameters:
+    - disease_name (str): The name of the disease to classify
+
+    Returns:
+    - bool: True if the disease is oncology-related, False otherwise
+    """
+    oncology_keywords = [
+        'cancer', 'carcinoma', 'sarcoma', 'leukemia', 'lymphoma', 'tumor', 'neoplasm'
+    ]
+    disease_name_lower = disease_name.lower()
+    return any(kw in disease_name_lower for kw in oncology_keywords)
