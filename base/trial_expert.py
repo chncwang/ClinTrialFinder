@@ -111,6 +111,7 @@ def build_trial_info(trial: ClinicalTrial) -> str:
     info_lines = [
         f"NCT ID: {trial.identification.nct_id}",
         f"Title: {trial.identification.brief_title}",
+        f"Phases: {', '.join(map(str, getattr(trial.design, 'phases', [])))}",
     ]
     info_lines.extend([
         f"Reason: {trial.analysis_reason}",
