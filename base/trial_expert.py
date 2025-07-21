@@ -80,18 +80,18 @@ def build_recommendation_prompt(
     return (
         "<task>Assess if this clinical trial would be beneficial for the patient. "
         "Analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
-        "You must provide your assessment in a JSON format with a recommendation level and detailed reasoning.</task>\n\n"
+        "You must provide your assessment in a JSON format with a recommendation level and concise reasoning (at most 50 tokens).</task>\n\n"
         "<recommendation_levels>The possible recommendation levels are:\n\n"
         "- Strongly Recommended\n"
         "- Recommended\n"
         "- Neutral\n"
         "- Not Recommended</recommendation_levels>\n\n"
         "<output_format>You must respond with a JSON object containing:\n"
-        "- reason: A detailed explanation of your recommendation based on the evidence provided\n"
+        "- reason: A concise explanation (at most 50 tokens) of your recommendation based on the evidence provided\n"
         "- recommendation: One of the recommendation levels listed above</output_format>\n\n"
         "<output_request>Based on the clinical record, trial information, and drug effectiveness analysis (if available), "
         "evaluate if this trial would be beneficial for the patient. Consider both the patient's condition and the evidence "
-        "regarding the trial's treatment approach.</output_request>\n\n"
+        "regarding the trial's treatment approach. Your explanation must be concise (at most 50 tokens).</output_request>\n\n"
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>'
         f"{drug_analysis_str}"
