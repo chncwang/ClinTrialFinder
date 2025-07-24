@@ -1,7 +1,7 @@
 import json
 import logging
 import sys
-from typing import Any, Callable, Dict, List, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, List, Tuple, TypeVar
 
 from base.gpt_client import GPTClient
 
@@ -31,7 +31,7 @@ def parse_json_response(
     expected_type: type[T],
     gpt_client: GPTClient,
     cost: float = 0.0,
-    validation_func: Callable[[Any], bool] = None,
+    validation_func: Callable[[Any], bool] | None = None,
 ) -> Tuple[T, float]:
     """
     Parse a JSON response and attempt to correct it if invalid.
@@ -104,7 +104,7 @@ def parse_json_response(
         raise ValueError(f"Error parsing JSON response: {e}. Raw response: {response}")
 
 
-def load_json_list_file(file_path: str) -> List[dict]:
+def load_json_list_file(file_path: str) -> List[Dict[str, Any]]:
     """Load and parse a JSON file containing a list of objects."""
     try:
         with open(file_path, "r") as f:
@@ -119,7 +119,7 @@ def load_json_list_file(file_path: str) -> List[dict]:
         sys.exit(1)
 
 
-def save_json_list_file(data: List[Dict], output_path: str, file_type: str = "results"):
+def save_json_list_file(data: List[Dict[str, Any]], output_path: str, file_type: str = "results"):
     """Save a list of dictionaries to a JSON file.
 
     Args:
