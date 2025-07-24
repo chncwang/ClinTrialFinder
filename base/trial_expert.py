@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any
 
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
@@ -41,7 +41,7 @@ class RecommendationLevel(Enum):
 def build_recommendation_prompt(
     clinical_record: str,
     trial_info: ClinicalTrial,
-    drug_analyses: dict[str, str] = None,
+    drug_analyses: Optional[dict[str, str]] = None,
 ) -> str:
     """
     Constructs a prompt for an AI to evaluate patient clinical record against trial information
@@ -535,7 +535,7 @@ class GPTTrialFilter:
 
     def _call_gpt_with_retry(
         self, prompt: str, system_role: str, model: str, max_retries: int = 3
-    ) -> Tuple[str, float]:
+    ) -> Tuple[Union[str, Dict[str, Any]], float]:
         return self.gpt_client.call_with_retry(
             prompt,
             system_role,
@@ -544,7 +544,7 @@ class GPTTrialFilter:
             validate_json=True,
         )
 
-    def _parse_gpt_response(self, response_content: str) -> dict:
+    def _parse_gpt_response(self, response_content: str) -> Dict[str, Any]:
         """Parse GPT response content into JSON, with error handling."""
         try:
             # First try to parse the response directly
@@ -579,7 +579,7 @@ class GPTTrialFilter:
                 # If all attempts fail, raise the original error
                 raise ValueError(f"Failed to parse GPT response as JSON: {str(e)}")
 
-    def _parse_gpt_response_with_fallback(self, response_content: str) -> dict:
+    def _parse_gpt_response_with_fallback(self, response_content: str) -> Dict[str, Any]:
         try:
             return json.loads(response_content)
         except json.JSONDecodeError:
@@ -608,7 +608,7 @@ class GPTTrialFilter:
                 "reason": "Failed to parse GPT response",
             }
 
-    def _validate_gpt_response(self, parsed_response: dict) -> dict:
+    def _validate_gpt_response(self, parsed_response: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the GPT response has required fields and valid values.
 
@@ -699,6 +699,7 @@ Patient Conditions to Evaluate:
 
         max_retries = 3
         total_cost = 0.0
+        response_content = ""
 
         for attempt in range(max_retries):
             try:
@@ -725,6 +726,13 @@ Patient Conditions to Evaluate:
                         "Unable to confidently evaluate title due to parsing errors - treating as uncertain",
                         total_cost,
                     )
+
+        # If we get here, all retries were exhausted
+        return (
+            0.5,
+            "Unable to confidently evaluate title due to parsing errors - treating as uncertain",
+            total_cost,
+        )
 
     def evaluate_inclusion_criterion(
         self, criterion: str, conditions: List[str], title: str
@@ -959,7 +967,7 @@ Reference list of valid conditions:
         trial_title: str,
         num_conditions: int = 5,
         refresh_cache: bool = False,
-        need_to_note_list: List[str] = None,
+        need_to_note_list: Optional[List[str]] = None,
     ) -> List[str]:
         """Choose the most relevant conditions from a list of conditions for a given branch."""
         if num_conditions >= len(conditions):
@@ -1039,11 +1047,11 @@ Patient Conditions:
             logger.info(
                 f"GPTTrialFilter.choose_most_relevant_conditions: Branch: {branch}, Result: {result}"
             )
-            relevant_conditions = result.get("relevant_conditions", [conditions[0]])
+            relevant_conditions: List[str] = result.get("relevant_conditions", [conditions[0]])
 
             # Validate each condition using GPT
-            validated_conditions = []
-            invalid_conditions = []
+            validated_conditions: List[str] = []
+            invalid_conditions: List[str] = []
 
             for condition in relevant_conditions:
                 # First check for exact match for efficiency
@@ -1266,8 +1274,7 @@ Inclusion Criteria Text:
         """
         branch_max_prob = 0.0
         branch_cost_sum = 0.0
-        branch_results = {condition: [] for condition in conditions}
-        global_need_to_note_list = []
+        branch_results: Dict[str, List[CriterionEvaluation]] = {condition: [] for condition in conditions}
 
         # Process each branch sequentially
         for branch in branches:
@@ -1575,18 +1582,24 @@ def process_trials_with_conditions(
                     "nct_id": trial.identification.nct_id,
                     "brief_title": trial.identification.brief_title,
                     "eligibility_criteria": trial.eligibility.criteria,
-                    "failure_type": failure_reason.type,
-                    "failure_message": failure_reason.message,
                 }
+                
+                # Add failure information if available
+                if failure_reason is not None:
+                    excluded_info.update({
+                        "failure_type": failure_reason.type,
+                        "failure_message": failure_reason.message,
+                    })
 
-                if failure_reason.type == "inclusion_criterion":
-                    excluded_info.update(
-                        {
-                            "failed_condition": failure_reason.failed_condition,
-                            "failed_criterion": failure_reason.failed_criterion,
-                            "failure_details": failure_reason.failure_details,
-                        }
-                    )
+                    if failure_reason.type == "inclusion_criterion":
+                        excluded_info["failed_condition"] = failure_reason.failed_condition
+                        excluded_info["failed_criterion"] = failure_reason.failed_criterion
+                        excluded_info["failure_details"] = failure_reason.failure_details
+                else:
+                    excluded_info.update({
+                        "failure_type": "unknown",
+                        "failure_message": "No failure reason provided",
+                    })
 
                 if (
                     hasattr(trial, "recommendation_level")
