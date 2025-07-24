@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def run_test(input_file):
+def run_test(input_file: str):
     """Run tests for multi-recommendation filtering"""
 
     logger.info("Testing single recommendation level filter (Recommended)")

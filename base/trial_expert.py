@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any, cast
 
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
@@ -120,13 +120,21 @@ def build_trial_info(trial: ClinicalTrial) -> str:
     
     # Add arms information if available
     if trial.design.arms:
-        arms_info = []
+        arms_info: List[str] = []
         for i, arm in enumerate(trial.design.arms, 1):
             arm_str = f"Arm {i}: {arm.get('name', 'N/A')} ({arm.get('type', 'N/A')})"
             if arm.get('description'):
                 arm_str += f" - {arm['description']}"
             if arm.get('interventions'):
-                arm_str += f" - Interventions: {', '.join(arm['interventions'])}"
+                interventions = arm['interventions']
+                if isinstance(interventions, list):
+                    intervention_strs: List[str] = []
+                    for x in cast(List[Any], interventions):
+                        if x is not None:
+                            intervention_strs.append(str(x))
+                    arm_str += f" - Interventions: {', '.join(intervention_strs)}"
+                else:
+                    arm_str += f" - Interventions: {interventions}"
             arms_info.append(arm_str)
         info_lines.append(f"Arms: {'; '.join(arms_info)}")
     
@@ -303,12 +311,9 @@ def analyze_drugs_and_get_recommendation(
     )
     total_cost += cost
 
-    if completion is None:
-        raise RuntimeError("Failed to get AI analysis")
-
     # Use the existing parse_json_response utility for robust error handling
     try:
-        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
+        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)  # type: ignore
         total_cost += correction_cost
 
         # Ensure required fields are present
@@ -316,7 +321,7 @@ def analyze_drugs_and_get_recommendation(
             raise ValueError(
                 "JSON response missing 'reason' or 'recommendation' fields"
             )
-    except ValueError as e:
+    except ValueError:
         logger.error(
             f"analyze_drugs_and_get_recommendation: Failed to convert to valid JSON: {completion}"
         )
@@ -412,9 +417,6 @@ def compare_trials(
                 refresh_cache=refresh_cache or attempt > 0,
             )
             total_cost += cost
-
-            if completion is None:
-                raise RuntimeError("Failed to get trial comparison")
 
             # Parse the comparison response
             try:
@@ -1164,7 +1166,7 @@ Example response:
 Inclusion Criteria Text:
 {criteria}"""
 
-        response_content, cost = self._call_gpt(
+        response_content, _ = self._call_gpt(
             prompt,
             "You are a clinical trial analyst focused on parsing inclusion criteria.",
             model="gpt-4.1-mini",  # Use GPT-4 Mini for parsing
@@ -1173,7 +1175,7 @@ Inclusion Criteria Text:
         )
         try:
             result = self._parse_gpt_response(response_content)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             logger.error(
                 f"GPTTrialFilter.split_inclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
             )
@@ -1222,10 +1224,10 @@ Inclusion Criteria Text:
         Evaluate a branch against given conditions.
         """
         cost_sum = 0.0
-        branch_condition_evaluations = {}
+        branch_condition_evaluations: Dict[str, CriterionEvaluation] = {}
 
         # Get the most relevant conditions with validation
-        need_to_note_list = []
+        need_to_note_list: List[str] = []
         most_relevant_conditions = self.choose_most_relevant_conditions(
             branch, conditions, trial_title, need_to_note_list=need_to_note_list
         )
@@ -1401,7 +1403,7 @@ Inclusion Criteria Text:
             else:
                 logger.info(f"Non-OR criterion detected: {criterion}")
                 # Choose the most relevant condition for this criterion
-                need_to_note_list = []
+                need_to_note_list: List[str] = []
                 most_relevant_conditions: List[str] = (
                     self.choose_most_relevant_conditions(
                         criterion,
@@ -1549,8 +1551,8 @@ def process_trials_with_conditions(
     Returns:
         Tuple of (total API cost, number of eligible trials)
     """
-    filtered_trials = []
-    excluded_trials = []
+    filtered_trials: List[Dict[str, Any]] = []
+    excluded_trials: List[Dict[str, Any]] = []
     total_trials = len(trials)
     total_cost = 0.0
     eligible_count = 0

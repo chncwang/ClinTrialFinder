@@ -4,6 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from base.gpt_client import GPTClient
+
 # Set up logging
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -69,7 +71,7 @@ class Design:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Design":
         raw_phases = data.get("phases", [])
-        parsed_phases = []
+        parsed_phases: List[int] = []
 
         for phase in raw_phases:
             try:
@@ -316,7 +318,10 @@ Example: {{"drug_names": ["BMS-936558", "nivolumab"]}}"""
                 validate_json=True,
             )
 
-            drug_names = response.get("drug_names", [])
+            if isinstance(response, dict):
+                drug_names: List[str] = response.get("drug_names", []) or []
+            else:
+                drug_names: List[str] = []
             return drug_names, cost
 
         except Exception as e:

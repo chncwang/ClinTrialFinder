@@ -1,9 +1,9 @@
-import hashlib
 import json
 import logging
 import time
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ class PromptCache:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
-        self.cache_data = OrderedDict()
+        self.cache_data: OrderedDict[str, str] = OrderedDict()
         self.last_save_time = 0
         self.modified_since_save = False
         self._load_cache()
@@ -33,11 +33,11 @@ class PromptCache:
                 logger.info(f"Loaded {len(self.cache_data)} cache entries in {load_time:.2f}s")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load cache: {str(e)}")
-                self.cache_data = OrderedDict()
+                self.cache_data: OrderedDict[str, str] = OrderedDict()
         else:
             logger.info(f"No cache file found at {cache_path}")
 
-    def _save_cache(self, force=False):
+    def _save_cache(self, force: bool = False):
         """Save the cache to disk if modified or forced."""
         current_time = time.time()
         # Only save if it's been modified and either forced or it's been > 5 minutes
@@ -73,7 +73,7 @@ class PromptCache:
         logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
         return None
 
-    def set(self, cache_key: str, result: str):
+    def set(self, cache_key: str, result: Any):
         """Cache result for a given cache key."""
         logger.debug(f"Caching result for key: {cache_key[:8]}...")
 

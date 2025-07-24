@@ -7,11 +7,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
+from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
-from base.utils import load_json_list_file
 
 # Configure logging with timestamp in filename
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

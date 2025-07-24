@@ -4,8 +4,7 @@ import json
 import logging
 import random
 from datetime import datetime
-from pathlib import Path
-from typing import List, Tuple
+from typing import List, Any
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
@@ -14,6 +13,15 @@ from base.disease_expert import extract_disease_from_record
 
 # Global logger instance
 logger = None
+
+
+def get_logger() -> logging.Logger:
+    """Get the logger instance, initializing it if necessary."""
+    global logger
+    if logger is None:
+        setup_logging()
+    assert logger is not None  # Type checker hint
+    return logger
 
 
 def setup_logging():
@@ -52,28 +60,28 @@ def setup_logging():
     return logger
 
 
-def read_trials_file(file_path):
+def read_trials_file(file_path: str):
     """Read and parse the trials JSON file."""
     try:
         with open(file_path, "r") as f:
             return json.load(f)
     except json.JSONDecodeError as e:
-        logger.error(f"Error parsing JSON file: {e}")
+        get_logger().error(f"Error parsing JSON file: {e}")
         raise
     except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
+        get_logger().error(f"File not found: {file_path}")
         raise
 
 
-def log_trial_details(trial):
+def log_trial_details(trial: ClinicalTrial):
     """Log relevant details for each trial."""
-    logger.info("=" * 80)
-    logger.info(f"Trial ID: {trial.identification.nct_id}")
-    logger.info(f"Title: {trial.identification.brief_title}")
-    logger.info(f"Drug Analysis: {trial.drug_analysis}")
-    logger.info(f"Recommendation Level: {trial.recommendation_level}")
-    logger.info(f"Analysis Reason: {trial.analysis_reason}")
-    logger.info("=" * 80)
+    get_logger().info("=" * 80)
+    get_logger().info(f"log_trial_details: Trial ID: {trial.identification.nct_id}")
+    get_logger().info(f"log_trial_details: Title: {trial.identification.brief_title}")
+    get_logger().info(f"log_trial_details: Drug Analysis: {trial.drug_analysis}")
+    get_logger().info(f"log_trial_details: Recommendation Level: {trial.recommendation_level}")
+    get_logger().info(f"log_trial_details: Analysis Reason: {trial.analysis_reason}")
+    get_logger().info("=" * 80)
 
 
 def partition(
@@ -114,12 +122,11 @@ def partition(
         trial1_title = trials[j].identification.brief_title
         trial2_title = pivot.identification.brief_title
         better_title = better_trial.identification.brief_title
-        worse_title = trial1_title if better_trial == pivot else trial2_title
 
-        logger.info(
-            f"Comparison: '{trial1_title}' vs '{trial2_title}'"
-            f"\nBetter trial: '{better_title}'"
-            f"\nCost: ${cost:.6f}, Total: ${total_cost:.6f}"
+        get_logger().info(
+            f"partition: Comparison: '{trial1_title}' vs '{trial2_title}'"
+            f"\npartition: Better trial: '{better_title}'"
+            f"\npartition: Cost: ${cost:.6f}, Total: ${total_cost:.6f}"
         )
 
         # If current trial is better than pivot
@@ -162,7 +169,7 @@ def quicksort(
 
 
 def rank_trials(
-    trials: List[ClinicalTrial],
+    trials: List[Any],
     clinical_record: str,
     disease: str,
     gpt_client: GPTClient,
@@ -188,25 +195,25 @@ def rank_trials(
     ]
 
     # Log first 10 trial titles before shuffle
-    logger.info("First 10 trial titles before shuffle:")
+    get_logger().info("rank_trials: First 10 trial titles before shuffle:")
     for i in range(min(10, len(trial_objects))):
-        logger.info(f"{i+1}. {trial_objects[i].identification.brief_title}")
+        get_logger().info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
 
     # Randomize trials before sorting
     random.seed(seed)
-    logger.info(f"Randomized {len(trial_objects)} trials before sorting (seed: {seed})")
-    logger.info(
-        f"Initial pivotal trial title (last position): {trial_objects[-1].identification.brief_title}"
+    get_logger().info(f"rank_trials: Randomized {len(trial_objects)} trials before sorting (seed: {seed})")
+    get_logger().info(
+        f"rank_trials: Initial pivotal trial title (last position): {trial_objects[-1].identification.brief_title}"
     )
     random.shuffle(trial_objects)
-    logger.info(
-        f"Pivotal trial title after randomization (last position): {trial_objects[-1].identification.brief_title}"
+    get_logger().info(
+        f"rank_trials: Pivotal trial title after randomization (last position): {trial_objects[-1].identification.brief_title}"
     )
 
     # Log first 10 trial titles after shuffle
-    logger.info("First 10 trial titles after shuffle:")
+    get_logger().info("rank_trials: First 10 trial titles after shuffle:")
     for i in range(min(10, len(trial_objects))):
-        logger.info(f"{i+1}. {trial_objects[i].identification.brief_title}")
+        get_logger().info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
 
     # Sort trials using quicksort
     total_cost = quicksort(
@@ -217,7 +224,7 @@ def rank_trials(
         len(trial_objects) - 1,
         gpt_client,
     )
-    logger.info(f"Total cost of ranking: ${total_cost:.6f}")
+    get_logger().info(f"rank_trials: Total cost of ranking: ${total_cost:.6f}")
 
     return trial_objects, total_cost
 
@@ -252,7 +259,7 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    logger.info(f"Starting trial ranking process for file: {args.input_file}")
+    get_logger().info(f"main: Starting trial ranking process for file: {args.input_file}")
 
     try:
         # Read trials and clinical record
@@ -260,9 +267,9 @@ def main():
         with open(args.clinical_record_file, "r") as f:
             clinical_record = f.read().strip()
 
-        logger.info(f"Successfully loaded {len(trials)} trials from {args.input_file}")
-        logger.info(
-            f"Successfully loaded clinical record from {args.clinical_record_file}"
+        get_logger().info(f"main: Successfully loaded {len(trials)} trials from {args.input_file}")
+        get_logger().info(
+            f"main: Successfully loaded clinical record from {args.clinical_record_file}"
         )
 
         # Initialize GPT client
@@ -270,7 +277,9 @@ def main():
 
         # Extract disease from clinical record
         disease, _ = extract_disease_from_record(clinical_record, gpt_client)
-        logger.info(f"Disease: {disease}")
+        if disease is None:
+            disease = "Unknown disease"
+        get_logger().info(f"main: Disease: {disease}")
 
         # Rank trials with specified seed
         ranked_trials, total_cost = rank_trials(
@@ -278,40 +287,41 @@ def main():
         )
 
         # Log ranked trials
-        logger.info("\nRanked Trials (from best to worst):")
+        get_logger().info("\nmain: Ranked Trials (from best to worst):")
         for i, trial in enumerate(ranked_trials, 1):
-            logger.info(f"\nRank {i}:")
+            get_logger().info(f"\nmain: Rank {i}:")
             log_trial_details(trial)
 
         # Save ranked trials to file
         output_file = f"ranked_trials_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(output_file, "w") as f:
             json.dump([trial.to_dict() for trial in ranked_trials], f, indent=2)
-        logger.info(f"\nRanked trials saved to: {output_file}")
+        get_logger().info(f"\nmain: Ranked trials saved to: {output_file}")
 
         # Generate CSV output if requested
+        csv_output_file = None
         if args.csv_output:
             try:
                 from scripts.json_to_csv_converter import convert_json_to_csv
                 csv_output_file = convert_json_to_csv(output_file)
-                logger.info(f"CSV output saved to: {csv_output_file}")
+                get_logger().info(f"main: CSV output saved to: {csv_output_file}")
             except ImportError:
-                logger.warning("CSV conversion module not available. Skipping CSV output.")
+                get_logger().warning("main: CSV conversion module not available. Skipping CSV output.")
             except Exception as e:
-                logger.error(f"Error generating CSV output: {e}")
+                get_logger().error(f"main: Error generating CSV output: {e}")
 
         # Log summary
-        logger.info("\n" + "=" * 80)
-        logger.info(f"TRIAL RANKING SUMMARY")
-        logger.info(f"Total number of trials ranked: {len(ranked_trials)}")
-        logger.info(f"Total cost of ranking: ${total_cost:.6f}")
-        logger.info(f"Output file: {output_file}")
-        if args.csv_output:
-            logger.info(f"CSV output: {csv_output_file}")
-        logger.info("=" * 80)
+        get_logger().info("\n" + "=" * 80)
+        get_logger().info(f"main: TRIAL RANKING SUMMARY")
+        get_logger().info(f"main: Total number of trials ranked: {len(ranked_trials)}")
+        get_logger().info(f"main: Total cost of ranking: ${total_cost:.6f}")
+        get_logger().info(f"main: Output file: {output_file}")
+        if args.csv_output and csv_output_file:
+            get_logger().info(f"main: CSV output: {csv_output_file}")
+        get_logger().info("main: " + "=" * 80)
 
     except Exception as e:
-        logger.error(f"An error occurred: {e}", exc_info=True)
+        get_logger().error(f"main: An error occurred: {e}", exc_info=True)
         raise
 
 

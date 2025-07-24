@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 import argparse
 import datetime
-import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+
 
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
-from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
-from base.gpt_client import GPTClient
+from base.clinical_trial import ClinicalTrialsParser, ClinicalTrial
 from base.trial_expert import (
     GPTTrialFilter,
-    RecommendationLevel,
-    TrialFailureReason,
     process_trials_with_conditions,
 )
-from base.utils import load_json_list_file, save_json_list_file
+from base.utils import load_json_list_file
+from typing import List
 
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -111,7 +108,7 @@ def main():
 
     # Initialize GPT filter only if needed
     gpt_filter = None
-    if args.conditions:
+    if args.conditions and api_key:
         gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
 
     json_data = load_json_list_file(args.json_file)
@@ -140,7 +137,7 @@ def main():
 
     if args.recommendation_level:
         # For multiple recommendation levels, collect trials that match any of the specified levels
-        filtered_trials = []
+        filtered_trials: List[ClinicalTrial] = []
         for level in args.recommendation_level:
             level_filtered = trials_parser.get_trials_by_recommendation_level(level)
             # Add trials that aren't already in filtered_trials
@@ -161,7 +158,7 @@ def main():
         )
 
     # Process trials with conditions and save results
-    total_cost, eligible_count = process_trials_with_conditions(
+    total_cost, _ = process_trials_with_conditions(
         trials, args.conditions, args.output, gpt_filter
     )
 

@@ -5,16 +5,15 @@
 
 
 import json
+from typing import Any, Dict, List
+from scrapy import Item
 
 # useful for handling different item types with a single interface
-from itemadapter import ItemAdapter
-
-
 class JsonWriterPipeline:
     def __init__(self):
-        self.items = []
+        self.items: List[Dict[str, Any]] = []
 
-    def process_item(self, item, spider):
+    def process_item(self, item: Item, spider: Any) -> Item:
         self.items.append(dict(item))
         if hasattr(spider, "output_file") and spider.output_file:
             # Write immediately for single-trial fetches
@@ -22,7 +21,7 @@ class JsonWriterPipeline:
                 json.dump([dict(item)], f)
         return item
 
-    def close_spider(self, spider):
+    def close_spider(self, spider: Any) -> None:
         if not hasattr(spider, "output_file") or not spider.output_file:
             # Only write to default output if no specific file is specified
             with open("items.json", "w") as f:

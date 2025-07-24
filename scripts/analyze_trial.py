@@ -6,20 +6,17 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
-
-import requests
+from typing import Any, Dict, List
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-from base.clinical_trial import ClinicalTrial
-from base.disease_expert import extract_disease_from_record
-from base.drug_analyzer import analyze_drug_effectiveness
+from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
-from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recommendation
+from base.trial_expert import analyze_drugs_and_get_recommendation
 from base.utils import read_input_file
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
@@ -50,7 +47,7 @@ trial_expert_logger.propagate = True  # Allow propagation to root logger
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
 
 
-def fetch_trial_data(nct_id: str) -> list[dict]:
+def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
     """Fetch clinical trial data directly from ClinicalTrials.gov."""
     # Create a temporary file to store the spider output
     with tempfile.NamedTemporaryFile(
@@ -75,20 +72,21 @@ def fetch_trial_data(nct_id: str) -> list[dict]:
         process.start()  # This will block until the crawl is complete
 
         # Read the results
+        content = ""
         try:
             with open(temp_output, "r") as f:
                 content = f.read().strip()
                 if not content:
                     logger.error("No data was written to the output file")
                     return []
-                logger.debug(f"Read content: {content[:200]}...")
+                logger.debug(f"fetch_trial_data: Read content: {content[:200]}...")
                 return json.loads(content)
         except FileNotFoundError:
-            logger.error(f"Output file not found: {temp_output}")
+            logger.error(f"fetch_trial_data: Output file not found: {temp_output}")
             return []
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse spider output: {e}")
-            logger.error(f"Content of output file: {content[:200]}...")
+            logger.error(f"fetch_trial_data: Failed to parse spider output: {e}")
+            logger.error(f"fetch_trial_data: Content of output file: {content[:200]}...")
             return []
 
     finally:
@@ -140,13 +138,14 @@ def main():
         sys.exit(1)
 
     # Read clinical record from input file if specified
+    clinical_record = ""
     if args.input_file:
         clinical_record = read_input_file(args.input_file)
 
     # Fetch and parse the trial data
     nct_id: str = args.nct_id
     json_data = fetch_trial_data(nct_id)
-    trials_parser = ClinicalTrial(json_data)
+    trials_parser = ClinicalTrialsParser(json_data)
 
     # Find the specific trial
     trial = trials_parser.get_trial_by_nct_id(args.nct_id)
@@ -159,7 +158,7 @@ def main():
     gpt_client = GPTClient(api_key)
     # Replace the drug analysis and recommendation section with:
     try:
-        recommendation, reason, total_cost = analyze_drugs_and_get_recommendation(
+        recommendation, reason, _, total_cost = analyze_drugs_and_get_recommendation(
             clinical_record=clinical_record,
             trial=trial,
             perplexity_client=perplexity_client,

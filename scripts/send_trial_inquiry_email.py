@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 logger.info("Starting trial inquiry email script")
 
 
-def get_trial(trial_data_path, ctd_id):
+def get_trial(trial_data_path: str, ctd_id: str):
     """Read the trial data and return the trial object for the given CTD ID."""
     try:
         with open(trial_data_path, "r") as f:
@@ -84,7 +84,7 @@ def get_trial(trial_data_path, ctd_id):
         raise
 
 
-def generate_email_title(trial_title, ctd_id, lang, gpt_client):
+def generate_email_title(trial_title: str, ctd_id: str, lang: str, gpt_client: GPTClient) -> tuple[str, float]:
     """Generate an email title using GPT based on the trial information and language preference."""
     prompt = f"""Generate an email title for a clinical trial information inquiry from the perspective of a cancer patient.
 
@@ -116,7 +116,7 @@ Return ONLY the title text without any additional text or formatting."""
         return f"Clinical Trial Information Inquiry - {ctd_id}", 0.0
 
 
-def generate_email_body(trial_title, ctd_id, lang, gpt_client, name, contact):
+def generate_email_body(trial_title: str, ctd_id: str, lang: str, gpt_client: GPTClient, name: str, contact: str) -> tuple[str, float]:
     """Generate an email body using GPT based on the trial information and language preference."""
     # Read patient information if provided
     patient_info = ""
@@ -199,7 +199,7 @@ def send_trial_inquiry_email():
     email_title, title_gpt_cost = generate_email_title(
         trial_title, args.ctd_id, args.lang, gpt_client
     )
-    logger.info(f"send_trial_inquiry_email: Generated email title: {email_title}")
+    logger.info(f"send_trial_inquiry_email: Generated email title: {email_title} (cost: ${title_gpt_cost:.4f})")
 
     # Generate email body using GPT
     email_body, body_gpt_cost = generate_email_body(
@@ -211,14 +211,20 @@ def send_trial_inquiry_email():
 
     # Email configuration
     sender_email = os.getenv("GMAIL_USER")
+    if not sender_email:
+        raise ValueError("GMAIL_USER environment variable is required")
     logger.debug(f"send_trial_inquiry_email: Sender email configured: {sender_email}")
-    sender_password = os.getenv(
-        "GMAIL_APP_PASSWORD"
-    )  # Use App Password, not regular password
+    
+    sender_password = os.getenv("GMAIL_APP_PASSWORD")  # Use App Password, not regular password
+    if not sender_password:
+        raise ValueError("GMAIL_APP_PASSWORD environment variable is required")
     logger.debug(
         f"send_trial_inquiry_email: Sender password configured: {sender_password}"
     )
+    
     receiver_email = os.getenv("GMAIL_USER")  # For testing, sending to same email
+    if not receiver_email:
+        raise ValueError("GMAIL_USER environment variable is required for receiver email")
 
     # Create message
     message = MIMEMultipart()

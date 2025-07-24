@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 def analyze_drug_effectiveness(
     drug_name: str, disease: str, perplexity_client: PerplexityClient
-) -> Tuple[Optional[str], List[str], float]:
+) -> Tuple[Optional[str], Optional[List[str]], float]:
     """
     Analyzes the effectiveness of a drug for treating a specific disease using Perplexity AI.
 

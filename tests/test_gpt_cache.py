@@ -62,7 +62,7 @@ def main():
     test_repeated_calls(gpt_client)
     
 
-def test_basic_caching(gpt_client):
+def test_basic_caching(gpt_client: GPTClient) -> None:
     """Test that the cache works for identical prompts."""
     logger.info("=== Testing basic caching ===")
     
@@ -92,7 +92,7 @@ def test_basic_caching(gpt_client):
         logger.error("❌ Cache not working correctly!")
 
 
-def test_repeated_calls(gpt_client):
+def test_repeated_calls(gpt_client: GPTClient) -> None:
     """Test that cache performs well with repeated calls."""
     logger.info("\n=== Testing repeated calls ===")
     
@@ -105,7 +105,7 @@ def test_repeated_calls(gpt_client):
     
     logger.info("Populating cache with 5 unique prompts:")
     for prompt in unique_prompts:
-        result, cost = gpt_client.call_gpt(prompt, system_role)
+        _, cost = gpt_client.call_gpt(prompt, system_role)
         logger.info(f"  Prompt: {prompt}, Cost: ${cost:.6f}")
     
     # Now test with a mix of cache hits and misses
@@ -120,10 +120,10 @@ def test_repeated_calls(gpt_client):
     ]
     
     logger.info("\nTesting with mix of cache hits and misses:")
-    total_cost = 0
+    total_cost: float = 0
     for prompt in test_prompts:
         start_time = time.time()
-        result, cost = gpt_client.call_gpt(prompt, system_role)
+        _, cost = gpt_client.call_gpt(prompt, system_role)
         elapsed = time.time() - start_time
         total_cost += cost
         cache_status = "MISS" if cost > 0 else "HIT"

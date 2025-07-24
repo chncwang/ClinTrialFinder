@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Tuple, Optional, Any, Dict
 
 # Import the disease expert module for broader categories
 from base.disease_expert import get_parent_disease_categories
@@ -113,14 +114,14 @@ def parse_arguments():
     return args
 
 
-def get_output_filename(condition, args):
+def get_output_filename(condition: str, args: argparse.Namespace) -> str:
     """Generate output filename based on condition and args."""
     base_name = condition.replace(" ", "_").lower()
     suffix = "_uncompleted" if args.exclude_completed else ""
     return f"{base_name}{suffix}_trials.json"
 
 
-def download_trials(args, condition=None, output_file=None):
+def download_trials(args: argparse.Namespace, condition: Optional[str] = None, output_file: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """Download clinical trials using scrapy."""
     # Get the project root directory and change to crawler directory
     project_root = Path(__file__).resolve().parent.parent
@@ -191,7 +192,7 @@ def download_trials(args, condition=None, output_file=None):
         return False, None
 
 
-def get_broader_categories(condition, api_key):
+def get_broader_categories(condition: str, api_key: str) -> List[str]:
     """Get broader disease categories for the given condition."""
     print(f"Identifying broader disease categories for: {condition}")
 
@@ -209,13 +210,13 @@ def get_broader_categories(condition, api_key):
         return []
 
 
-def load_trials_from_file(file_path):
+def load_trials_from_file(file_path: str) -> List[Dict[str, Any]]:
     """Load trials from a JSON file."""
     try:
         with open(file_path, "r") as f:
-            trials = json.load(f)
+            trials: Any = json.load(f)
             if isinstance(trials, list):
-                return trials
+                return trials  # type: ignore
             else:
                 print(f"Warning: {file_path} does not contain a list of trials")
                 return []
@@ -224,9 +225,9 @@ def load_trials_from_file(file_path):
         return []
 
 
-def merge_trials(trials_list):
+def merge_trials(trials_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """Merge multiple lists of trials, removing duplicates based on NCT ID."""
-    unique_trials = {}
+    unique_trials: Dict[str, Dict[str, Any]] = {}
     for trials in trials_list:
         for trial in trials:
             nct_id = trial.get("identification", {}).get("nct_id")
@@ -255,11 +256,11 @@ def main():
         sys.exit(1)
 
     # List to store all output files
-    output_files = []
+    output_files: List[str] = []
 
     # Download trials for the original condition
     success, output_file = download_trials(args)
-    if success:
+    if success and output_file:
         output_files.append(output_file)
     else:
         print("Failed to download trials for the original condition")
@@ -272,13 +273,13 @@ def main():
         success, output_file = download_trials(
             args, condition=category, output_file=category_output
         )
-        if success:
+        if success and output_file:
             output_files.append(output_file)
         else:
             print(f"Warning: Failed to download trials for category: {category}")
 
     # Merge all trials
-    all_trials = []
+    all_trials: List[List[Dict[str, Any]]] = []
     for file in output_files:
         trials = load_trials_from_file(file)
         print(f"Loaded {len(trials)} trials from {file}")

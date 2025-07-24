@@ -33,6 +33,10 @@ def process_clinical_record(
 ) -> None:
     """Process the clinical record file and extract clinical history in chronological order."""
     try:
+        # Validate API key
+        if not openai_api_key:
+            raise ValueError("OpenAI API key is required. Please provide it via --openai-api-key argument or OPENAI_API_KEY environment variable.")
+        
         # Initialize GPT client
         gpt_client = GPTClient(api_key=openai_api_key)
 

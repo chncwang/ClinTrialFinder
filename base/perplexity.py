@@ -3,7 +3,7 @@ import os
 import pickle
 import time
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -38,9 +38,9 @@ class PerplexityClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        self.cache = self.load_cache()
+        self.cache: Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[Optional[str], Optional[List[str]], float]] = self.load_cache()
 
-    def load_cache(self) -> Dict:
+    def load_cache(self) -> Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[Optional[str], Optional[List[str]], float]]:
         """Load cache from a file."""
         if os.path.exists(self.CACHE_FILE):
             with open(self.CACHE_FILE, "rb") as f:

@@ -123,7 +123,7 @@ class GPTClient:
 
             logger.info(f"Making API call to {model} (refresh_cache={refresh_cache})")
             self.api_calls += 1
-            response = self.client.chat.completions.create(**completion_kwargs)
+            response: Any = self.client.chat.completions.create(**completion_kwargs)
             api_time = time.time() - api_start_time
             logger.info(f"API call completed in {api_time:.3f}s")
 
@@ -155,7 +155,7 @@ class GPTClient:
         response_format: Optional[Dict[str, str]] = None,
         validate_json: bool = False,
         model: str = "gpt-4.1-mini",
-    ) -> Tuple[Union[str, Dict], float]:
+    ) -> Tuple[Union[str, Dict[str, Any]], float]:
         """
         Make a GPT API call with retry logic.
 
@@ -177,7 +177,6 @@ class GPTClient:
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"Attempt {attempt+1}/{self.max_retries}")
-                attempt_start = time.time()
                 response, cost = self.call_gpt(
                     prompt,
                     system_role,
@@ -186,7 +185,6 @@ class GPTClient:
                     refresh_cache=(attempt > 0),
                     response_format=response_format,
                 )
-                attempt_time = time.time() - attempt_start
                 total_cost += cost
 
                 if validate_json:

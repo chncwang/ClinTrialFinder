@@ -1,8 +1,6 @@
-import json
 import logging
-import re
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, read_input_file
@@ -36,9 +34,6 @@ def extract_disease_from_record(
             system_role="You are a medical expert focused on identifying primary medical conditions.",
             temperature=0.1,
         )
-        if completion is None:
-            logger.error("Failed to extract disease from clinical record")
-            return None, cost
 
         disease_name = completion.strip()
         logger.info(f"Extracted disease name: {disease_name}")
@@ -87,12 +82,9 @@ def get_parent_disease_categories(
             temperature=0.1,
             response_format={"type": "json_object"},
         )
-        if completion is None:
-            logger.error(f"Failed to get parent disease categories for {disease_name}")
-            return [], cost
 
-        def validate_categories(data: Dict) -> bool:
-            if not isinstance(data, dict) or "categories" not in data:
+        def validate_categories(data: Dict[str, Any]) -> bool:
+            if "categories" not in data:
                 return False
             categories = data["categories"]
             if not isinstance(categories, list):
@@ -107,6 +99,7 @@ def get_parent_disease_categories(
             cost=cost,
             validation_func=validate_categories,
         )
+        response_data: Dict[str, List[str]] = response_data
 
         # Process the categories
         categories = response_data["categories"]
@@ -253,6 +246,7 @@ def extract_conditions_from_content(
             history, _ = parse_json_response(
                 completion, expected_type=list, gpt_client=gpt_client, cost=cost
             )
+            history: List[str] = history
 
             # Process the history to ensure all times are relative
             history = convert_absolute_to_relative_time(
@@ -297,10 +291,6 @@ def has_absolute_time_reference(item: str, gpt_client: GPTClient) -> bool:
             temperature=0.0,
         )
 
-        if completion is None:
-            logger.warning(f"Failed to check time references for item: {item}")
-            return False
-
         response = completion.strip().lower()
         return response == "yes"
 
@@ -324,7 +314,7 @@ def convert_absolute_to_relative_time(
     - List[str]: Updated list with all time references in relative format
     """
     current_date_str = current_time.strftime("%Y-%m-%d")
-    updated_items = []
+    updated_items: List[str] = []
 
     for item in history_items:
         if has_absolute_time_reference(item, gpt_client):
@@ -365,10 +355,6 @@ def convert_item_to_relative_time(
             system_role="You are a clinical data specialist converting absolute time references to relative ones.",
             temperature=0.1,
         )
-
-        if completion is None:
-            logger.warning(f"Failed to convert time references for item: {item}")
-            return item, cost
 
         updated_item = completion.strip().strip("\"'")
         logger.info(f"Converted time reference: '{item}' → '{updated_item}'")

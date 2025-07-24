@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from base.clinical_trial import ClinicalTrial
 
@@ -105,7 +105,7 @@ def trial_to_csv_row(trial_data: Dict[str, Any], rank: int) -> Dict[str, Any]:
     return row
 
 
-def convert_json_to_csv(input_file: str, output_file: str = None) -> str:
+def convert_json_to_csv(input_file: str, output_file: Optional[str] = None) -> str:
     """
     Convert ranked trials JSON file to CSV format.
     
@@ -145,7 +145,7 @@ def convert_json_to_csv(input_file: str, output_file: str = None) -> str:
         ]
         
         # Convert trials to CSV rows
-        rows = []
+        rows: List[Dict[str, Any]] = []
         for rank, trial_data in enumerate(trials_data, 1):
             row = trial_to_csv_row(trial_data, rank)
             rows.append(row)

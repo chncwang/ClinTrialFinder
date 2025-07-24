@@ -5,6 +5,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
@@ -45,20 +46,24 @@ trial_expert_logger.setLevel(logging.INFO)
 trial_expert_logger.propagate = True  # Ensure logs propagate to root logger
 
 # Make sure sys.stdout is flushed after each write
-sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
 
 
 def process_trials_file(
-    filename, gpt_client, perplexity_client, clinical_record, output_filename=None
-):
+    filename: str, 
+    gpt_client: "GPTClient", 
+    perplexity_client: "PerplexityClient", 
+    clinical_record: str, 
+    output_filename: str | None = None
+) -> None:
     """Read and process the trials JSON file."""
-    updated_trials = []
-    trials = []
-    total_cost = 0.0
-    output_file = None
+    updated_trials: list[dict[str, Any]] = []
+    trials: list[dict[str, Any]] = []
+    total_cost: float = 0.0
     
     try:
         with open(filename, "r") as f:
