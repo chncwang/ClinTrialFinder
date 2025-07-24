@@ -1592,9 +1592,12 @@ def process_trials_with_conditions(
                     })
 
                     if failure_reason.type == "inclusion_criterion":
-                        excluded_info["failed_condition"] = failure_reason.failed_condition
-                        excluded_info["failed_criterion"] = failure_reason.failed_criterion
-                        excluded_info["failure_details"] = failure_reason.failure_details
+                        if failure_reason.failed_condition is not None:
+                            excluded_info["failed_condition"] = failure_reason.failed_condition
+                        if failure_reason.failed_criterion is not None:
+                            excluded_info["failed_criterion"] = failure_reason.failed_criterion
+                        if failure_reason.failure_details is not None:
+                            excluded_info["failure_details"] = failure_reason.failure_details
                 else:
                     excluded_info.update({
                         "failure_type": "unknown",
@@ -1625,13 +1628,14 @@ def process_trials_with_conditions(
     save_json_list_file(filtered_trials, output_path, "filtered trials")
 
     # Save the excluded trials only if we did condition filtering
+    excluded_path = ""
     if conditions:
         excluded_path = output_path.replace(".json", "_excluded.json")
         save_json_list_file(excluded_trials, excluded_path, "excluded trials")
 
     logger.info(f"Final results: {eligible_count}/{total_trials} trials were eligible")
     logger.info(f"Filtered trials saved to {output_path}")
-    if conditions:
+    if conditions and excluded_path:
         logger.info(f"Excluded trials saved to {excluded_path}")
 
     return total_cost, eligible_count
