@@ -264,8 +264,15 @@ def analyze_drugs_and_get_recommendation(
     logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
 
     novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
-    logger.debug(f"analyze_drugs_and_get_recommendation: novel_drugs: {novel_drugs}")
+    logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs: {novel_drugs}")
     total_cost += cost
+
+    # If no novel drugs found in title, try extracting from arms
+    if not novel_drugs:
+        logger.info("analyze_drugs_and_get_recommendation: No novel drugs found in title, trying arms")
+        novel_drugs, cost = trial.get_novel_drugs_from_arms(gpt_client)
+        logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs from arms: {novel_drugs}")
+        total_cost += cost
 
     # Analyze each drug's effectiveness
     if novel_drugs and disease:

@@ -279,6 +279,76 @@ class ClinicalTrial:
             f"collaborators={self.sponsor.collaborators})"
         )
 
+    def get_novel_drugs_from_arms(
+        self, gpt_client: "GPTClient"
+    ) -> Tuple[List[str], float]:
+        """
+        Extract novel drug names from the interventions in all arms using GPT.
+        Args:
+            gpt_client: Initialized GPTClient instance for making API calls
+        Returns:
+            Tuple containing:
+            - List of novel drug names found in the arms
+            - Cost of the GPT API call
+        """
+        # Build arms information for GPT analysis
+        arms_info: List[str] = []
+        for i, arm in enumerate(self.design.arms, 1):
+            arm_name = arm.get('name', f'Arm {i}')
+            arm_type = arm.get('type', 'Unknown')
+            arm_description = arm.get('description', '')
+            interventions = arm.get('interventions', [])
+
+            arm_str = f"Arm {i}: {arm_name} ({arm_type})"
+            if arm_description:
+                arm_str += f" - {arm_description}"
+            if interventions:
+                if isinstance(interventions, list):
+                    intervention_strs: List[str] = [str(x) for x in interventions if x is not None]  # type: ignore
+                    arm_str += f" - Interventions: {', '.join(intervention_strs)}"
+                else:
+                    arm_str += f" - Interventions: {interventions}"
+            arms_info.append(arm_str)
+
+        arms_text = "\n".join(arms_info)
+
+        prompt = f"""Analyze these clinical trial arms and extract any novel drug names mentioned in the interventions:
+
+Rules for extraction:
+1. Only include drugs that appear to be novel or experimental
+2. Exclude common/established drugs
+3. Return drug names in their exact form from the interventions
+4. If no novel drugs are mentioned, return an empty list
+5. Include both code names (e.g., BMS-936558) and generic names if present
+
+Return a JSON object with a single key "drug_names" containing an array of strings.
+Example: {{"drug_names": ["BMS-936558", "nivolumab"]}}
+
+Arms Information:
+{arms_text}
+"""
+
+        system_role = "You are a pharmaceutical expert focused on identifying novel and experimental drugs in clinical trial interventions."
+
+        try:
+            response, cost = gpt_client.call_with_retry(
+                prompt,
+                system_role,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+                validate_json=True,
+            )
+
+            if isinstance(response, dict):
+                drug_names: List[str] = response.get("drug_names", []) or []
+            else:
+                drug_names: List[str] = []
+            return drug_names, cost
+
+        except Exception as e:
+            logger.error(f"Failed to extract novel drugs from arms: {str(e)}")
+            return [], 0.0
+
     def get_novel_drugs_from_title(
         self, gpt_client: "GPTClient"
     ) -> Tuple[List[str], float]:
