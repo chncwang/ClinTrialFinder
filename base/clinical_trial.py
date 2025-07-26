@@ -311,6 +311,7 @@ class ClinicalTrial:
             arms_info.append(arm_str)
 
         arms_text = "\n".join(arms_info)
+        logger.info(f"get_novel_drugs_from_arms: arms_text: {arms_text}")
 
         prompt = f"""Analyze these clinical trial arms and extract any novel drug names mentioned in the interventions:
 
