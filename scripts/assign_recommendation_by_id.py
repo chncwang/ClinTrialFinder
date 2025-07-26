@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"assign_recommendation_by_id_{timestamp}.log"
 file_handler = logging.FileHandler(log_filename)
-file_handler.setLevel(logging.DEBUG)
+file_handler.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
 
@@ -36,7 +36,7 @@ root_logger.addHandler(file_handler)
 
 # Configure base.trial_expert logger
 trial_expert_logger = logging.getLogger("base.trial_expert")
-trial_expert_logger.setLevel(logging.DEBUG)
+trial_expert_logger.setLevel(logging.INFO)
 trial_expert_logger.propagate = True  # Allow propagation to root logger
 
 # Log the filename being used
