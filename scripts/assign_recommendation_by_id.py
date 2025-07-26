@@ -22,6 +22,11 @@ from base.utils import read_input_file
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set specific loggers to INFO level to filter out debug messages
+logging.getLogger("openai").setLevel(logging.INFO)
+logging.getLogger("httpcore").setLevel(logging.INFO)
+logging.getLogger("base").setLevel(logging.INFO)
+
 # Create a single log file with timestamp for all loggers
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"assign_recommendation_by_id_{timestamp}.log"
