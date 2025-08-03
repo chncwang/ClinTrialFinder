@@ -1465,6 +1465,7 @@ Inclusion Criteria Text:
             # Evaluate branch without passing need_to_note_list to _evaluate_branch
             # since it already manages its own need_to_note_list
             branch_prob: float
+            # Dictionary mapping each condition to its evaluation result for this specific branch
             branch_condition_evaluations: Dict[str, CriterionEvaluation]
             branch_cost: float
             branch_prob, branch_condition_evaluations, branch_cost = (
@@ -1528,7 +1529,7 @@ Inclusion Criteria Text:
 
         for condition, evaluations in condition_evaluations_by_branch.items():
             if not evaluations:
-                continue
+                raise RuntimeError(f"Condition '{condition}' has no evaluations. This indicates a bug in _process_or_branches method.")
 
             # Get the best evaluation for this condition across all branches
             best_eval = max(evaluations, key=lambda x: x.eligibility)
