@@ -1452,6 +1452,8 @@ Inclusion Criteria Text:
                 - The maximum probability of any branch (float)
                 - A dictionary mapping each condition (str) to a list of CriterionEvaluation objects, where each object represents the evaluation of that condition against a specific branch. 
                   For each condition, the list contains one CriterionEvaluation per branch, detailing the criterion text, the reason for the evaluation outcome, and the eligibility probability for that branch.
+                  Note: All conditions will have the same number of evaluations (one per branch processed), as validated before return. 
+                  Early exit may occur when a compatible branch is found (branch_max_prob > 0.0), but all conditions will have been evaluated against the same number of branches.
                 - The total cost of all branch evaluations (float)
         """
         branch_max_prob = 0.0
@@ -1471,7 +1473,7 @@ Inclusion Criteria Text:
             branch_cost_sum += branch_cost
             branch_max_prob = max(branch_max_prob, branch_prob)
 
-            # Record which conditions met this branch
+            # Record evaluations for all conditions (all conditions should be in branch_condition_evaluations)
             for condition in conditions:
                 if condition in branch_condition_evaluations:
                     condition_evaluation = branch_condition_evaluations[condition]
@@ -1482,24 +1484,35 @@ Inclusion Criteria Text:
                             eligibility=condition_evaluation.eligibility,
                         )
                     )
+                else:
+                    # This should never happen - _evaluate_branch guarantees all conditions are present
+                    raise RuntimeError(f"Condition '{condition}' not found in branch_condition_evaluations. This indicates a bug in _evaluate_branch method.")
 
-            # Early exit if we found a fully compatible branch
+            # Early exit if we found a compatible branch
             if branch_max_prob > 0.0:
                 logger.info(
-                    f"GPTTrialFilter.process_or_branches: Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                    f"GPTTrialFilter.process_or_branches: Found compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
                 )
                 break
+
+        # Validate that all conditions have the same number of evaluations
+        evaluation_counts = {condition: len(evaluations) for condition, evaluations in condition_evaluations_by_branch.items()}
+        if len(set(evaluation_counts.values())) > 1:
+            raise RuntimeError(
+                f"Inconsistent evaluation counts in condition_evaluations_by_branch: {evaluation_counts}. "
+                f"This indicates a bug in the branch processing logic."
+            )
 
         return branch_max_prob, condition_evaluations_by_branch, branch_cost_sum
 
     def _get_or_criterion_failure_reason(
-        self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
+        self, condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]], criterion: str
     ) -> Tuple[str, str, str]:
         """
         Analyze branch results to determine why a condition failed all branches of an OR criterion.
 
         Args:
-            branch_results: Dictionary mapping conditions to their evaluations for each branch
+            condition_evaluations_by_branch: Dictionary mapping conditions to their evaluations for each branch
             criterion: The original OR criterion that was evaluated
 
         Returns:
@@ -1513,7 +1526,7 @@ Inclusion Criteria Text:
         best_eligibility = -1.0
         best_reason = ""
 
-        for condition, evaluations in branch_results.items():
+        for condition, evaluations in condition_evaluations_by_branch.items():
             if not evaluations:
                 continue
 
@@ -1553,6 +1566,7 @@ Inclusion Criteria Text:
         """
         total_cost = 0.0
         overall_probability = 1.0
+        # Tracks the reason for trial failure: (failed_condition, failed_criterion, failure_reason)
         failure_reason: Optional[Tuple[str, str, str]] = None
 
         for criterion in inclusion_criteria:
@@ -1574,6 +1588,10 @@ Inclusion Criteria Text:
 
                 # Run process_or_branches and get results
                 branch_max_prob: float
+                # Maps each condition to a list of CriterionEvaluation objects (one per branch processed)
+                # Each CriterionEvaluation contains: criterion text, reason, and eligibility probability
+                # All conditions will have the same number of evaluations, even with early exit, in which case len(criterion_evaluation_list) represents the number of branches processed
+                # Used by _get_or_criterion_failure_reason to analyze why conditions failed across all branches
                 condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]]
                 branch_cost: float
                 branch_max_prob, condition_evaluations_by_branch, branch_cost = self._process_or_branches(
