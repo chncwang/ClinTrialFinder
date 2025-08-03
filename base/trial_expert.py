@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any, cast
 
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
-from base.drug_analyzer import analyze_drug_effectiveness
+from base.drug_analyzer import analyze_drug_efficacy
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, save_json_list_file
 
@@ -265,11 +265,14 @@ def analyze_drugs_and_get_recommendation(
     drug_analyses: dict[str, str] = {}
 
     # Extract disease from clinical record
+    disease: str
+    cost: float
     disease, cost = extract_disease_from_record(clinical_record, gpt_client)
     total_cost += cost
     logger.info(f"analyze_drugs_and_get_recommendation: Extracted Disease: {disease}")
     logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
 
+    novel_drugs: List[str]
     novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
     logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs: {novel_drugs}")
     total_cost += cost
@@ -287,7 +290,10 @@ def analyze_drugs_and_get_recommendation(
             logger.info(
                 f"analyze_drugs_and_get_recommendation: Analyzing effectiveness of {drug} for {disease}"
             )
-            analysis, citations, cost = analyze_drug_effectiveness(
+            analysis: str
+            citations: List[str]
+            cost: float
+            analysis, citations, cost = analyze_drug_efficacy(
                 drug, disease, perplexity_client
             )
             total_cost += cost
@@ -308,7 +314,7 @@ def analyze_drugs_and_get_recommendation(
                 logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
 
     # Generate recommendation
-    prompt = build_recommendation_prompt(clinical_record, trial, drug_analyses)
+    prompt: str = build_recommendation_prompt(clinical_record, trial, drug_analyses)
     logger.info(
         f"analyze_drugs_and_get_recommendation: Recommendation Prompt:\n{prompt}"
     )
@@ -327,7 +333,9 @@ def analyze_drugs_and_get_recommendation(
 
     # Use the existing parse_json_response utility for robust error handling
     try:
-        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)  # type: ignore
+        data: dict[str, str]
+        correction_cost: float
+        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
         total_cost += correction_cost
 
         # Ensure required fields are present
@@ -381,8 +389,8 @@ def compare_trials(
     max_retries = 3
 
     # Build comparison prompt using existing drug analyses
-    trial1_info = build_trial_info(trial1)
-    trial2_info = build_trial_info(trial2)
+    trial1_info: str = build_trial_info(trial1)
+    trial2_info: str = build_trial_info(trial2)
 
     if is_oncology_disease(disease):
         oncology_guidance = (
@@ -422,6 +430,8 @@ def compare_trials(
     for attempt in range(max_retries):
         try:
             # Get comparison from GPT-4
+            completion: str
+            cost: float
             completion, cost = gpt_client.call_gpt(
                 prompt=comparison_prompt,
                 system_role=TRIAL_COMPARISON_SYSTEM_PROMPT,
@@ -434,9 +444,9 @@ def compare_trials(
 
             # Parse the comparison response
             try:
-                data = json.loads(completion)
-                reason = data.get("reason")
-                better_trial_id = data.get("better_trial")
+                data: dict[str, str] = json.loads(completion)
+                reason: str | None = data.get("reason")
+                better_trial_id: str | None = data.get("better_trial")
 
                 if not better_trial_id or not reason:
                     logger.error(
@@ -452,6 +462,7 @@ def compare_trials(
                     )
 
                 # Determine which trial is better
+                better_trial: ClinicalTrial
                 if better_trial_id == "neither":
                     # Neither trial is suitable - return trial1 as default but note in reason
                     better_trial = trial1
@@ -614,7 +625,7 @@ class GPTTrialFilter:
             )
 
             # Try to clean the response by removing any potential markdown formatting
-            cleaned_response = response_content.strip()
+            cleaned_response: str = response_content.strip()
             if cleaned_response.startswith("```json"):
                 cleaned_response = cleaned_response[7:]
             if cleaned_response.endswith("```"):
@@ -760,8 +771,8 @@ Patient Condition to Evaluate:
         Returns:
             A tuple containing the suitability probability, reason, and cost
         """
-        conditions_list = conditions if isinstance(conditions, list) else [conditions]
-        conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
+        conditions_list: list[str] = conditions if isinstance(conditions, list) else [conditions]
+        conditions_text: str = "\n".join(f"- {condition}" for condition in conditions_list)
 
         prompt = f"""You are filtering clinical trials based on patient conditions and trial title.
 
@@ -789,6 +800,8 @@ Patient Conditions to Evaluate:
 
         for attempt in range(max_retries):
             try:
+                response_content: str
+                cost: float
                 response_content, cost = self._call_gpt(
                     prompt,
                     "You are a clinical trial analyst focused on evaluating titles.",
@@ -820,7 +833,7 @@ Patient Conditions to Evaluate:
             total_cost,
         )
 
-    def evaluate_inclusion_criterion(
+    def _evaluate_inclusion_criterion(
         self, criterion: str, conditions: List[str], title: str
     ) -> Tuple[float, str, float]:
         """
@@ -865,6 +878,8 @@ Patient Conditions to Evaluate:
 
         try:
             # Try with retries first
+            response_content: str | dict[str, Any]
+            cost: float
             response_content, cost = self._call_gpt_with_retry(
                 prompt,
                 "You are a clinical trial analyst focused on evaluating inclusion criteria.",
@@ -881,7 +896,7 @@ Patient Conditions to Evaluate:
                 else self._parse_gpt_response_with_fallback(response_content)
             )
 
-            validated_result = self._validate_gpt_response(result)
+            validated_result: dict[str, Any] = self._validate_gpt_response(result)
             logger.info(
                 f"GPTTrialFilter.evaluate_inclusion_criterion: Evaluated criterion: {criterion} for conditions: {conditions} with title: {title}"
                 + json.dumps(
@@ -906,7 +921,7 @@ Patient Conditions to Evaluate:
             )
             raise
 
-    def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
+    def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> Tuple[bool, float]:
         """
         Check if a criterion contains top-level OR logic using GPT.
 
@@ -915,7 +930,9 @@ Patient Conditions to Evaluate:
             refresh_cache (bool): Whether to refresh the cache
 
         Returns:
-            A boolean indicating if the criterion contains top-level OR logic
+            A tuple containing:
+                - A boolean indicating if the criterion contains top-level OR logic
+                - The cost of the API call
         """
         prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
 
@@ -925,7 +942,9 @@ Does this criterion contain multiple alternative options connected by OR at the 
 Criterion: {criterion}"""
 
         try:
-            response_content, _ = self._call_gpt(
+            response_content: str
+            cost: float
+            response_content, cost = self._call_gpt(
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
                 model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
@@ -933,10 +952,10 @@ Criterion: {criterion}"""
                 refresh_cache=refresh_cache,
             )
             result = self._parse_gpt_response(response_content)
-            return result.get("is_or_criterion", False)
+            return result.get("is_or_criterion", False), cost
         except json.JSONDecodeError:
             # Retry with cache refresh on parse error
-            response_content, _ = self._call_gpt(
+            response_content, cost = self._call_gpt(
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
                 model="gpt-4.1-mini",  # Use GPT-4 Mini for simple parsing
@@ -944,7 +963,7 @@ Criterion: {criterion}"""
                 refresh_cache=True,
             )
             result = self._parse_gpt_response(response_content)
-            return result.get("is_or_criterion", False)
+            return result.get("is_or_criterion", False), cost
 
     def _split_or_branches(
         self, criterion: str, refresh_cache: bool = False
@@ -1072,7 +1091,7 @@ Reference list of valid conditions:
             )
             return False, "", cost
 
-    def choose_most_relevant_conditions(
+    def _choose_most_relevant_conditions(
         self,
         branch: str,
         conditions: List[str],
@@ -1218,7 +1237,7 @@ Patient Conditions:
                 if (
                     len(need_to_note_list) <= 3
                 ):  # Limit retries to prevent infinite loops
-                    return self.choose_most_relevant_conditions(
+                    return self._choose_most_relevant_conditions(
                         branch,
                         conditions,
                         trial_title,
@@ -1240,7 +1259,7 @@ Patient Conditions:
             )
             return conditions[:num_conditions]
 
-    def split_inclusion_criteria(
+    def _split_inclusion_criteria(
         self, criteria: str, refresh_cache: bool = False
     ) -> List[str]:
         """
@@ -1374,12 +1393,15 @@ Inclusion Criteria Text:
 
         # Get the most relevant conditions with validation
         need_to_note_list: List[str] = []
-        most_relevant_conditions = self.choose_most_relevant_conditions(
+        most_relevant_conditions: List[str] = self._choose_most_relevant_conditions(
             branch, conditions, trial_title, need_to_note_list=need_to_note_list
         )
 
         # Evaluate the branch against the most relevant conditions
-        probability, reason, cost = self.evaluate_inclusion_criterion(
+        probability: float
+        reason: str
+        cost: float
+        probability, reason, cost = self._evaluate_inclusion_criterion(
             branch, most_relevant_conditions, trial_title
         )
         cost_sum += cost
@@ -1414,7 +1436,7 @@ Inclusion Criteria Text:
 
         return probability, branch_condition_evaluations, cost_sum
 
-    def process_or_branches(
+    def _process_or_branches(
         self, or_branches: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
         """
@@ -1440,6 +1462,9 @@ Inclusion Criteria Text:
         for or_branch in or_branches:
             # Evaluate branch without passing need_to_note_list to _evaluate_branch
             # since it already manages its own need_to_note_list
+            branch_prob: float
+            branch_condition_evaluations: Dict[str, CriterionEvaluation]
+            branch_cost: float
             branch_prob, branch_condition_evaluations, branch_cost = (
                 self._evaluate_branch(or_branch, conditions, trial_title)
             )
@@ -1508,7 +1533,7 @@ Inclusion Criteria Text:
 
         return (best_condition, criterion, best_reason)
 
-    def evaluate_inclusion_criteria(
+    def _evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
         """
@@ -1528,7 +1553,7 @@ Inclusion Criteria Text:
         """
         total_cost = 0.0
         overall_probability = 1.0
-        failure_reason = None
+        failure_reason: Optional[Tuple[str, str, str]] = None
 
         for criterion in inclusion_criteria:
             logger.info(
@@ -1536,15 +1561,22 @@ Inclusion Criteria Text:
             )
 
             # Handle OR criterion
-            if self._is_or_criterion(criterion):
+            is_or_criterion: bool
+            cost: float
+            is_or_criterion, cost = self._is_or_criterion(criterion)
+            total_cost += cost
+            if is_or_criterion:
                 logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: OR criterion detected: {criterion}")
-                or_branches = self._split_or_branches(criterion)
+                or_branches: List[str] = self._split_or_branches(criterion)
                 logger.info(
                     f"GPTTrialFilter.evaluate_inclusion_criteria: Split OR branches: {len(or_branches)}\n{json.dumps({'num_branches': len(or_branches), 'branches': or_branches}, indent=2)}"
                 )
 
                 # Run process_or_branches and get results
-                branch_max_prob, branch_results, branch_cost = self.process_or_branches(
+                branch_max_prob: float
+                condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]]
+                branch_cost: float
+                branch_max_prob, condition_evaluations_by_branch, branch_cost = self._process_or_branches(
                     or_branches, conditions, trial_title
                 )
                 total_cost += branch_cost
@@ -1552,7 +1584,7 @@ Inclusion Criteria Text:
                 # Check if any condition failed all branches
                 if branch_max_prob <= 0.0:
                     failure_reason = self._get_or_criterion_failure_reason(
-                        branch_results, criterion
+                        condition_evaluations_by_branch, criterion
                     )
                     overall_probability = 0.0
                     break
@@ -1563,7 +1595,7 @@ Inclusion Criteria Text:
                 # Choose the most relevant condition for this criterion
                 need_to_note_list: List[str] = []
                 most_relevant_conditions: List[str] = (
-                    self.choose_most_relevant_conditions(
+                    self._choose_most_relevant_conditions(
                         criterion,
                         conditions,
                         trial_title,
@@ -1572,7 +1604,10 @@ Inclusion Criteria Text:
                 )
 
                 # Only evaluate the most relevant condition
-                probability, reason, cost = self.evaluate_inclusion_criterion(
+                probability: float
+                reason: str
+                cost: float
+                probability, reason, cost = self._evaluate_inclusion_criterion(
                     criterion, most_relevant_conditions, trial_title
                 )
                 overall_probability *= probability
@@ -1630,10 +1665,10 @@ Inclusion Criteria Text:
 
         # 2) Extract and split the inclusion criteria
         try:
-            inclusion_text = self._extract_inclusion_criteria(
+            inclusion_text: str = self._extract_inclusion_criteria(
                 trial.eligibility.criteria
             )
-            inclusion_criteria = self.split_inclusion_criteria(inclusion_text)
+            inclusion_criteria: List[str] = self._split_inclusion_criteria(inclusion_text)
             logger.info(
                 json.dumps(
                     {
@@ -1657,7 +1692,7 @@ Inclusion Criteria Text:
 
         # 3) Evaluate the inclusion criteria
         inclusion_probability, inc_failure_reason, criteria_cost = (
-            self.evaluate_inclusion_criteria(
+            self._evaluate_inclusion_criteria(
                 inclusion_criteria, conditions, trial.identification.brief_title
             )
         )

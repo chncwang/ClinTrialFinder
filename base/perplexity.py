@@ -3,7 +3,7 @@ import os
 import pickle
 import time
 from datetime import timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import requests
 
@@ -38,9 +38,9 @@ class PerplexityClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        self.cache: Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[Optional[str], Optional[List[str]], float]] = self.load_cache()
+        self.cache: Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[str,List[str], float]] = self.load_cache()
 
-    def load_cache(self) -> Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[Optional[str], Optional[List[str]], float]]:
+    def load_cache(self) -> Dict[Tuple[Tuple[Tuple[str, str], ...], str, int, float, float], Tuple[str, List[str], float]]:
         """Load cache from a file."""
         if os.path.exists(self.CACHE_FILE):
             with open(self.CACHE_FILE, "rb") as f:
@@ -63,7 +63,7 @@ class PerplexityClient:
         max_tokens: int = 1000,
         temperature: float = 0.2,
         top_p: float = 0.9,
-    ) -> Tuple[Optional[str], Optional[List[str]], float]:
+    ) -> Tuple[str, List[str], float]:
         """Get a completion from the Perplexity API.
 
         Args:
@@ -75,9 +75,12 @@ class PerplexityClient:
 
         Returns:
             Tuple of (completion_text, citations, cost) where:
-                - completion_text is the response text if successful, None if failed
-                - citations is a list of citation URLs if available, None if not
+                - completion_text is the response text
+                - citations is a list of citation URLs if available
                 - cost is the estimated cost in USD
+        
+        Raises:
+            requests.exceptions.RequestException: If the Perplexity API call fails
         """
         # Create a cache key based on the input parameters
         cache_key = (
@@ -141,4 +144,4 @@ class PerplexityClient:
             return completion_text, citations, cost
         except requests.exceptions.RequestException as e:
             logger.error(f"Error calling Perplexity AI API: {e}")
-            return None, None, 0.0
+            raise

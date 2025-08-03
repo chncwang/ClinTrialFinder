@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def extract_disease_from_record(
     clinical_record: str, gpt_client: GPTClient
-) -> Tuple[str | None, float]:
+) -> Tuple[str, float]:
     """
     Extracts the primary disease or condition from a clinical record using GPT.
 
