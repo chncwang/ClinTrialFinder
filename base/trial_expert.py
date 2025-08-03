@@ -1459,7 +1459,7 @@ Inclusion Criteria Text:
                     )
 
             # Early exit if we found a fully compatible branch
-            if branch_max_prob >= 1.0:
+            if branch_max_prob > 0.0:
                 logger.info(
                     f"GPTTrialFilter.process_or_branches: Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
                 )
