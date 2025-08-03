@@ -247,6 +247,13 @@ def analyze_drugs_and_get_recommendation(
     """
     Analyze drug effectiveness and generate AI recommendation.
 
+    Args:
+        clinical_record (str): The patient's clinical record
+        trial (ClinicalTrial): The clinical trial to analyze
+        perplexity_client (PerplexityClient): Client for Perplexity API
+        gpt_client (GPTClient): Client for GPT-4 API
+        refresh_cache (bool): Whether to refresh the cache
+
     Returns:
         tuple containing:
             - Recommendation level (Strongly Recommended, Recommended, etc.)
@@ -516,7 +523,18 @@ class TrialFailureReason:
 
 
 class GPTTrialFilter:
+    """
+    A class for filtering clinical trials based on patient conditions and trial title.
+    """
+
     def __init__(self, api_key: str, cache_size: int = 100000):
+        """
+        Initialize the GPTTrialFilter.
+
+        Args:
+            api_key (str): The API key for the GPT client
+            cache_size (int): The size of the cache for the GPT client
+        """
         self.gpt_client = GPTClient(
             api_key=api_key,
             cache_size=cache_size,
@@ -532,7 +550,19 @@ class GPTTrialFilter:
         temperature: float = 0.1,
         refresh_cache: bool = False,
     ) -> Tuple[str, float]:
-        """Common method for making GPT API calls."""
+        """
+        Common method for making GPT API calls.
+
+        Args:
+            prompt (str): The prompt for the GPT API call
+            system_role (str): The system role for the GPT API call
+            model (str): The model to use for the GPT API call
+            temperature (float): The temperature for the GPT API call
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A tuple containing the response content and the cost
+        """
         return self.gpt_client.call_gpt(
             prompt,
             system_role,
@@ -545,6 +575,18 @@ class GPTTrialFilter:
     def _call_gpt_with_retry(
         self, prompt: str, system_role: str, model: str, max_retries: int = 3
     ) -> Tuple[Union[str, Dict[str, Any]], float]:
+        """
+        Common method for making GPT API calls with retry.
+
+        Args:
+            prompt (str): The prompt for the GPT API call
+            system_role (str): The system role for the GPT API call
+            model (str): The model to use for the GPT API call
+            max_retries (int): The maximum number of retries
+
+        Returns:
+            A tuple containing the response content and the cost
+        """
         return self.gpt_client.call_with_retry(
             prompt,
             system_role,
@@ -554,7 +596,15 @@ class GPTTrialFilter:
         )
 
     def _parse_gpt_response(self, response_content: str) -> Dict[str, Any]:
-        """Parse GPT response content into JSON, with error handling."""
+        """
+        Parse GPT response content into JSON, with error handling.
+
+        Args:
+            response_content (str): The response content from the GPT API call
+
+        Returns:
+            A dictionary containing the parsed response
+        """
         try:
             # First try to parse the response directly
             return json.loads(response_content)
@@ -589,6 +639,15 @@ class GPTTrialFilter:
                 raise ValueError(f"Failed to parse GPT response as JSON: {str(e)}")
 
     def _parse_gpt_response_with_fallback(self, response_content: str) -> Dict[str, Any]:
+        """
+        Parse GPT response content into JSON, with fallback for probability and reason.
+
+        Args:
+            response_content (str): The response content from the GPT API call
+
+        Returns:
+            A dictionary containing the parsed response
+        """
         try:
             return json.loads(response_content)
         except json.JSONDecodeError:
@@ -645,7 +704,17 @@ class GPTTrialFilter:
     def _build_criterion_prompt(
         self, criterion: str, condition: str, title: str
     ) -> str:
-        """Build the prompt for evaluating an inclusion criterion."""
+        """
+        Build the prompt for evaluating an inclusion criterion.
+
+        Args:
+            criterion (str): The inclusion criterion to evaluate
+            condition (str): The patient condition to evaluate
+            title (str): The study title
+
+        Returns:
+            A string containing the prompt
+        """
         return f"""You are evaluating a clinical trial inclusion criterion against one of the patient's conditions.
 
 Please determine if this inclusion criterion aligns with this specific condition provided, considering the context from the study title.
@@ -682,6 +751,14 @@ Patient Condition to Evaluate:
         """
         Evaluate if a trial title indicates suitability for given conditions.
         Uses GPT-4 for accurate evaluation.
+
+        Args:
+            trial (ClinicalTrial): The clinical trial to evaluate
+            conditions (str | list[str]): The patient conditions to evaluate
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A tuple containing the suitability probability, reason, and cost
         """
         conditions_list = conditions if isinstance(conditions, list) else [conditions]
         conditions_text = "\n".join(f"- {condition}" for condition in conditions_list)
@@ -749,6 +826,14 @@ Patient Conditions to Evaluate:
         """
         Evaluate an inclusion criterion against multiple conditions at once.
         Uses GPT-4 for accurate evaluation.
+
+        Args:
+            criterion (str): The inclusion criterion to evaluate
+            conditions (List[str]): The patient conditions to evaluate
+            title (str): The study title
+
+        Returns:
+            A tuple containing the suitability probability, reason, and cost
         """
         prompt = f"""You are evaluating a clinical trial inclusion criterion against multiple patient conditions.
 
@@ -822,7 +907,16 @@ Patient Conditions to Evaluate:
             raise
 
     def _is_or_criterion(self, criterion: str, refresh_cache: bool = False) -> bool:
-        """Check if a criterion contains top-level OR logic using GPT."""
+        """
+        Check if a criterion contains top-level OR logic using GPT.
+
+        Args:
+            criterion (str): The inclusion criterion to evaluate
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A boolean indicating if the criterion contains top-level OR logic
+        """
         prompt = f"""Analyze this clinical trial inclusion criterion for top-level OR logic:
 
 Does this criterion contain multiple alternative options connected by OR at the top level (not nested within subgroups)? Respond ONLY with JSON:
@@ -855,7 +949,16 @@ Criterion: {criterion}"""
     def _split_or_branches(
         self, criterion: str, refresh_cache: bool = False
     ) -> List[str]:
-        """Split a criterion with top-level OR logic into individual branches."""
+        """
+        Split a criterion with top-level OR logic into individual branches.
+
+        Args:
+            criterion (str): The inclusion criterion to split
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A list of strings containing the individual branches
+        """
         prompt = f"""Split this clinical trial inclusion criterion into separate OR branches:
 
 Rules:
@@ -978,7 +1081,20 @@ Reference list of valid conditions:
         refresh_cache: bool = False,
         need_to_note_list: Optional[List[str]] = None,
     ) -> List[str]:
-        """Choose the most relevant conditions from a list of conditions for a given branch."""
+        """
+        Choose the most relevant conditions from a list of conditions for a given branch.
+
+        Args:
+            branch (str): The branch to choose conditions for
+            conditions (List[str]): The list of conditions to choose from
+            trial_title (str): The title of the trial
+            num_conditions (int): The number of conditions to choose
+            refresh_cache (bool): Whether to refresh the cache
+            need_to_note_list (Optional[List[str]]): A list of notes about previous failures
+
+        Returns:
+            A list of strings containing the most relevant conditions
+        """
         if num_conditions >= len(conditions):
             return conditions
 
@@ -1127,7 +1243,16 @@ Patient Conditions:
     def split_inclusion_criteria(
         self, criteria: str, refresh_cache: bool = False
     ) -> List[str]:
-        """Split the inclusion criteria into individual statements using GPT."""
+        """
+        Split the inclusion criteria into individual statements using GPT.
+
+        Args:
+            criteria (str): The inclusion criteria to split
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A list of strings containing the individual inclusion criteria
+        """
         prompt = f"""You are analyzing clinical trial inclusion criteria text.
 
 Split this text into individual inclusion criterion statements. Preserve logical structure and relationships between criteria.
@@ -1229,6 +1354,20 @@ Inclusion Criteria Text:
     ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
         """
         Evaluate a branch against given conditions.
+
+        Args:
+            branch (str): The branch to evaluate
+            conditions (List[str]): The conditions to evaluate the branch against
+            trial_title (str): The title of the trial
+
+        Returns:
+            A tuple containing:
+                - The probability (float) that the branch (inclusion criterion) is compatible with the patient's conditions.
+                - A dictionary mapping each condition (str) to a CriterionEvaluation object, which includes:
+                    - criterion: The branch (inclusion criterion) being evaluated.
+                    - reason: The explanation for the evaluation result for that condition.
+                    - eligibility: The suitability probability (float) for that condition.
+                - The total cost (float) of the evaluation.
         """
         cost_sum = 0.0
         branch_condition_evaluations: Dict[str, CriterionEvaluation] = {}
@@ -1275,22 +1414,34 @@ Inclusion Criteria Text:
 
         return probability, branch_condition_evaluations, cost_sum
 
-    def process_branches(
-        self, branches: List[str], conditions: List[str], trial_title: str
+    def process_or_branches(
+        self, or_branches: List[str], conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, List[CriterionEvaluation]], float]:
         """
-        Process branches sequentially.
+        Process OR branches sequentially.
+
+        Args:
+            or_branches (List[str]): The OR branches to process
+            conditions (List[str]): The conditions to evaluate the branches against
+            trial_title (str): The title of the trial
+
+        Returns:
+            A tuple containing:
+                - The maximum probability of any branch (float)
+                - A dictionary mapping each condition (str) to a list of CriterionEvaluation objects, where each object represents the evaluation of that condition against a specific branch. 
+                  For each condition, the list contains one CriterionEvaluation per branch, detailing the criterion text, the reason for the evaluation outcome, and the eligibility probability for that branch.
+                - The total cost of all branch evaluations (float)
         """
         branch_max_prob = 0.0
         branch_cost_sum = 0.0
-        branch_results: Dict[str, List[CriterionEvaluation]] = {condition: [] for condition in conditions}
+        condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]] = {condition: [] for condition in conditions}
 
         # Process each branch sequentially
-        for branch in branches:
+        for or_branch in or_branches:
             # Evaluate branch without passing need_to_note_list to _evaluate_branch
             # since it already manages its own need_to_note_list
             branch_prob, branch_condition_evaluations, branch_cost = (
-                self._evaluate_branch(branch, conditions, trial_title)
+                self._evaluate_branch(or_branch, conditions, trial_title)
             )
             branch_cost_sum += branch_cost
             branch_max_prob = max(branch_max_prob, branch_prob)
@@ -1299,9 +1450,9 @@ Inclusion Criteria Text:
             for condition in conditions:
                 if condition in branch_condition_evaluations:
                     condition_evaluation = branch_condition_evaluations[condition]
-                    branch_results[condition].append(
+                    condition_evaluations_by_branch[condition].append(
                         CriterionEvaluation(
-                            criterion=branch,
+                            criterion=or_branch,
                             reason=condition_evaluation.reason,
                             eligibility=condition_evaluation.eligibility,
                         )
@@ -1310,11 +1461,11 @@ Inclusion Criteria Text:
             # Early exit if we found a fully compatible branch
             if branch_max_prob >= 1.0:
                 logger.info(
-                    f"Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
+                    f"GPTTrialFilter.process_or_branches: Found fully compatible branch\n{json.dumps({'branch_prob': branch_max_prob, 'early_exit': True}, indent=2)}"
                 )
                 break
 
-        return branch_max_prob, branch_results, branch_cost_sum
+        return branch_max_prob, condition_evaluations_by_branch, branch_cost_sum
 
     def _get_or_criterion_failure_reason(
         self, branch_results: Dict[str, List[CriterionEvaluation]], criterion: str
@@ -1386,15 +1537,15 @@ Inclusion Criteria Text:
 
             # Handle OR criterion
             if self._is_or_criterion(criterion):
-                logger.info(f"OR criterion detected: {criterion}")
-                branches = self._split_or_branches(criterion)
+                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: OR criterion detected: {criterion}")
+                or_branches = self._split_or_branches(criterion)
                 logger.info(
-                    f"Split branches: {len(branches)}\n{json.dumps({'num_branches': len(branches), 'branches': branches}, indent=2)}"
+                    f"GPTTrialFilter.evaluate_inclusion_criteria: Split OR branches: {len(or_branches)}\n{json.dumps({'num_branches': len(or_branches), 'branches': or_branches}, indent=2)}"
                 )
 
-                # Run process_branches and get results
-                branch_max_prob, branch_results, branch_cost = self.process_branches(
-                    branches, conditions, trial_title
+                # Run process_or_branches and get results
+                branch_max_prob, branch_results, branch_cost = self.process_or_branches(
+                    or_branches, conditions, trial_title
                 )
                 total_cost += branch_cost
 
@@ -1408,7 +1559,7 @@ Inclusion Criteria Text:
 
             # Handle non-OR criterion
             else:
-                logger.info(f"Non-OR criterion detected: {criterion}")
+                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Non-OR criterion detected: {criterion}")
                 # Choose the most relevant condition for this criterion
                 need_to_note_list: List[str] = []
                 most_relevant_conditions: List[str] = (
