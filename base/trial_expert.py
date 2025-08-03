@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any, cast
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, Any, cast
 
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
@@ -1507,45 +1507,57 @@ Inclusion Criteria Text:
         return branch_max_prob, condition_evaluations_by_branch, branch_cost_sum
 
     def _get_or_criterion_failure_reason(
-        self, condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]], criterion: str
-    ) -> Tuple[str, str, str]:
+        self, condition_evaluations_by_branch: Dict[str, List[CriterionEvaluation]],
+        branches: List[str]
+    ) -> Tuple[str, str]:
         """
-        Analyze branch results to determine why a condition failed all branches of an OR criterion.
+        Analyze branch results to determine why some conditions failed all branches of an OR criterion.
 
         Args:
             condition_evaluations_by_branch: Dictionary mapping conditions to their evaluations for each branch
-            criterion: The original OR criterion that was evaluated
+            branches: The original OR branches that were evaluated
 
         Returns:
             Tuple containing:
-            - The condition that failed
-            - The criterion that failed
-            - A detailed explanation of why it failed
+            - A string of all the conditions that failed
+            - A detailed explanation of why they failed
         """
-        # Find the condition that had the highest eligibility across all branches
-        best_condition = None
-        best_eligibility = -1.0
-        best_reason = ""
+        # Validate that all conditions have the same number of evaluations, i.e., len(branches)
+        # This is because that the OR branches failed, and they must all fail for the OR criterion to fail
+        for condition in condition_evaluations_by_branch:
+            if len(condition_evaluations_by_branch[condition]) != len(branches):
+                raise RuntimeError(
+                    f"Inconsistent evaluation counts in condition_evaluations_by_branch: {condition_evaluations_by_branch}. "
+                    f"This indicates a bug in the branch processing logic."
+                )
+        
+        overall_failed_conditions: Set[str] = set()
+        reasons_by_branch: Dict[str, str] = {}
 
-        for condition, evaluations in condition_evaluations_by_branch.items():
-            if not evaluations:
-                raise RuntimeError(f"Condition '{condition}' has no evaluations. This indicates a bug in _process_or_branches method.")
+        # Find the branch that conflicts with any condition
+        # Since in process_or_branches, we break early when an incompatible branch is found, we can start from the first branch and work forwards
+        for branch_index in range(len(branches)):
+            # Get the conditions that failed this branch
+            failed_conditions: Set[str] = set()
+            for condition in condition_evaluations_by_branch:
+                if condition_evaluations_by_branch[condition][branch_index].eligibility <= 0.0:
+                    failed_conditions.add(condition)
+            
+            if not failed_conditions:
+                raise RuntimeError(f"No conditions failed branch {branches[branch_index]}")
+            
+            overall_failed_conditions.update(failed_conditions)
 
-            # Get the best evaluation for this condition across all branches
-            best_eval = max(evaluations, key=lambda x: x.eligibility)
-            if best_eval.eligibility > best_eligibility:
-                best_eligibility = best_eval.eligibility
-                best_condition = condition
-                best_reason = best_eval.reason
+            reasons: Set[str] = set()
+            for condition in failed_conditions:
+                reasons.add(condition_evaluations_by_branch[condition][branch_index].reason)
+            reasons_by_branch[branches[branch_index]] = ", ".join(reasons)
+        
+        # Concatenate the failed conditions and reasons
+        failed_conditions_str: str = ", ".join(overall_failed_conditions)
+        reasons_str: str = ", ".join([f"{branch}: {reason}" for branch, reason in reasons_by_branch.items()])
+        return failed_conditions_str, reasons_str
 
-        if best_condition is None:
-            return (
-                "",
-                criterion,
-                "No conditions were evaluated against this criterion",
-            )
-
-        return (best_condition, criterion, best_reason)
 
     def _evaluate_inclusion_criteria(
         self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
@@ -1602,10 +1614,13 @@ Inclusion Criteria Text:
 
                 # Check if any condition failed all branches
                 if branch_max_prob <= 0.0:
-                    failure_reason = self._get_or_criterion_failure_reason(
-                        condition_evaluations_by_branch, criterion
+                    condition_str: str
+                    reason_str: str
+                    condition_str, reason_str = self._get_or_criterion_failure_reason(
+                        condition_evaluations_by_branch, or_branches
                     )
                     overall_probability = 0.0
+                    failure_reason = (condition_str, criterion, reason_str)
                     break
 
             # Handle non-OR criterion
