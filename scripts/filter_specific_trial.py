@@ -49,8 +49,9 @@ def setup_logging(nct_id: str) -> str:
         force=True,
     )
 
-    # Ensure base module loggers are set to INFO level
-    logging.getLogger("base.gpt_client").setLevel(logging.INFO)
+    # Set specific loggers to WARNING level to reduce noise
+    logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
 
     return str(log_file)
