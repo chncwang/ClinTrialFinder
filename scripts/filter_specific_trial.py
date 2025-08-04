@@ -203,7 +203,13 @@ def filter_specific_trial(
         "clinical_record_conditions": history_items,
         "is_eligible": is_eligible,
         "api_cost": cost,
-        "failure_reason": failure_reason if not is_eligible else None,
+        "failure_reason": {
+            "type": failure_reason.type,
+            "message": failure_reason.message,
+            "failed_condition": failure_reason.failed_condition,
+            "failed_criterion": failure_reason.failed_criterion,
+            "failure_details": failure_reason.failure_details
+        } if not is_eligible and failure_reason is not None else None,
         "evaluation_timestamp": datetime.datetime.now().isoformat(),
     }
     
