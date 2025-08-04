@@ -3,11 +3,12 @@
 import logging
 
 # Configure logging for the base module - set to INFO level to reduce debug logs
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
-)
+# Temporarily disabled to prevent conflicts with script logging
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+#     force=True
+# )
 
 # Set the log level for all loggers in the base module to INFO
 base_logger = logging.getLogger('base')
@@ -52,4 +53,5 @@ def ensure_info_logging():
     root_logger.setLevel(logging.INFO)
 
 # Call the function to ensure logging is set to INFO when module is imported
-ensure_info_logging()
+# Temporarily disabled to prevent conflicts with script logging
+# ensure_info_logging()
