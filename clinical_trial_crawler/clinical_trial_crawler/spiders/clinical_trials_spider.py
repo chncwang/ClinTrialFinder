@@ -1,15 +1,8 @@
 import json
-import sys
-from pathlib import Path
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode
 
 import scrapy
-
-# Add parent directory to Python path to import base module
-sys.path.append(str(Path(__file__).parent.parent.parent))
-from base.logging_config import setup_logging
-from loguru import logger
 
 
 class ClinicalTrialsSpider(scrapy.Spider):
@@ -39,13 +32,10 @@ class ClinicalTrialsSpider(scrapy.Spider):
         self.specific_trial = specific_trial
         self.output_file = output_file
         
-        # Setup logging configuration
-        setup_logging("clinical_trials_spider")
-        
-        logger.info(f"Exclude completed trials: {self.exclude_completed}")
-        logger.info(f"Searching for condition: {self.condition}")
+        self.logger.info(f"Exclude completed trials: {self.exclude_completed}")
+        self.logger.info(f"Searching for condition: {self.condition}")
         if specific_trial:
-            logger.info(f"Fetching specific trial: {specific_trial}")
+            self.logger.info(f"Fetching specific trial: {specific_trial}")
 
     def get_base_params(self) -> Dict[str, Union[str, int]]:
         """Get common request parameters"""
@@ -105,15 +95,15 @@ class ClinicalTrialsSpider(scrapy.Spider):
     def parse(self, response: Any) -> Any:
         try:
             if response.status >= 400:
-                logger.error(f"Error response {response.status}: {response.text}")
+                self.logger.error(f"Error response {response.status}: {response.text}")
                 return
 
             data = json.loads(response.text)
             studies = data.get("studies", [])
 
-            logger.info(f"Found {len(studies)} studies on current page")
+            self.logger.info(f"Found {len(studies)} studies on current page")
             if data.get("totalCount"):
-                logger.info(f"Total studies available: {data.get('totalCount')}")
+                self.logger.info(f"Total studies available: {data.get('totalCount')}")
 
             for study in studies:
                 if "protocolSection" in study:
@@ -128,25 +118,25 @@ class ClinicalTrialsSpider(scrapy.Spider):
                 yield self.create_request(next_url, self.parse)
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            logger.error(f"Response text: {response.text[:200]}...")
+            self.logger.error(f"Failed to parse JSON response: {e}")
+            self.logger.error(f"Response text: {response.text[:200]}...")
         except Exception as e:
-            logger.error(f"Unexpected error while processing response: {e}")
+            self.logger.error(f"Unexpected error while processing response: {e}")
             import traceback
 
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def handle_error(self, failure: Any) -> None:
-        logger.error(f"Request failed: {failure.value}")
+        self.logger.error(f"Request failed: {failure.value}")
 
     def closed(self, reason: str) -> None:
-        logger.info(f"Spider closed: {reason}")
+        self.logger.info(f"Spider closed: {reason}")
 
     def parse_single_trial(self, response: Any) -> Optional[Dict[str, Any]]:
         """Parse response for a single trial request."""
         try:
             if response.status >= 400:
-                logger.error(f"Error response {response.status}: {response.text}")
+                self.logger.error(f"Error response {response.status}: {response.text}")
                 return None
 
             data = json.loads(response.text)
@@ -158,21 +148,21 @@ class ClinicalTrialsSpider(scrapy.Spider):
                         json.dump([trial_data], f)
                 return trial_data
             else:
-                logger.error(
+                self.logger.error(
                     f"Unexpected data structure. Available keys: {list(data.keys())}"
                 )
-                logger.error(f"Full response: {response.text}")
+                self.logger.error(f"Full response: {response.text}")
                 return None
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            logger.error(f"Response text: {response.text[:200]}...")
+            self.logger.error(f"Failed to parse JSON response: {e}")
+            self.logger.error(f"Response text: {response.text[:200]}...")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error while processing response: {e}")
+            self.logger.error(f"Unexpected error while processing response: {e}")
             import traceback
 
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
     def extract_trial_data(self, protocol: Any) -> Dict[str, Any]:
@@ -180,8 +170,8 @@ class ClinicalTrialsSpider(scrapy.Spider):
         # Debug logging for arms
         arms_interventions_module = protocol.get("armsInterventionsModule", {})
         arms_data = arms_interventions_module.get("armGroups", [])
-        logger.debug(f"Arms interventions module keys: {list(arms_interventions_module.keys())}")
-        logger.debug(f"Arms data: {arms_data}")
+        self.logger.debug(f"Arms interventions module keys: {list(arms_interventions_module.keys())}")
+        self.logger.debug(f"Arms data: {arms_data}")
         
         return {
             "identification": {
