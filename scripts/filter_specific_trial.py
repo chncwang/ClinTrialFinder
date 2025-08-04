@@ -45,21 +45,11 @@ def setup_logging(nct_id: str) -> str:
     # Completely reset logging configuration
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
-    root_logger.propagate = True
+    root_logger.setLevel(logging.INFO)
     
-    # Configure root logger with force=True to override any existing config
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[file_handler, console_handler],
-        force=True,
-    )
-    
-    # Double-check that we don't have duplicate handlers
-    root_logger = logging.getLogger()
-    if len(root_logger.handlers) > 2:  # Should only have file and console handlers
-        root_logger.handlers.clear()
-        root_logger.addHandler(file_handler)
-        root_logger.addHandler(console_handler)
+    # Add our handlers directly to the root logger
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
     # Set specific loggers to WARNING level to reduce noise
     logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
