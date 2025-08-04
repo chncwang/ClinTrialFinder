@@ -42,6 +42,11 @@ def setup_logging(nct_id: str) -> str:
         logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     )
 
+    # Clear any existing handlers to prevent duplicates
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
     # Configure root logger
     logging.basicConfig(
         level=logging.INFO,
@@ -52,6 +57,7 @@ def setup_logging(nct_id: str) -> str:
     # Set specific loggers to WARNING level to reduce noise
     logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
 
     return str(log_file)
