@@ -21,9 +21,14 @@ from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter
 
+# Global logger for this module
+logger = None
+
 
 def setup_logging(nct_id: str) -> str:
     """Setup logging with timestamp and NCT ID in filename."""
+    global logger
+    
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Create logs directory if it doesn't exist
@@ -31,10 +36,11 @@ def setup_logging(nct_id: str) -> str:
     logs_dir.mkdir(exist_ok=True)
     log_file = logs_dir / f"filter_trial_{nct_id}_{timestamp}.log"
 
-    # Completely reset logging configuration first
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.setLevel(logging.INFO)
+    # Create a dedicated logger for this script
+    logger = logging.getLogger("filter_specific_trial")
+    logger.handlers.clear()  # Clear any existing handlers
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # Don't propagate to root logger
 
     # Create single formatter to use for both handlers
     formatter = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -47,9 +53,9 @@ def setup_logging(nct_id: str) -> str:
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     
-    # Add handlers to root logger
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
+    # Add handlers to our dedicated logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
     # Set specific loggers to WARNING level to reduce noise
     logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
@@ -108,13 +114,15 @@ def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
                 return []
 
     except Exception as e:
-        logging.error(f"Failed to fetch trial data: {e}")
+        if logger:
+            logger.error(f"Failed to fetch trial data: {e}")
         return []
     finally:
         try:
             os.unlink(temp_output)
         except Exception as e:
-            logging.warning(f"Failed to delete temporary file {temp_output}: {e}")
+            if logger:
+                logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
 
 
 def filter_specific_trial(
@@ -139,7 +147,9 @@ def filter_specific_trial(
     Returns:
         Dictionary containing the filtering results
     """
-    logger = logging.getLogger(__name__)
+    
+    if logger is None:
+        raise RuntimeError("Logger not initialized. Call setup_logging() first.")
     
     logger.info("=" * 60)
     logger.info(f"filter_specific_trial: Starting filtering process for trial {nct_id}")
@@ -273,7 +283,9 @@ def main():
 
     # Setup logging
     log_file = setup_logging(args.nct_id)
-    logger = logging.getLogger(__name__)
+
+    if logger is None:
+        raise RuntimeError("Logger not initialized. Call setup_logging() first.")
 
     logger.info("main: Starting specific trial filtering process")
     logger.info(f"main: Input clinical record: {args.clinical_record}")
