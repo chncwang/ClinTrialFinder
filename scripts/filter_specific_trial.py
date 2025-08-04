@@ -42,22 +42,30 @@ def setup_logging(nct_id: str) -> str:
         logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     )
 
-    # Clear any existing handlers to prevent duplicates
+    # Completely reset logging configuration
     root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    root_logger.handlers.clear()
+    root_logger.propagate = True
     
-    # Configure root logger
+    # Configure root logger with force=True to override any existing config
     logging.basicConfig(
         level=logging.INFO,
         handlers=[file_handler, console_handler],
         force=True,
     )
+    
+    # Double-check that we don't have duplicate handlers
+    root_logger = logging.getLogger()
+    if len(root_logger.handlers) > 2:  # Should only have file and console handlers
+        root_logger.handlers.clear()
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
 
     # Set specific loggers to WARNING level to reduce noise
     logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
 
     return str(log_file)
