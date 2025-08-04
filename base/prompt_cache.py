@@ -57,6 +57,7 @@ class PromptCache:
     def get(self, cache_key: str) -> str | None:
         """Get cached result for a given cache key."""
         if cache_key in self.cache_data:
+            logger.debug(f"PromptCache.get: Cache HIT for key: {cache_key[:8]}...")
             try:
                 # Ensure we're returning a string, not a dictionary
                 result = self.cache_data[cache_key]
@@ -68,31 +69,31 @@ class PromptCache:
             except Exception as e:
                 logger.error(f"Error retrieving cache entry: {e}")
                 return None
-        logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
+        logger.debug(f"PromptCache.get: Cache MISS for key: {cache_key[:8]}...")
         return None
 
     def set(self, cache_key: str, result: Any):
         """Cache result for a given cache key."""
-        logger.debug(f"Caching result for key: {cache_key[:8]}...")
+        logger.debug(f"PromptCache.set: Caching result for key: {cache_key[:8]}...")
 
         # Enforce cache size limit
         while len(self.cache_data) >= self.max_size:
             # Remove oldest entry
             oldest_key, _ = next(iter(self.cache_data.items()))
             self.cache_data.popitem(last=False)
-            logger.debug(f"Removed oldest cache entry: {oldest_key[:8]}...")
+            logger.debug(f"PromptCache.set: Removed oldest cache entry: {oldest_key[:8]}...")
 
         # Ensure we're storing a string
         if not isinstance(result, str):
             try:
                 if isinstance(result, dict):
-                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
+                    logger.warning(f"PromptCache.set: Converting dict to string for cache key: {cache_key[:8]}...")
                     result = json.dumps(result)
                 else:
-                    logger.warning(f"Converting {type(result)} to string for cache key: {cache_key[:8]}...")
+                    logger.warning(f"PromptCache.set: Converting {type(result)} to string for cache key: {cache_key[:8]}...")
                     result = str(result)
             except Exception as e:
-                logger.error(f"Error converting result to string: {e}")
+                logger.error(f"PromptCache.set: Error converting result to string: {e}")
                 return
 
         # Save new entry

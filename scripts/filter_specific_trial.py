@@ -10,71 +10,21 @@ logging of the filtering process and results.
 import argparse
 import datetime
 import json
-import logging
 import os
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from loguru import logger
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter
-
-# Global logger for this module
-logger = None
+from base.logging_config import setup_logging
 
 
-def setup_logging(nct_id: str, log_level: str = "INFO") -> str:
+def setup_logging_for_trial(nct_id: str, log_level: str = "INFO") -> str:
     """Setup logging with timestamp and NCT ID in filename."""
-    global logger
-    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Create logs directory if it doesn't exist
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-    log_file = logs_dir / f"filter_trial_{nct_id}_{timestamp}.log"
-
-    # Create a dedicated logger for this script
-    logger = logging.getLogger("filter_specific_trial")
-    logger.handlers.clear()  # Clear any existing handlers
-    logger.setLevel(getattr(logging, log_level.upper()))
-    logger.propagate = False  # Don't propagate to root logger
-
-    # Create single formatter to use for both handlers
-    formatter = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-
-    # Create and configure file handler
-    file_handler = logging.FileHandler(str(log_file))
-    file_handler.setFormatter(formatter)
-    
-    # Create and configure console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    
-    # Add handlers to our dedicated logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-
-    # Set specific loggers to WARNING level to reduce noise
-    logging.getLogger("base.gpt_client").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
-    
-    # Configure base.disease_expert logger to show INFO level logs
-    disease_expert_logger = logging.getLogger("base.disease_expert")
-    disease_expert_logger.setLevel(logging.INFO)
-    disease_expert_logger.propagate = True  # Allow propagation to parent loggers
-    
-    # Add handlers to disease_expert logger if it doesn't have any
-    if not disease_expert_logger.handlers:
-        disease_expert_logger.addHandler(file_handler)
-        disease_expert_logger.addHandler(console_handler)
-
-    return str(log_file)
+    return setup_logging("filter_specific_trial", log_level)
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:
@@ -124,15 +74,13 @@ def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
                 return []
 
     except Exception as e:
-        if logger:
-            logger.error(f"Failed to fetch trial data: {e}")
+        logger.error(f"Failed to fetch trial data: {e}")
         return []
     finally:
         try:
             os.unlink(temp_output)
         except Exception as e:
-            if logger:
-                logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
+            logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
 
 
 def filter_specific_trial(
@@ -158,9 +106,6 @@ def filter_specific_trial(
         Dictionary containing the filtering results
     """
     
-    if logger is None:
-        raise RuntimeError("Logger not initialized. Call setup_logging() first.")
-    
     logger.info("=" * 60)
     logger.info(f"filter_specific_trial: Starting filtering process for trial {nct_id}")
     logger.info("=" * 60)
@@ -179,7 +124,6 @@ def filter_specific_trial(
     history_items = extract_conditions_from_record(
         clinical_record, gpt_client, refresh_cache=refresh_cache
     )
-    exit()
     logger.info(f"filter_specific_trial: Extracted {len(history_items)} conditions:")
     for item in history_items:
         logger.info(f"filter_specific_trial:  - {item}")
@@ -300,10 +244,7 @@ def main():
     args = parser.parse_args()
 
     # Setup logging
-    log_file = setup_logging(args.nct_id, args.log_level)
-
-    if logger is None:
-        raise RuntimeError("Logger not initialized. Call setup_logging() first.")
+    log_file = setup_logging_for_trial(args.nct_id, args.log_level)
 
     logger.info("main: Starting specific trial filtering process")
     logger.info(f"main: Input clinical record: {args.clinical_record}")

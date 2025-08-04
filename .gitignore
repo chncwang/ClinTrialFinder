@@ -176,3 +176,4 @@ cython_debug/
 *.pkl
 
 *.csv
+*.yaml

@@ -77,7 +77,7 @@ class GPTClient:
         cache_key = hashlib.sha256(cache_string.encode("utf-8")).hexdigest()
 
         prompt_preview = prompt[:50] + "..." if len(prompt) > 50 else prompt
-        logger.debug(f"Call GPT for prompt: {prompt_preview}")
+        logger.debug(f"GPTClient.call_gpt: Generated cache key: {cache_key} for prompt: {prompt_preview}")
 
         # Check cache first, unless refresh_cache is True
         if not refresh_cache:
@@ -98,11 +98,11 @@ class GPTClient:
                     )
                     return cached_result, 0.0
                 else:
-                    logger.debug(f"Cache MISS in {cache_check_time:.3f}s")
+                    logger.debug(f"GPTClient.call_gpt: Cache MISS in {cache_check_time:.3f}s")
 
             self.cache_misses += 1
             cache_check_time = time.time() - cache_check_start
-            logger.debug(f"Cache check took {cache_check_time:.3f}s")
+            logger.debug(f"GPTClient.call_gpt: Cache check took {cache_check_time:.3f}s")
 
         try:
             api_start_time = time.time()
@@ -119,11 +119,11 @@ class GPTClient:
             if response_format:
                 completion_kwargs["response_format"] = response_format
 
-            logger.info(f"Making API call to {model} (refresh_cache={refresh_cache})")
+            logger.info(f"GPTClient.call_gpt: Making API call to {model} (refresh_cache={refresh_cache})")
             self.api_calls += 1
             response: Any = self.client.chat.completions.create(**completion_kwargs)
             api_time = time.time() - api_start_time
-            logger.info(f"API call completed in {api_time:.3f}s")
+            logger.info(f"GPTClient.call_gpt: API call completed in {api_time:.3f}s")
 
             result = response.choices[0].message.content
 
@@ -131,18 +131,18 @@ class GPTClient:
             with self._cache_lock:  # Use lock when modifying the cache
                 self.cache.set(cache_key, result)
             cache_set_time = time.time() - cache_set_start
-            logger.debug(f"Cache set took {cache_set_time:.3f}s")
+            logger.debug(f"GPTClient.call_gpt: Cache set took {cache_set_time:.3f}s")
 
             cost = AITokenPricing.calculate_cost(prompt + system_role, result, model)
             total_time = time.time() - start_time
             logger.info(
-                f"Total GPT call took {total_time:.3f}s (API: {api_time:.3f}s, Cache operations: {cache_check_time + cache_set_time:.3f}s)"
+                f"GPTClient.call_gpt: Total GPT call took {total_time:.3f}s (API: {api_time:.3f}s, Cache operations: {cache_check_time + cache_set_time:.3f}s)"
             )
 
             return result, cost
 
         except Exception as e:
-            logger.error(f"Error in GPT call: {str(e)}")
+            logger.error(f"GPTClient.call_gpt: Error in GPT call: {str(e)}")
             raise
 
     def call_with_retry(
@@ -170,11 +170,11 @@ class GPTClient:
         total_cost = 0.0
         start_time = time.time()
         prompt_preview = prompt[:50] + "..." if len(prompt) > 50 else prompt
-        logger.info(f"Call with retry for prompt: {prompt_preview}")
+        logger.info(f"GPTClient.call_with_retry: Call with retry for prompt: {prompt_preview}")
 
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"Attempt {attempt+1}/{self.max_retries}")
+                logger.info(f"GPTClient.call_with_retry: Attempt {attempt+1}/{self.max_retries}")
                 response, cost = self.call_gpt(
                     prompt,
                     system_role,
@@ -190,39 +190,39 @@ class GPTClient:
                         json_start = time.time()
                         parsed = json.loads(response)
                         json_time = time.time() - json_start
-                        logger.debug(f"JSON parsing took {json_time:.3f}s")
+                        logger.debug(f"GPTClient.call_with_retry: JSON parsing took {json_time:.3f}s")
                         total_time = time.time() - start_time
                         logger.info(
-                            f"Call with retry succeeded in {total_time:.3f}s (attempt {attempt+1}/{self.max_retries})"
+                            f"GPTClient.call_with_retry: Call with retry succeeded in {total_time:.3f}s (attempt {attempt+1}/{self.max_retries})"
                         )
                         return parsed, total_cost
                     except json.JSONDecodeError as e:
                         logger.warning(
-                            f"JSON decode error on attempt {attempt+1}: {str(e)}"
+                            f"GPTClient.call_with_retry: JSON decode error on attempt {attempt+1}: {str(e)}"
                         )
-                        logger.debug(f"Invalid JSON response: {response[:200]}...")
+                        logger.debug(f"GPTClient.call_with_retry: Invalid JSON response: {response[:200]}...")
                         raise
 
                 total_time = time.time() - start_time
                 logger.info(
-                    f"Call with retry succeeded in {total_time:.3f}s (attempt {attempt+1}/{self.max_retries})"
+                    f"GPTClient.call_with_retry: Call with retry succeeded in {total_time:.3f}s (attempt {attempt+1}/{self.max_retries})"
                 )
                 return response, total_cost
 
             except json.JSONDecodeError if validate_json else Exception as e:
                 if attempt == self.max_retries - 1:
                     logger.warning(
-                        f"Failed after {self.max_retries} attempts: {str(e)}"
+                        f"GPTClient.call_with_retry: Failed after {self.max_retries} attempts: {str(e)}"
                     )
                     raise
                 backoff_time = 2**attempt
                 logger.info(
-                    f"Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(e)}"
+                    f"GPTClient.call_with_retry: Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(e)}"
                 )
                 time.sleep(backoff_time)  # Exponential backoff
 
         total_time = time.time() - start_time
         logger.error(
-            f"Call with retry failed after {total_time:.3f}s and {self.max_retries} attempts"
+            f"GPTClient.call_with_retry: Call with retry failed after {total_time:.3f}s and {self.max_retries} attempts"
         )
         raise RuntimeError(f"Failed after {self.max_retries} attempts")

@@ -16,6 +16,7 @@ setup(
         "playwright>=1.50.0",
         "tqdm>=4.67.1",
         "openai",
+        "loguru>=0.7.0",
     ],
     author="Wang Qiansheng",
     author_email="chncwang@gmail.com",

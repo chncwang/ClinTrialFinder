@@ -282,6 +282,7 @@ def has_absolute_time_reference(item: str, gpt_client: GPTClient) -> bool:
         f'Text: "{item}"\n\n'
         "Answer with only a single word - either 'yes' or 'no'."
     )
+    logger.debug(f"has_absolute_time_reference: prompt: {prompt}")
 
     try:
         completion, _ = gpt_client.call_gpt(
