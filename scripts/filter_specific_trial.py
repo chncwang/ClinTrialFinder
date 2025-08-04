@@ -25,7 +25,7 @@ from base.trial_expert import GPTTrialFilter
 logger = None
 
 
-def setup_logging(nct_id: str) -> str:
+def setup_logging(nct_id: str, log_level: str = "INFO") -> str:
     """Setup logging with timestamp and NCT ID in filename."""
     global logger
     
@@ -39,7 +39,7 @@ def setup_logging(nct_id: str) -> str:
     # Create a dedicated logger for this script
     logger = logging.getLogger("filter_specific_trial")
     logger.handlers.clear()  # Clear any existing handlers
-    logger.setLevel(logging.INFO)
+    logger.setLevel(getattr(logging, log_level.upper()))
     logger.propagate = False  # Don't propagate to root logger
 
     # Create single formatter to use for both handlers
@@ -63,6 +63,16 @@ def setup_logging(nct_id: str) -> str:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
+    
+    # Configure base.disease_expert logger to show INFO level logs
+    disease_expert_logger = logging.getLogger("base.disease_expert")
+    disease_expert_logger.setLevel(logging.INFO)
+    disease_expert_logger.propagate = True  # Allow propagation to parent loggers
+    
+    # Add handlers to disease_expert logger if it doesn't have any
+    if not disease_expert_logger.handlers:
+        disease_expert_logger.addHandler(file_handler)
+        disease_expert_logger.addHandler(console_handler)
 
     return str(log_file)
 
@@ -165,9 +175,11 @@ def filter_specific_trial(
     # Extract conditions from clinical record
     logger.info(f"filter_specific_trial: Reading clinical record from {clinical_record}")
     logger.info("filter_specific_trial: Extracting conditions from clinical record")
+    logger.debug(f"filter_specific_trial: refresh_cache: {refresh_cache}")
     history_items = extract_conditions_from_record(
         clinical_record, gpt_client, refresh_cache=refresh_cache
     )
+    exit()
     logger.info(f"filter_specific_trial: Extracted {len(history_items)} conditions:")
     for item in history_items:
         logger.info(f"filter_specific_trial:  - {item}")
@@ -278,11 +290,17 @@ def main():
         action="store_true",
         help="Refresh the cache of GPT responses",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set the logging level",
+    )
 
     args = parser.parse_args()
 
     # Setup logging
-    log_file = setup_logging(args.nct_id)
+    log_file = setup_logging(args.nct_id, args.log_level)
 
     if logger is None:
         raise RuntimeError("Logger not initialized. Call setup_logging() first.")

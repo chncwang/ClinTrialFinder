@@ -234,6 +234,8 @@ def extract_conditions_from_content(
             "Return only the JSON array, without any additional text or explanation."
         )
 
+        logger.info(f"extract_conditions_from_content: prompt: {prompt}")
+
         completion, cost = gpt_client.call_gpt(
             prompt=prompt,
             system_role="You are a medical expert specialized in extracting clinical history from medical records.",
