@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import datetime
-import logging
 import os
 import sys
 from pathlib import Path
+from loguru import logger
 
 
 # Add parent directory to Python path to import base module
@@ -20,24 +20,18 @@ from typing import List
 # Configure logging
 log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-# Update logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler(sys.stdout),  # Explicitly use stdout
-    ],
-    force=True,  # Force reconfiguration of the root logger
+# Configure loguru logging
+logger.remove()  # Remove default handler
+logger.add(
+    log_file,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
+    level="INFO"
 )
-
-# Get the root logger
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# Get the script's logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.add(
+    sys.stdout,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
+    level="INFO"
+)
 
 
 def main():

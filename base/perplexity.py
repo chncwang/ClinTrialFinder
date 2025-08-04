@@ -1,15 +1,13 @@
-import logging
 import os
 import pickle
 import time
 from datetime import timedelta
 from typing import Dict, List, Tuple
+from loguru import logger
 
 import requests
 
 from base.pricing import AITokenPricing
-
-logger = logging.getLogger(__name__)
 
 
 class PerplexityClient:

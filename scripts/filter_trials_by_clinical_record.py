@@ -1,50 +1,27 @@
 import argparse
 import datetime
 import json
-import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from loguru import logger
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
 
-# Configure logging with timestamp in filename
+# Configure loguru with timestamp in filename
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 # Create logs directory if it doesn't exist
 logs_dir = Path("logs")
 logs_dir.mkdir(exist_ok=True)
 log_file = logs_dir / f"filter_trials_by_clinical_record_{timestamp}.log"
 
-# Create handlers
-file_handler = logging.FileHandler(str(log_file))
-file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-)
-
-console_handler = logging.StreamHandler(sys.stdout)  # Explicitly use stdout
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-)
-
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[file_handler, console_handler],
-    force=True,  # Force reconfiguration of the root logger
-)
-
-# Get the module logger
-logger = logging.getLogger(__name__)
-
-# Set base.gpt_client logger to DEBUG level
-logging.getLogger("base.gpt_client").setLevel(logging.DEBUG)
-
-# Set base.prompt_cache logger to DEBUG level
-logging.getLogger("base.prompt_cache").setLevel(logging.DEBUG)
+# Configure loguru with both file and console output
+logger.add(str(log_file), format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {name} - {message}", level="DEBUG")
+logger.add(sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {name} - {message}", level="INFO")
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:

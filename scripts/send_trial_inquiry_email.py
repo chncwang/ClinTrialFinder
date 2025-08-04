@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import logging
 import os
 import smtplib
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from loguru import logger
 
 from dotenv import load_dotenv
 
@@ -50,18 +51,13 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# Configure logging
-logging_level = logging.DEBUG if args.debug else logging.INFO
-logging.basicConfig(
-    level=logging_level,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    force=True,  # Force override any existing logger
-    handlers=[
-        logging.StreamHandler(),  # Add explicit console handler
-    ],
-)
-logger = logging.getLogger(__name__)
+# Configure loguru
+if args.debug:
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG", format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}")
+else:
+    logger.remove()
+    logger.add(sys.stderr, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}")
 
 # Add an initial log message to verify logging is working
 logger.info("Starting trial inquiry email script")

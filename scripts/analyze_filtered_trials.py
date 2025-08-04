@@ -1,11 +1,11 @@
 import argparse
 import json
-import logging
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from loguru import logger
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
@@ -22,32 +22,18 @@ logs_dir.mkdir(exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"logs/analyze_filtered_trials_{timestamp}.log"
 
-# Configure the root logger first
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler()  # Output to console
-    ],
-    force=True  # Force reconfiguration to ensure our settings take effect
+# Configure loguru logging
+logger.remove()  # Remove default handler
+logger.add(
+    log_filename,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
+    level="INFO"
 )
-
-# Get the module logger
-logger = logging.getLogger(__name__)
-
-# Ensure the root logger level is set to INFO
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-
-# Configure base.trial_expert logger
-trial_expert_logger = logging.getLogger("base.trial_expert")
-trial_expert_logger.setLevel(logging.INFO)
-trial_expert_logger.propagate = True  # Ensure logs propagate to root logger
-
-# Make sure sys.stdout is flushed after each write
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(line_buffering=True)  # type: ignore
+logger.add(
+    sys.stdout,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
+    level="INFO"
+)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
@@ -135,11 +121,7 @@ def process_trials_file(
         logger.info(f"Log file: {os.path.abspath(log_filename)}")
         logger.info("=" * 50)
         
-        # Force flush all handlers
-        for handler in logging.getLogger().handlers:
-            handler.flush()
-            
-        # Also flush stdout/stderr explicitly
+        # Flush stdout/stderr explicitly
         sys.stdout.flush()
         sys.stderr.flush()
 
@@ -200,9 +182,7 @@ if __name__ == "__main__":
         raise
         
     finally:
-        # Final flush of all logs
-        for handler in logging.getLogger().handlers:
-            handler.flush()
+        # Final flush of logs
         sys.stdout.flush()
         sys.stderr.flush()
         

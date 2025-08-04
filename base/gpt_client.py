@@ -1,16 +1,14 @@
 import hashlib
 import json
-import logging
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple, Union
 
+from loguru import logger
 from openai import OpenAI
 
 from base.pricing import AITokenPricing
 from base.prompt_cache import PromptCache
-
-logger = logging.getLogger(__name__)
 
 
 class GPTClient:

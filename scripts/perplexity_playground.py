@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 import argparse
-import logging
 import os
 import sys
 from pathlib import Path
+from loguru import logger
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 from base.perplexity import PerplexityClient
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(handler)
 
 
 def main():

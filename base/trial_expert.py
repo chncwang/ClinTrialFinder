@@ -1,17 +1,15 @@
 import json
-import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, Any, cast
 
+from loguru import logger
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
 from base.drug_analyzer import analyze_drug_efficacy
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, save_json_list_file
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from base.perplexity import PerplexityClient

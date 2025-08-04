@@ -1,12 +1,12 @@
 import argparse
 import json
-import logging
 import os
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+from loguru import logger
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,26 +22,10 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
     ClinicalTrialsSpider,
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Create a single log file with timestamp for all loggers
+# Configure loguru
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"clinical_trial_analysis_{timestamp}.log"
-file_handler = logging.FileHandler(log_filename)
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
-
-# Add handler to the root logger to capture all logs
-root_logger = logging.getLogger()
-root_logger.addHandler(file_handler)
-
-# Configure base.trial_expert logger
-trial_expert_logger = logging.getLogger("base.trial_expert")
-trial_expert_logger.setLevel(logging.DEBUG)
-trial_expert_logger.propagate = True  # Allow propagation to root logger
+logger.add(log_filename, format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}", level="DEBUG")
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")

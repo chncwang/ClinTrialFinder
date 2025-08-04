@@ -1,63 +1,32 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import logging
 import random
 from datetime import datetime
 from typing import List, Any
+from loguru import logger
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.trial_expert import compare_trials
 from base.disease_expert import extract_disease_from_record
 
-# Global logger instance
-logger = None
-
-
-def get_logger() -> logging.Logger:
-    """Get the logger instance, initializing it if necessary."""
-    global logger
-    if logger is None:
-        setup_logging()
-    assert logger is not None  # Type checker hint
-    return logger
-
-
 def setup_logging():
     """Set up logging configuration with timestamp in filename."""
-    global logger
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = f"trial_ranking_{timestamp}.log"
 
-    # Create formatters for file and console
-    file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    # Configure loguru logging
+    logger.remove()  # Remove default handler
+    logger.add(
+        log_file,
+        format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
+        level="INFO"
     )
-    console_formatter = logging.Formatter("%(levelname)s: %(message)s")
-
-    # Set up file handler
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(file_formatter)
-
-    # Set up console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(logging.INFO)
-
-    # Configure root logger to capture all logs
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.handlers = []  # Clear existing handlers
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-
-    # Get logger for this module
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    logger.propagate = True  # Ensure logs propagate to root logger
-
-    return logger
+    logger.add(
+        lambda msg: print(f"{msg.record['level'].name}: {msg.record['message']}"),
+        level="INFO"
+    )
 
 
 def read_trials_file(file_path: str):
@@ -66,22 +35,22 @@ def read_trials_file(file_path: str):
         with open(file_path, "r") as f:
             return json.load(f)
     except json.JSONDecodeError as e:
-        get_logger().error(f"Error parsing JSON file: {e}")
+        logger.error(f"Error parsing JSON file: {e}")
         raise
     except FileNotFoundError:
-        get_logger().error(f"File not found: {file_path}")
+        logger.error(f"File not found: {file_path}")
         raise
 
 
 def log_trial_details(trial: ClinicalTrial):
     """Log relevant details for each trial."""
-    get_logger().info("=" * 80)
-    get_logger().info(f"log_trial_details: Trial ID: {trial.identification.nct_id}")
-    get_logger().info(f"log_trial_details: Title: {trial.identification.brief_title}")
-    get_logger().info(f"log_trial_details: Drug Analysis: {trial.drug_analysis}")
-    get_logger().info(f"log_trial_details: Recommendation Level: {trial.recommendation_level}")
-    get_logger().info(f"log_trial_details: Analysis Reason: {trial.analysis_reason}")
-    get_logger().info("=" * 80)
+    logger.info("=" * 80)
+    logger.info(f"log_trial_details: Trial ID: {trial.identification.nct_id}")
+    logger.info(f"log_trial_details: Title: {trial.identification.brief_title}")
+    logger.info(f"log_trial_details: Drug Analysis: {trial.drug_analysis}")
+    logger.info(f"log_trial_details: Recommendation Level: {trial.recommendation_level}")
+    logger.info(f"log_trial_details: Analysis Reason: {trial.analysis_reason}")
+    logger.info("=" * 80)
 
 
 def partition(
@@ -123,7 +92,7 @@ def partition(
         trial2_title = pivot.identification.brief_title
         better_title = better_trial.identification.brief_title
 
-        get_logger().info(
+        logger.info(
             f"partition: Comparison: '{trial1_title}' vs '{trial2_title}'"
             f"\npartition: Better trial: '{better_title}'"
             f"\npartition: Cost: ${cost:.6f}, Total: ${total_cost:.6f}"
@@ -195,25 +164,25 @@ def rank_trials(
     ]
 
     # Log first 10 trial titles before shuffle
-    get_logger().info("rank_trials: First 10 trial titles before shuffle:")
+    logger.info("rank_trials: First 10 trial titles before shuffle:")
     for i in range(min(10, len(trial_objects))):
-        get_logger().info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
+        logger.info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
 
     # Randomize trials before sorting
     random.seed(seed)
-    get_logger().info(f"rank_trials: Randomized {len(trial_objects)} trials before sorting (seed: {seed})")
-    get_logger().info(
+    logger.info(f"rank_trials: Randomized {len(trial_objects)} trials before sorting (seed: {seed})")
+    logger.info(
         f"rank_trials: Initial pivotal trial title (last position): {trial_objects[-1].identification.brief_title}"
     )
     random.shuffle(trial_objects)
-    get_logger().info(
+    logger.info(
         f"rank_trials: Pivotal trial title after randomization (last position): {trial_objects[-1].identification.brief_title}"
     )
 
     # Log first 10 trial titles after shuffle
-    get_logger().info("rank_trials: First 10 trial titles after shuffle:")
+    logger.info("rank_trials: First 10 trial titles after shuffle:")
     for i in range(min(10, len(trial_objects))):
-        get_logger().info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
+        logger.info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
 
     # Sort trials using quicksort
     total_cost = quicksort(
@@ -224,7 +193,7 @@ def rank_trials(
         len(trial_objects) - 1,
         gpt_client,
     )
-    get_logger().info(f"rank_trials: Total cost of ranking: ${total_cost:.6f}")
+    logger.info(f"rank_trials: Total cost of ranking: ${total_cost:.6f}")
 
     return trial_objects, total_cost
 
@@ -259,7 +228,7 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    get_logger().info(f"main: Starting trial ranking process for file: {args.input_file}")
+    logger.info(f"main: Starting trial ranking process for file: {args.input_file}")
 
     try:
         # Read trials and clinical record
@@ -267,8 +236,8 @@ def main():
         with open(args.clinical_record_file, "r") as f:
             clinical_record = f.read().strip()
 
-        get_logger().info(f"main: Successfully loaded {len(trials)} trials from {args.input_file}")
-        get_logger().info(
+        logger.info(f"main: Successfully loaded {len(trials)} trials from {args.input_file}")
+        logger.info(
             f"main: Successfully loaded clinical record from {args.clinical_record_file}"
         )
 
@@ -279,7 +248,7 @@ def main():
         disease, _ = extract_disease_from_record(clinical_record, gpt_client)
         if disease is None:
             disease = "Unknown disease"
-        get_logger().info(f"main: Disease: {disease}")
+        logger.info(f"main: Disease: {disease}")
 
         # Rank trials with specified seed
         ranked_trials, total_cost = rank_trials(
@@ -287,16 +256,16 @@ def main():
         )
 
         # Log ranked trials
-        get_logger().info("\nmain: Ranked Trials (from best to worst):")
+        logger.info("\nmain: Ranked Trials (from best to worst):")
         for i, trial in enumerate(ranked_trials, 1):
-            get_logger().info(f"\nmain: Rank {i}:")
+            logger.info(f"\nmain: Rank {i}:")
             log_trial_details(trial)
 
         # Save ranked trials to file
         output_file = f"ranked_trials_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(output_file, "w") as f:
             json.dump([trial.to_dict() for trial in ranked_trials], f, indent=2)
-        get_logger().info(f"\nmain: Ranked trials saved to: {output_file}")
+        logger.info(f"\nmain: Ranked trials saved to: {output_file}")
 
         # Generate CSV output if requested
         csv_output_file = None
@@ -304,24 +273,24 @@ def main():
             try:
                 from scripts.json_to_csv_converter import convert_json_to_csv
                 csv_output_file = convert_json_to_csv(output_file)
-                get_logger().info(f"main: CSV output saved to: {csv_output_file}")
+                logger.info(f"main: CSV output saved to: {csv_output_file}")
             except ImportError:
-                get_logger().warning("main: CSV conversion module not available. Skipping CSV output.")
+                logger.warning("main: CSV conversion module not available. Skipping CSV output.")
             except Exception as e:
-                get_logger().error(f"main: Error generating CSV output: {e}")
+                logger.error(f"main: Error generating CSV output: {e}")
 
         # Log summary
-        get_logger().info("\n" + "=" * 80)
-        get_logger().info(f"main: TRIAL RANKING SUMMARY")
-        get_logger().info(f"main: Total number of trials ranked: {len(ranked_trials)}")
-        get_logger().info(f"main: Total cost of ranking: ${total_cost:.6f}")
-        get_logger().info(f"main: Output file: {output_file}")
+        logger.info("\n" + "=" * 80)
+        logger.info(f"main: TRIAL RANKING SUMMARY")
+        logger.info(f"main: Total number of trials ranked: {len(ranked_trials)}")
+        logger.info(f"main: Total cost of ranking: ${total_cost:.6f}")
+        logger.info(f"main: Output file: {output_file}")
         if args.csv_output and csv_output_file:
-            get_logger().info(f"main: CSV output: {csv_output_file}")
-        get_logger().info("main: " + "=" * 80)
+            logger.info(f"main: CSV output: {csv_output_file}")
+        logger.info("main: " + "=" * 80)
 
     except Exception as e:
-        get_logger().error(f"main: An error occurred: {e}", exc_info=True)
+        logger.error(f"main: An error occurred: {e}")
         raise
 
 
