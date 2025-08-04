@@ -1,4 +1,5 @@
 import json
+from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode
 
 import scrapy
@@ -18,13 +19,13 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
     def __init__(
         self,
-        exclude_completed=False,
-        condition=None,
-        specific_trial=None,
-        output_file=None,
-        *args,
-        **kwargs,
-    ):
+        exclude_completed: bool = False,
+        condition: Optional[str] = None,
+        specific_trial: Optional[str] = None,
+        output_file: Optional[str] = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         super(ClinicalTrialsSpider, self).__init__(*args, **kwargs)
         self.exclude_completed = exclude_completed
         self.condition = condition
@@ -35,19 +36,19 @@ class ClinicalTrialsSpider(scrapy.Spider):
         if specific_trial:
             self.logger.info(f"Fetching specific trial: {specific_trial}")
 
-    def get_base_params(self):
+    def get_base_params(self) -> Dict[str, Union[str, int]]:
         """Get common request parameters"""
-        params = {
+        params: Dict[str, Union[str, int]] = {
             "format": "json",
             "fields": "ProtocolSection",
             "markupFormat": "markdown",
         }
 
-        if not self.specific_trial:
+        if not self.specific_trial and self.condition:
             params.update(
                 {
                     "query.cond": self.condition,
-                    "pageSize": 100,
+                    "pageSize": "100",
                     "countTotal": "true",
                 }
             )
@@ -57,7 +58,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
         return params
 
-    def create_request(self, url, callback):
+    def create_request(self, url: str, callback: Any) -> scrapy.Request:
         """Create a standardized request object"""
         return scrapy.Request(
             url=url,
@@ -70,7 +71,7 @@ class ClinicalTrialsSpider(scrapy.Spider):
             dont_filter=True,
         )
 
-    def start_requests(self):
+    def start_requests(self) -> Any:
         params = self.get_base_params()
 
         if self.specific_trial:
@@ -80,17 +81,17 @@ class ClinicalTrialsSpider(scrapy.Spider):
             url = f"{self.api_base_url}?{urlencode(params)}"
             yield self.create_request(url, self.parse)
 
-    def safe_get(self, d, *keys, default=None):
+    def safe_get(self, d: Any, *keys: str, default: Any = None) -> Any:
         """Safely get nested dictionary values"""
         for key in keys:
             if not isinstance(d, dict):
                 return default
-            d = d.get(key, default)
+            d = d.get(key, default)  # type: ignore
             if d is None:
                 return default
         return d
 
-    def parse(self, response):
+    def parse(self, response: Any) -> Any:
         try:
             if response.status >= 400:
                 self.logger.error(f"Error response {response.status}: {response.text}")
@@ -124,13 +125,13 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             self.logger.error(f"Traceback: {traceback.format_exc()}")
 
-    def handle_error(self, failure):
+    def handle_error(self, failure: Any) -> None:
         self.logger.error(f"Request failed: {failure.value}")
 
-    def closed(self, reason):
+    def closed(self, reason: str) -> None:
         self.logger.info(f"Spider closed: {reason}")
 
-    def parse_single_trial(self, response):
+    def parse_single_trial(self, response: Any) -> Optional[Dict[str, Any]]:
         """Parse response for a single trial request."""
         try:
             if response.status >= 400:
@@ -160,13 +161,13 @@ class ClinicalTrialsSpider(scrapy.Spider):
 
             self.logger.error(f"Traceback: {traceback.format_exc()}")
 
-    def extract_trial_data(self, protocol):
+    def extract_trial_data(self, protocol: Any) -> Dict[str, Any]:
         """Extract trial data from protocol section."""
         # Debug logging for arms
         arms_interventions_module = protocol.get("armsInterventionsModule", {})
         arms_data = arms_interventions_module.get("armGroups", [])
-        self.logger.info(f"Arms interventions module keys: {list(arms_interventions_module.keys())}")
-        self.logger.info(f"Arms data: {arms_data}")
+        self.logger.debug(f"Arms interventions module keys: {list(arms_interventions_module.keys())}")
+        self.logger.debug(f"Arms data: {arms_data}")
         
         return {
             "identification": {
