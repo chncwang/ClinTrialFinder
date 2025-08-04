@@ -125,6 +125,14 @@ def filter_specific_trial(
     cache_size: int = 100000,
     refresh_cache: bool = False,
 ) -> Dict[str, Any]:
+    # Check for and remove duplicate handlers
+    root_logger = logging.getLogger()
+    if len(root_logger.handlers) > 2:
+        # Keep only the first two handlers (file and console)
+        handlers_to_keep = root_logger.handlers[:2]
+        root_logger.handlers.clear()
+        for handler in handlers_to_keep:
+            root_logger.addHandler(handler)
     """
     Filter a specific clinical trial by NCT ID against a clinical record.
     
@@ -274,6 +282,14 @@ def main():
     # Setup logging
     log_file = setup_logging(args.nct_id)
     logger = logging.getLogger(__name__)
+    
+    # Check for duplicate handlers after setup
+    root_logger = logging.getLogger()
+    if len(root_logger.handlers) > 2:
+        handlers_to_keep = root_logger.handlers[:2]
+        root_logger.handlers.clear()
+        for handler in handlers_to_keep:
+            root_logger.addHandler(handler)
 
     logger.info("main: Starting specific trial filtering process")
     logger.info(f"main: Input clinical record: {args.clinical_record}")
