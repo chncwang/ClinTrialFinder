@@ -4,8 +4,6 @@ import datetime
 import os
 import sys
 from pathlib import Path
-from loguru import logger
-
 
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
@@ -15,23 +13,12 @@ from base.trial_expert import (
     process_trials_with_conditions,
 )
 from base.utils import load_json_list_file
+from base.logging_config import setup_logging
 from typing import List
+from loguru import logger
 
-# Configure logging
-log_file = f"filter_trials_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-# Configure loguru logging
-logger.remove()  # Remove default handler
-logger.add(
-    log_file,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
-    level="INFO"
-)
-logger.add(
-    sys.stdout,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
-    level="INFO"
-)
+# Configure logging using centralized configuration
+log_file = setup_logging("filter_trials")
 
 
 def main():
