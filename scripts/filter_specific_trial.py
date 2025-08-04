@@ -49,9 +49,9 @@ def setup_logging(nct_id: str) -> str:
         force=True,
     )
 
-    # Set debug levels for specific modules
-    logging.getLogger("base.gpt_client").setLevel(logging.DEBUG)
-    logging.getLogger("base.prompt_cache").setLevel(logging.DEBUG)
+    # Ensure base module loggers are set to INFO level
+    logging.getLogger("base.gpt_client").setLevel(logging.INFO)
+    logging.getLogger("base.prompt_cache").setLevel(logging.INFO)
 
     return str(log_file)
 
