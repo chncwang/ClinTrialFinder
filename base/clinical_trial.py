@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from base.gpt_client import GPTClient
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
