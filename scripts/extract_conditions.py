@@ -1,29 +1,14 @@
 import argparse
-import logging
 import os
 from datetime import datetime
+from loguru import logger
 
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 
-# Set up logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create stream handler
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(stream_handler)
-
-# Create file handler with timestamp in the file name
+# Configure loguru with file output
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-file_handler = logging.FileHandler(f"extract_conditions_{timestamp}.log")
-file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(file_handler)
+logger.add(f"extract_conditions_{timestamp}.log", format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}")
 
 
 def process_clinical_record(

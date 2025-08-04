@@ -1,12 +1,10 @@
 import json
-import logging
 import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class PromptCache:

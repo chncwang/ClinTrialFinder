@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import logging
 import os
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+from loguru import logger
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -19,30 +19,21 @@ from base.trial_expert import analyze_drugs_and_get_recommendation
 from base.utils import read_input_file
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Set specific loggers to INFO level to filter out debug messages
-logging.getLogger("openai").setLevel(logging.INFO)
-logging.getLogger("httpcore").setLevel(logging.INFO)
-logging.getLogger("base").setLevel(logging.INFO)
-
-# Create a single log file with timestamp for all loggers
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"assign_recommendation_by_id_{timestamp}.log"
-file_handler = logging.FileHandler(log_filename)
-file_handler.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
 
-# Add handler to the root logger to capture all logs
-root_logger = logging.getLogger()
-root_logger.addHandler(file_handler)
-
-# Configure base.trial_expert logger
-trial_expert_logger = logging.getLogger("base.trial_expert")
-trial_expert_logger.setLevel(logging.INFO)
-trial_expert_logger.propagate = True  # Allow propagation to root logger
+# Configure loguru logging
+logger.remove()  # Remove default handler
+logger.add(
+    log_filename,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
+    level="INFO"
+)
+logger.add(
+    sys.stdout,
+    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
+    level="INFO"
+)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
@@ -266,9 +257,7 @@ def main():
         raise
 
     finally:
-        # Final flush of all logs
-        for handler in logging.getLogger().handlers:
-            handler.flush()
+        # Final flush of logs
         sys.stdout.flush()
         sys.stderr.flush()
         logger.info("Script execution finished.")

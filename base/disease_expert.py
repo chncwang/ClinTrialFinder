@@ -1,12 +1,9 @@
-import logging
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
+from loguru import logger
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, read_input_file
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 
 def extract_disease_from_record(

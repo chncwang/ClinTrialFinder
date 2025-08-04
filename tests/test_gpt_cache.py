@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
 import argparse
-import logging
 import os
 import sys
 import time
 from pathlib import Path
+from loguru import logger
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 
 from base.gpt_client import GPTClient
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("test_gpt_cache.log"),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Configure loguru
+logger.add("test_gpt_cache.log", format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}", level="DEBUG")
 
 def main():
     parser = argparse.ArgumentParser(description="Test GPT cache functionality")

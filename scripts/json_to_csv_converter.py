@@ -2,21 +2,12 @@
 import argparse
 import csv
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from loguru import logger
 
 from base.clinical_trial import ClinicalTrial
-
-
-def setup_logging():
-    """Set up logging configuration."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-    return logging.getLogger(__name__)
 
 
 def flatten_locations(locations: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -116,7 +107,6 @@ def convert_json_to_csv(input_file: str, output_file: Optional[str] = None) -> s
     Returns:
         Path to the created CSV file
     """
-    logger = setup_logging()
     
     # Generate output filename if not provided
     if output_file is None:

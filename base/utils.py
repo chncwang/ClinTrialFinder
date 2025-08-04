@@ -1,11 +1,9 @@
 import json
-import logging
 import sys
 from typing import Any, Callable, Dict, List, Tuple, TypeVar
+from loguru import logger
 
 from base.gpt_client import GPTClient
-
-logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 

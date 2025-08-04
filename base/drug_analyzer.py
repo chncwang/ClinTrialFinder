@@ -1,10 +1,8 @@
-import logging
 import requests
 from typing import List, Tuple
+from loguru import logger
 
 from base.perplexity import PerplexityClient
-
-logger = logging.getLogger(__name__)
 
 
 def analyze_drug_efficacy(
