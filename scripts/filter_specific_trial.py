@@ -31,23 +31,23 @@ def setup_logging(nct_id: str) -> str:
     logs_dir.mkdir(exist_ok=True)
     log_file = logs_dir / f"filter_trial_{nct_id}_{timestamp}.log"
 
-    # Create handlers
-    file_handler = logging.FileHandler(str(log_file))
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-    )
-
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-    )
-
-    # Completely reset logging configuration
+    # Completely reset logging configuration first
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(logging.INFO)
+
+    # Create single formatter to use for both handlers
+    formatter = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+
+    # Create and configure file handler
+    file_handler = logging.FileHandler(str(log_file))
+    file_handler.setFormatter(formatter)
     
-    # Add our handlers directly to the root logger
+    # Create and configure console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    
+    # Add handlers to root logger
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
@@ -125,14 +125,6 @@ def filter_specific_trial(
     cache_size: int = 100000,
     refresh_cache: bool = False,
 ) -> Dict[str, Any]:
-    # Check for and remove duplicate handlers
-    root_logger = logging.getLogger()
-    if len(root_logger.handlers) > 2:
-        # Keep only the first two handlers (file and console)
-        handlers_to_keep = root_logger.handlers[:2]
-        root_logger.handlers.clear()
-        for handler in handlers_to_keep:
-            root_logger.addHandler(handler)
     """
     Filter a specific clinical trial by NCT ID against a clinical record.
     
@@ -282,14 +274,6 @@ def main():
     # Setup logging
     log_file = setup_logging(args.nct_id)
     logger = logging.getLogger(__name__)
-    
-    # Check for duplicate handlers after setup
-    root_logger = logging.getLogger()
-    if len(root_logger.handlers) > 2:
-        handlers_to_keep = root_logger.handlers[:2]
-        root_logger.handlers.clear()
-        for handler in handlers_to_keep:
-            root_logger.addHandler(handler)
 
     logger.info("main: Starting specific trial filtering process")
     logger.info(f"main: Input clinical record: {args.clinical_record}")
