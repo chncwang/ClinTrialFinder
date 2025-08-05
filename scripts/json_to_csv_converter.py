@@ -5,7 +5,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.clinical_trial import ClinicalTrial
 

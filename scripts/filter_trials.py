@@ -7,18 +7,22 @@ from pathlib import Path
 
 # Add parent directory to Python path to import base module
 sys.path.append(str(Path(__file__).parent.parent))
+
+# Configure logging FIRST, before any other imports that might trigger logging
+from base.logging_config import setup_logging
+import logging
+
+# Configure logging using centralized configuration
+log_file = setup_logging("filter_trials")
+
+# Now import other modules after logging is configured
 from base.clinical_trial import ClinicalTrialsParser, ClinicalTrial
 from base.trial_expert import (
     GPTTrialFilter,
     process_trials_with_conditions,
 )
 from base.utils import load_json_list_file
-from base.logging_config import setup_logging
 from typing import List
-from loguru import logger
-
-# Configure logging using centralized configuration
-log_file = setup_logging("filter_trials")
 
 
 def main():
@@ -74,6 +78,12 @@ def main():
         action="store_true",
         help="Filter for trials that have non-empty novel drug analysis results",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set the logging level (default: INFO)",
+    )
 
     args = parser.parse_args()
 
@@ -82,7 +92,7 @@ def main():
     if (
         not api_key and args.conditions
     ):  # Only require API key if conditions are provided
-        logger.error(
+        logging.error(
             "OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable when using conditions"
         )
         sys.exit(1)
@@ -96,23 +106,23 @@ def main():
     trials_parser = ClinicalTrialsParser(json_data)
     trials = trials_parser.trials
 
-    logger.info(f"main: Loaded {len(trials)} trials from input file")
+    logging.info(f"main: Loaded {len(trials)} trials from input file")
 
     # Apply filters
     if args.exclude_study_type:
         trials = trials_parser.get_trials_excluding_study_type(args.exclude_study_type)
-        logger.info(
+        logging.info(
             f"main: Excluded study type '{args.exclude_study_type}': {len(trials)} trials remaining"
         )
 
     if args.recruiting:
         trials = trials_parser.get_recruiting_trials()
-        logger.info(f"main: Filtered for recruiting trials: {len(trials)} found")
+        logging.info(f"main: Filtered for recruiting trials: {len(trials)} found")
 
     if args.phase:
         phase_filtered = trials_parser.get_trials_by_phase(int(args.phase))
         trials = [t for t in trials if t in phase_filtered]
-        logger.info(
+        logging.info(
             f"main: Filtered for phase {args.phase} trials: {len(trials)} found"
         )
 
@@ -127,14 +137,14 @@ def main():
             )
 
         trials = filtered_trials
-        logger.info(
+        logging.info(
             f"main: Filtered for recommendation levels {', '.join(args.recommendation_level)}: {len(trials)} found"
         )
 
     if args.has_novel_drug_analysis:
         novel_drug_filtered = trials_parser.get_trials_with_novel_drug_analysis()
         trials = [t for t in trials if t in novel_drug_filtered]
-        logger.info(
+        logging.info(
             f"main: Filtered for trials with novel drug analysis: {len(trials)} found"
         )
 
@@ -144,7 +154,7 @@ def main():
     )
 
     if args.conditions:
-        logger.info(f"main: Total API cost: ${total_cost:.2f}")
+        logging.info(f"main: Total API cost: ${total_cost:.2f}")
 
 
 if __name__ == "__main__":

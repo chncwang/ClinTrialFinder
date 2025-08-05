@@ -5,7 +5,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
@@ -22,17 +24,14 @@ logs_dir.mkdir(exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"logs/analyze_filtered_trials_{timestamp}.log"
 
-# Configure loguru logging
-logger.remove()  # Remove default handler
-logger.add(
-    log_filename,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
-    level="INFO"
-)
-logger.add(
-    sys.stdout,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
-    level="INFO"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 # Log the filename being used

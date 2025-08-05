@@ -2,7 +2,9 @@
 import subprocess
 import sys
 from pathlib import Path
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def run_test(input_file: str):

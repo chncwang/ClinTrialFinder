@@ -1,7 +1,9 @@
 import json
 import sys
 from typing import Any, Callable, Dict, List, Tuple, TypeVar
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.gpt_client import GPTClient
 

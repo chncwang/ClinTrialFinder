@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, Any, cast
 
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
 from base.drug_analyzer import analyze_drug_efficacy

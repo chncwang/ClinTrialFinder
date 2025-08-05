@@ -6,7 +6,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,10 +24,17 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
     ClinicalTrialsSpider,
 )
 
-# Configure loguru
+# Configure logging
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"clinical_trial_analysis_{timestamp}.log"
-logger.add(log_filename, format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}", level="DEBUG")
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler()
+    ]
+)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")

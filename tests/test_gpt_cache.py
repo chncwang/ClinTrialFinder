@@ -4,15 +4,24 @@ import os
 import sys
 import time
 from pathlib import Path
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 
 from base.gpt_client import GPTClient
 
-# Configure loguru
-logger.add("test_gpt_cache.log", format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}", level="DEBUG")
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("test_gpt_cache.log"),
+        logging.StreamHandler()
+    ]
+)
 
 def main():
     parser = argparse.ArgumentParser(description="Test GPT cache functionality")

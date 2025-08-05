@@ -5,23 +5,37 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
 
-# Configure loguru with timestamp in filename
+# Configure standard logging with timestamp in filename
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 # Create logs directory if it doesn't exist
 logs_dir = Path("logs")
 logs_dir.mkdir(exist_ok=True)
 log_file = logs_dir / f"filter_trials_by_clinical_record_{timestamp}.log"
 
-# Configure loguru with both file and console output
-logger.add(str(log_file), format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {name} - {message}", level="DEBUG")
-logger.add(sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {name} - {message}", level="INFO")
+# Configure standard logging with both file and console output
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True
+)
+
+# Set console handler to INFO level
+for handler in logging.getLogger().handlers:
+    if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+        handler.setLevel(logging.INFO)
 
 
 def load_trials(trials_file: str) -> List[Dict[str, Any]]:

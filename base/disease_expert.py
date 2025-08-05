@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, read_input_file
 

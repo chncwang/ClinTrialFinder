@@ -4,7 +4,9 @@ import threading
 import time
 from typing import Any, Dict, Optional, Tuple, Union
 
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from openai import OpenAI
 
 from base.pricing import AITokenPricing

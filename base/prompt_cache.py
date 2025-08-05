@@ -4,7 +4,9 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PromptCache:

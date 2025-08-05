@@ -7,7 +7,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,17 +24,14 @@ from base.utils import read_input_file
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"assign_recommendation_by_id_{timestamp}.log"
 
-# Configure loguru logging
-logger.remove()  # Remove default handler
-logger.add(
-    log_filename,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
-    level="INFO"
-)
-logger.add(
-    sys.stdout,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
-    level="INFO"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 # Log the filename being used

@@ -6,7 +6,9 @@ import smtplib
 import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
@@ -51,13 +53,19 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# Configure loguru
+# Configure logging
 if args.debug:
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG", format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}")
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stderr)]
+    )
 else:
-    logger.remove()
-    logger.add(sys.stderr, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}")
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stderr)]
+    )
 
 # Add an initial log message to verify logging is working
 logger.info("Starting trial inquiry email script")

@@ -1,6 +1,8 @@
 import requests
 from typing import List, Tuple
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.perplexity import PerplexityClient
 

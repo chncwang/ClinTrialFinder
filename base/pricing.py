@@ -1,5 +1,7 @@
 from typing import Dict, Tuple, Union
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AITokenPricing:

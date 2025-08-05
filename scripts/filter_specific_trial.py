@@ -13,7 +13,9 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record

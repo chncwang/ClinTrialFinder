@@ -4,7 +4,9 @@ import json
 import random
 from datetime import datetime
 from typing import List, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
@@ -13,19 +15,23 @@ from base.disease_expert import extract_disease_from_record
 
 def setup_logging():
     """Set up logging configuration with timestamp in filename."""
+    import sys
+    from pathlib import Path
+    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = f"trial_ranking_{timestamp}.log"
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    log_file = logs_dir / f"trial_ranking_{timestamp}.log"
 
-    # Configure loguru logging
-    logger.remove()  # Remove default handler
-    logger.add(
-        log_file,
-        format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}",
-        level="INFO"
-    )
-    logger.add(
-        lambda msg: print(f"{msg.record['level'].name}: {msg.record['message']}"),
-        level="INFO"
+    # Configure standard logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout)
+        ],
+        force=True
     )
 
 

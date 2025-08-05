@@ -3,7 +3,9 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
