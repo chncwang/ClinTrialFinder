@@ -171,6 +171,9 @@ cython_debug/
 .pypirc
 
 *.json
+!dataset/trec_2021/id2queries.json
+!dataset/trec_2021/retrieved_trials.json
+
 *.swp
 *.txt
 *.pkl
