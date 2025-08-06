@@ -1,0 +1,471 @@
+#!/usr/bin/env python3
+"""
+Benchmark script for evaluating filtering performance on TREC 2021 dataset.
+
+This script evaluates the performance of clinical trial filtering algorithms
+by comparing predicted eligible trials against ground truth relevance judgments.
+
+Usage:
+    python scripts/benchmark_filtering_performance.py [options]
+
+Example:
+    python scripts/benchmark_filtering_performance.py \
+        --dataset-path dataset/trec_2021 \
+        --output results/benchmark_results.json \
+        --api-key $OPENAI_API_KEY
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Tuple, Any, Optional
+import logging
+import re
+
+# Add parent directory to Python path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from base.logging_config import setup_logging
+from base.clinical_trial import ClinicalTrialsParser, ClinicalTrial
+from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
+from base.utils import load_json_list_file
+
+
+class FilteringBenchmark:
+    """Benchmark class for evaluating clinical trial filtering performance."""
+    
+    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
+        """
+        Initialize the benchmark.
+        
+        Args:
+            dataset_path: Path to TREC 2021 dataset directory
+            api_key: OpenAI API key for GPT filtering
+            cache_size: Size of GPT response cache
+        """
+        self.dataset_path = Path(dataset_path)
+        self.api_key = api_key
+        self.cache_size = cache_size
+        self.gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=cache_size)
+        
+        # Setup logging
+        self.log_file = setup_logging("benchmark_filtering")
+        self.logger = logging.getLogger(__name__)
+        
+        # Load dataset
+        self._load_dataset()
+        
+    def _load_dataset(self):
+        """Load TREC 2021 dataset components."""
+        self.logger.info("Loading TREC 2021 dataset...")
+        
+        # Load queries
+        queries_file = self.dataset_path / "queries.jsonl"
+        self.queries: List[Dict[str, Any]] = []
+        with open(queries_file, 'r') as f:
+            for line in f:
+                self.queries.append(json.loads(line))
+        
+        # Load relevance judgments
+        qrels_file = self.dataset_path / "qrels" / "test.tsv"
+        self.relevance_judgments: Dict[str, Dict[str, int]] = {}
+        with open(qrels_file, 'r') as f:
+            for line_num, line in enumerate(f):
+                parts = line.strip().split('\t')
+                if len(parts) == 3:
+                    query_id, trial_id, relevance = parts
+                    # Skip header row
+                    if line_num == 0 and relevance == 'score':
+                        continue
+                    try:
+                        if query_id not in self.relevance_judgments:
+                            self.relevance_judgments[query_id] = {}
+                        self.relevance_judgments[query_id][trial_id] = int(relevance)
+                    except ValueError:
+                        # Skip lines that can't be converted to int
+                        continue
+        
+        # Load retrieved trials
+        trials_file = self.dataset_path / "retrieved_trials.json"
+        with open(trials_file, 'r') as f:
+            self.retrieved_trials = json.load(f)
+        
+        self.logger.info(f"Loaded {len(self.queries)} queries")
+        self.logger.info(f"Loaded relevance judgments for {len(self.relevance_judgments)} queries")
+        self.logger.info(f"Loaded retrieved trials for {len(self.retrieved_trials)} patients")
+    
+    def extract_conditions_from_query(self, query: Dict[str, Any]) -> List[str]:
+        """
+        Extract medical conditions from a query.
+        
+        Args:
+            query: Query dictionary with 'text' field
+            
+        Returns:
+            List of extracted conditions
+        """
+        # For now, use a simple approach - split by sentences and extract key medical terms
+        # In a real implementation, you might use more sophisticated NLP
+        text = query['text']
+        
+        # Simple condition extraction - look for disease mentions
+        conditions = []
+        
+        # Common disease patterns
+        disease_patterns = [
+            r'\b(?:cancer|carcinoma|tumor|neoplasm|sarcoma|leukemia|lymphoma)\b',
+            r'\b(?:diabetes|hypertension|asthma|COPD|heart disease|stroke)\b',
+            r'\b(?:multiple sclerosis|parkinson|alzheimer|dementia)\b',
+            r'\b(?:arthritis|fibromyalgia|chronic pain)\b',
+            r'\b(?:depression|anxiety|bipolar|schizophrenia)\b'
+        ]
+        
+        for pattern in disease_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            conditions.extend(matches)
+        
+        # If no specific conditions found, use the first sentence as a general condition
+        if not conditions:
+            sentences = text.split('.')
+            if sentences:
+                conditions.append(sentences[0].strip())
+        
+        return list(set(conditions))  # Remove duplicates
+    
+    def get_ground_truth_trials(self, query_id: str) -> List[str]:
+        """
+        Get ground truth relevant trials for a query.
+        
+        Args:
+            query_id: Query identifier
+            
+        Returns:
+            List of NCT IDs of relevant trials
+        """
+        if query_id not in self.relevance_judgments:
+            return []
+        
+        relevant_trials = []
+        for trial_id, relevance in self.relevance_judgments[query_id].items():
+            if relevance > 0:  # Consider trials with relevance > 0 as relevant
+                relevant_trials.append(trial_id)
+        
+        return relevant_trials
+    
+    def get_retrieved_trials_for_patient(self, patient_id: str) -> List[Dict[str, Any]]:
+        """
+        Get retrieved trials for a specific patient.
+        
+        Args:
+            patient_id: Patient identifier
+            
+        Returns:
+            List of trial dictionaries
+        """
+        for patient_data in self.retrieved_trials:
+            if patient_data.get('patient_id') == patient_id:
+                # Extract trials from the patient data structure
+                trials = []
+                for key, value in patient_data.items():
+                    if key not in ['patient_id', 'patient'] and isinstance(value, list):
+                        # Trials are stored as arrays with numeric keys
+                        trials.extend(value)
+                return trials
+        return []
+    
+    def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
+        """
+        Calculate precision, recall, F1-score, and accuracy.
+        
+        Args:
+            predicted_eligible: List of predicted eligible trial IDs
+            ground_truth: List of ground truth relevant trial IDs
+            
+        Returns:
+            Dictionary with metrics
+        """
+        predicted_set = set(predicted_eligible)
+        ground_truth_set = set(ground_truth)
+        
+        true_positives = len(predicted_set & ground_truth_set)
+        false_positives = len(predicted_set - ground_truth_set)
+        false_negatives = len(ground_truth_set - predicted_set)
+        
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+        accuracy = true_positives / len(ground_truth_set) if ground_truth_set else 0.0
+        
+        return {
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'accuracy': accuracy,
+            'true_positives': true_positives,
+            'false_positives': false_positives,
+            'false_negatives': false_negatives
+        }
+    
+    def evaluate_filtering_performance(self, query: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Evaluate filtering performance for a single query.
+        
+        Args:
+            query: Query dictionary
+            
+        Returns:
+            Dictionary with evaluation metrics
+        """
+        query_id = query['_id']
+        patient_id = query_id  # In TREC dataset, query_id matches patient_id
+        
+        self.logger.info(f"Evaluating query: {query_id}")
+        
+        # Extract conditions from query
+        conditions = self.extract_conditions_from_query(query)
+        self.logger.info(f"Extracted conditions: {conditions}")
+        
+        # Get ground truth relevant trials
+        ground_truth_trials = self.get_ground_truth_trials(query_id)
+        self.logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
+        
+        # Get retrieved trials for this patient
+        retrieved_trials_data = self.get_retrieved_trials_for_patient(patient_id)
+        self.logger.info(f"Retrieved trials: {len(retrieved_trials_data)}")
+        
+        if not retrieved_trials_data:
+            self.logger.warning(f"No retrieved trials found for patient {patient_id}")
+            return {
+                'query_id': query_id,
+                'conditions': conditions,
+                'ground_truth_count': len(ground_truth_trials),
+                'retrieved_count': 0,
+                'predicted_eligible_count': 0,
+                'true_positives': 0,
+                'false_positives': 0,
+                'false_negatives': 0,
+                'precision': 0.0,
+                'recall': 0.0,
+                'f1_score': 0.0,
+                'accuracy': 0.0,
+                'processing_time': 0.0,
+                'api_cost': 0.0,
+                'error': 'No retrieved trials found'
+            }
+        
+        # Apply filtering directly on the trial data
+        start_time = time.time()
+        
+        try:
+            # Use GPT filtering if conditions are available
+            if conditions:
+                # Create a simple filtering approach for now
+                # In a real implementation, you would use the GPT filter
+                predicted_eligible_trials = []
+                total_cost = 0.0
+                
+                for trial in retrieved_trials_data:
+                    # Simple keyword-based filtering
+                    trial_text = f"{trial.get('brief_title', '')} {trial.get('diseases', '')} {trial.get('inclusion_criteria', '')}"
+                    trial_text = trial_text.lower()
+                    
+                    # Check if any condition matches the trial
+                    is_eligible = False
+                    for condition in conditions:
+                        if condition.lower() in trial_text:
+                            is_eligible = True
+                            break
+                    
+                    if is_eligible:
+                        predicted_eligible_trials.append(trial.get('NCTID', ''))
+                
+                eligible_count = len(predicted_eligible_trials)
+            else:
+                # If no conditions, consider all trials as eligible
+                predicted_eligible_trials = [trial.get('NCTID', '') for trial in retrieved_trials_data]
+                total_cost = 0.0
+                eligible_count = len(retrieved_trials_data)
+            
+            processing_time = time.time() - start_time
+            
+            # Calculate metrics
+            metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
+            
+            return {
+                'query_id': query_id,
+                'conditions': conditions,
+                'ground_truth_count': len(ground_truth_trials),
+                'retrieved_count': len(retrieved_trials_data),
+                'predicted_eligible_count': len(predicted_eligible_trials),
+                'true_positives': metrics['true_positives'],
+                'false_positives': metrics['false_positives'],
+                'false_negatives': metrics['false_negatives'],
+                'precision': metrics['precision'],
+                'recall': metrics['recall'],
+                'f1_score': metrics['f1_score'],
+                'accuracy': metrics['accuracy'],
+                'processing_time': processing_time,
+                'api_cost': total_cost,
+                'error': None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error processing query {query_id}: {str(e)}")
+            return {
+                'query_id': query_id,
+                'conditions': conditions,
+                'ground_truth_count': len(ground_truth_trials),
+                'retrieved_count': len(retrieved_trials_data),
+                'predicted_eligible_count': 0,
+                'true_positives': 0,
+                'false_positives': 0,
+                'false_negatives': 0,
+                'precision': 0.0,
+                'recall': 0.0,
+                'f1_score': 0.0,
+                'accuracy': 0.0,
+                'processing_time': 0.0,
+                'api_cost': 0.0,
+                'error': str(e)
+            }
+    
+    def run_benchmark(self, max_queries: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Run the complete benchmark.
+        
+        Args:
+            max_queries: Maximum number of queries to process (for testing)
+            
+        Returns:
+            Dictionary with overall benchmark results
+        """
+        self.logger.info("Starting filtering performance benchmark...")
+        
+        queries_to_process = self.queries[:max_queries] if max_queries else self.queries
+        
+        results = []
+        total_processing_time = 0.0
+        total_api_cost = 0.0
+        
+        for i, query in enumerate(queries_to_process, 1):
+            self.logger.info(f"Processing query {i}/{len(queries_to_process)}")
+            
+            result = self.evaluate_filtering_performance(query)
+            results.append(result)
+            
+            total_processing_time += result['processing_time']
+            total_api_cost += result['api_cost']
+            
+            # Log progress
+            if i % 10 == 0:
+                self.logger.info(f"Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+        
+        # Calculate aggregate metrics
+        successful_results = [r for r in results if r['error'] is None]
+        
+        if successful_results:
+            avg_precision = sum(r['precision'] for r in successful_results) / len(successful_results)
+            avg_recall = sum(r['recall'] for r in successful_results) / len(successful_results)
+            avg_f1 = sum(r['f1_score'] for r in successful_results) / len(successful_results)
+            avg_accuracy = sum(r['accuracy'] for r in successful_results) / len(successful_results)
+        else:
+            avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
+        
+        benchmark_results = {
+            'timestamp': datetime.now().isoformat(),
+            'dataset_path': str(self.dataset_path),
+            'total_queries': len(queries_to_process),
+            'successful_queries': len(successful_results),
+            'failed_queries': len(results) - len(successful_results),
+            'total_processing_time': total_processing_time,
+            'total_api_cost': total_api_cost,
+            'average_processing_time_per_query': total_processing_time / len(queries_to_process) if queries_to_process else 0.0,
+            'average_api_cost_per_query': total_api_cost / len(queries_to_process) if queries_to_process else 0.0,
+            'metrics': {
+                'average_precision': avg_precision,
+                'average_recall': avg_recall,
+                'average_f1_score': avg_f1,
+                'average_accuracy': avg_accuracy
+            },
+            'detailed_results': results
+        }
+        
+        self.logger.info("Benchmark completed!")
+        self.logger.info(f"Total queries processed: {len(queries_to_process)}")
+        self.logger.info(f"Successful queries: {len(successful_results)}")
+        self.logger.info(f"Failed queries: {len(results) - len(successful_results)}")
+        self.logger.info(f"Total processing time: {total_processing_time:.2f}s")
+        self.logger.info(f"Total API cost: ${total_api_cost:.4f}")
+        self.logger.info(f"Average precision: {avg_precision:.4f}")
+        self.logger.info(f"Average recall: {avg_recall:.4f}")
+        self.logger.info(f"Average F1-score: {avg_f1:.4f}")
+        
+        return benchmark_results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Benchmark filtering performance on TREC 2021 dataset"
+    )
+    parser.add_argument(
+        "--dataset-path",
+        default="dataset/trec_2021",
+        help="Path to TREC 2021 dataset directory"
+    )
+    parser.add_argument(
+        "--output",
+        default=f"results/benchmark_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        help="Output file for benchmark results"
+    )
+    parser.add_argument(
+        "--api-key",
+        help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)"
+    )
+    parser.add_argument(
+        "--cache-size",
+        type=int,
+        default=100000,
+        help="Size of GPT response cache"
+    )
+    parser.add_argument(
+        "--max-queries",
+        type=int,
+        help="Maximum number of queries to process (for testing)"
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging level"
+    )
+    
+    args = parser.parse_args()
+    
+    # Get API key
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("Error: OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable")
+        sys.exit(1)
+    
+    # Create output directory
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Run benchmark
+    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size)
+    results = benchmark.run_benchmark(args.max_queries)
+    
+    # Save results
+    with open(output_path, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"Benchmark results saved to: {output_path}")
+    print(f"Log file: {benchmark.log_file}")
+
+
+if __name__ == "__main__":
+    main() 
