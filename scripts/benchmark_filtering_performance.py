@@ -65,6 +65,12 @@ class FilteringBenchmark:
             for line in f:
                 self.queries.append(json.loads(line))
         
+        # Log the number of queries and the first 10 queries
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
+        logger.info("FilteringBenchmark._load_dataset: First 10 queries:")
+        for i, query in enumerate(self.queries[:10], 1):
+            logger.info(f"  {i}. {query['_id']}: {query['text'][:100]}...")
+        
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
         self.relevance_judgments: Dict[str, Dict[str, int]] = {}
@@ -84,10 +90,38 @@ class FilteringBenchmark:
                         # Skip lines that can't be converted to int
                         continue
         
+        # Log the number of relevance judgments and the first 10 relevance judgments
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
+        logger.info("FilteringBenchmark._load_dataset: First 10 relevance judgments:")
+        for i, (query_id, relevance_dict) in enumerate(list(self.relevance_judgments.items())[:10], 1):
+            # Log only the first 5 trial_ids and their relevance scores for brevity
+            short_relevance = dict(list(relevance_dict.items())[:5])
+            more = "..." if len(relevance_dict) > 5 else ""
+            logger.info(f"  {i}. {query_id}: {short_relevance}{more}")
+        
         # Load retrieved trials
         trials_file = self.dataset_path / "retrieved_trials.json"
         with open(trials_file, 'r') as f:
             self.retrieved_trials = json.load(f)
+        
+        # Log the number of retrieved trials and the first 10 retrieved trials for the first patient
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.retrieved_trials)} retrieved trials")
+        logger.info("FilteringBenchmark._load_dataset: First 10 retrieved trials for the first patient:")
+        if self.retrieved_trials:
+            first_patient = self.retrieved_trials[0]
+            logger.info(f"FilteringBenchmark._load_dataset: First patient ID: {first_patient.get('patient_id', 'Unknown')}")
+            
+            # Get trials from the first patient (they're stored as arrays with numeric keys)
+            patient_trials: List[Dict[str, Any]] = []
+            for key, value in first_patient.items():
+                if key not in ['patient_id', 'patient'] and isinstance(value, list):
+                    patient_trials.extend(value)  # type: ignore
+            
+            logger.info(f"FilteringBenchmark._load_dataset: Found {len(patient_trials)} trials for first patient")
+            for i, trial in enumerate(patient_trials[:10], 1):
+                trial_id = trial.get('NCTID', 'Unknown')
+                title = trial.get('brief_title', 'No title')[:80]
+                logger.info(f"FilteringBenchmark._load_dataset: {i}. {trial_id}: {title}...")
         
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
         logger.info(f"FilteringBenchmark._load_dataset: Loaded relevance judgments for {len(self.relevance_judgments)} queries")
