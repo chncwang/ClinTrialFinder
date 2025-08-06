@@ -22,7 +22,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Any, Optional
 import logging
 import re
 
@@ -30,27 +30,23 @@ import re
 sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
-from base.clinical_trial import ClinicalTrialsParser, ClinicalTrial
-from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
-from base.utils import load_json_list_file
 
 
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
     
-    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
+    def __init__(self, dataset_path: str, api_key: Optional[str] = None, cache_size: int = 100000):
         """
         Initialize the benchmark.
         
         Args:
             dataset_path: Path to TREC 2021 dataset directory
-            api_key: OpenAI API key for GPT filtering
+            api_key: OpenAI API key for GPT filtering (optional)
             cache_size: Size of GPT response cache
         """
         self.dataset_path = Path(dataset_path)
         self.api_key = api_key
         self.cache_size = cache_size
-        self.gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=cache_size)
         
         # Setup logging
         self.log_file = setup_logging("benchmark_filtering")
@@ -113,7 +109,7 @@ class FilteringBenchmark:
         text = query['text']
         
         # Simple condition extraction - look for disease mentions
-        conditions = []
+        conditions: List[str] = []
         
         # Common disease patterns
         disease_patterns = [
@@ -149,7 +145,7 @@ class FilteringBenchmark:
         if query_id not in self.relevance_judgments:
             return []
         
-        relevant_trials = []
+        relevant_trials: List[str] = []
         for trial_id, relevance in self.relevance_judgments[query_id].items():
             if relevance > 0:  # Consider trials with relevance > 0 as relevant
                 relevant_trials.append(trial_id)
@@ -169,11 +165,11 @@ class FilteringBenchmark:
         for patient_data in self.retrieved_trials:
             if patient_data.get('patient_id') == patient_id:
                 # Extract trials from the patient data structure
-                trials = []
+                trials: List[Dict[str, Any]] = []
                 for key, value in patient_data.items():
                     if key not in ['patient_id', 'patient'] and isinstance(value, list):
                         # Trials are stored as arrays with numeric keys
-                        trials.extend(value)
+                        trials.extend(value)  # type: ignore
                 return trials
         return []
     
@@ -265,7 +261,7 @@ class FilteringBenchmark:
             if conditions:
                 # Create a simple filtering approach for now
                 # In a real implementation, you would use the GPT filter
-                predicted_eligible_trials = []
+                predicted_eligible_trials: List[str] = []
                 total_cost = 0.0
                 
                 for trial in retrieved_trials_data:
@@ -283,12 +279,10 @@ class FilteringBenchmark:
                     if is_eligible:
                         predicted_eligible_trials.append(trial.get('NCTID', ''))
                 
-                eligible_count = len(predicted_eligible_trials)
             else:
                 # If no conditions, consider all trials as eligible
                 predicted_eligible_trials = [trial.get('NCTID', '') for trial in retrieved_trials_data]
                 total_cost = 0.0
-                eligible_count = len(retrieved_trials_data)
             
             processing_time = time.time() - start_time
             
@@ -347,7 +341,7 @@ class FilteringBenchmark:
         
         queries_to_process = self.queries[:max_queries] if max_queries else self.queries
         
-        results = []
+        results: List[Dict[str, Any]] = []
         total_processing_time = 0.0
         total_api_cost = 0.0
         
@@ -445,11 +439,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Get API key
+    # Get API key (optional for current implementation)
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OpenAI API key must be provided via --api-key or OPENAI_API_KEY environment variable")
-        sys.exit(1)
     
     # Create output directory
     output_path = Path(args.output)
