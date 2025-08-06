@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
-import re
+
 
 # Add parent directory to Python path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -127,43 +127,7 @@ class FilteringBenchmark:
         logger.info(f"FilteringBenchmark._load_dataset: Loaded relevance judgments for {len(self.relevance_judgments)} queries")
         logger.info(f"FilteringBenchmark._load_dataset: Loaded retrieved trials for {len(self.retrieved_trials)} patients")
     
-    def extract_conditions_from_query(self, query: Dict[str, Any]) -> List[str]:
-        """
-        Extract medical conditions from a query.
-        
-        Args:
-            query: Query dictionary with 'text' field
-            
-        Returns:
-            List of extracted conditions
-        """
-        # For now, use a simple approach - split by sentences and extract key medical terms
-        # In a real implementation, you might use more sophisticated NLP
-        text = query['text']
-        
-        # Simple condition extraction - look for disease mentions
-        conditions: List[str] = []
-        
-        # Common disease patterns
-        disease_patterns = [
-            r'\b(?:cancer|carcinoma|tumor|neoplasm|sarcoma|leukemia|lymphoma)\b',
-            r'\b(?:diabetes|hypertension|asthma|COPD|heart disease|stroke)\b',
-            r'\b(?:multiple sclerosis|parkinson|alzheimer|dementia)\b',
-            r'\b(?:arthritis|fibromyalgia|chronic pain)\b',
-            r'\b(?:depression|anxiety|bipolar|schizophrenia)\b'
-        ]
-        
-        for pattern in disease_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            conditions.extend(matches)
-        
-        # If no specific conditions found, use the first sentence as a general condition
-        if not conditions:
-            sentences = text.split('.')
-            if sentences:
-                conditions.append(sentences[0].strip())
-        
-        return list(set(conditions))  # Remove duplicates
+
     
     def get_ground_truth_trials(self, query_id: str) -> List[str]:
         """
@@ -254,9 +218,7 @@ class FilteringBenchmark:
         
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
         
-        # Extract conditions from query
-        conditions = self.extract_conditions_from_query(query)
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Extracted conditions: {conditions}")
+
         
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
@@ -270,7 +232,6 @@ class FilteringBenchmark:
             logger.warning(f"FilteringBenchmark.evaluate_filtering_performance: No retrieved trials found for patient {patient_id}")
             return {
                 'query_id': query_id,
-                'conditions': conditions,
                 'ground_truth_count': len(ground_truth_trials),
                 'retrieved_count': 0,
                 'predicted_eligible_count': 0,
@@ -290,32 +251,10 @@ class FilteringBenchmark:
         start_time = time.time()
         
         try:
-            # Use GPT filtering if conditions are available
-            if conditions:
-                # Create a simple filtering approach for now
-                # In a real implementation, you would use the GPT filter
-                predicted_eligible_trials: List[str] = []
-                total_cost = 0.0
-                
-                for trial in retrieved_trials_data:
-                    # Simple keyword-based filtering
-                    trial_text = f"{trial.get('brief_title', '')} {trial.get('diseases', '')} {trial.get('inclusion_criteria', '')}"
-                    trial_text = trial_text.lower()
-                    
-                    # Check if any condition matches the trial
-                    is_eligible = False
-                    for condition in conditions:
-                        if condition.lower() in trial_text:
-                            is_eligible = True
-                            break
-                    
-                    if is_eligible:
-                        predicted_eligible_trials.append(trial.get('NCTID', ''))
-                
-            else:
-                # If no conditions, consider all trials as eligible
-                predicted_eligible_trials = [trial.get('NCTID', '') for trial in retrieved_trials_data]
-                total_cost = 0.0
+            # Simple filtering approach - consider all trials as eligible for now
+            # In a real implementation, you would apply your filtering algorithm here
+            predicted_eligible_trials = [trial.get('NCTID', '') for trial in retrieved_trials_data]
+            total_cost = 0.0
             
             processing_time = time.time() - start_time
             
@@ -324,7 +263,6 @@ class FilteringBenchmark:
             
             return {
                 'query_id': query_id,
-                'conditions': conditions,
                 'ground_truth_count': len(ground_truth_trials),
                 'retrieved_count': len(retrieved_trials_data),
                 'predicted_eligible_count': len(predicted_eligible_trials),
@@ -344,7 +282,6 @@ class FilteringBenchmark:
             logger.error(f"FilteringBenchmark.evaluate_filtering_performance: Error processing query {query_id}: {str(e)}")
             return {
                 'query_id': query_id,
-                'conditions': conditions,
                 'ground_truth_count': len(ground_truth_trials),
                 'retrieved_count': len(retrieved_trials_data),
                 'predicted_eligible_count': 0,
