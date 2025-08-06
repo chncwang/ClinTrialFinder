@@ -31,6 +31,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
 
+logger: logging.Logger = logging.getLogger(__name__)
+log_file: str = setup_logging("benchmark_filtering", "INFO")
+
 
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
@@ -48,16 +51,12 @@ class FilteringBenchmark:
         self.api_key = api_key
         self.cache_size = cache_size
         
-        # Setup logging
-        self.log_file = setup_logging("benchmark_filtering")
-        self.logger = logging.getLogger(__name__)
-        
         # Load dataset
         self._load_dataset()
         
     def _load_dataset(self):
         """Load TREC 2021 dataset components."""
-        self.logger.info("Loading TREC 2021 dataset...")
+        logger.info("FilteringBenchmark._load_dataset: Loading TREC 2021 dataset...")
         
         # Load queries
         queries_file = self.dataset_path / "queries.jsonl"
@@ -90,9 +89,9 @@ class FilteringBenchmark:
         with open(trials_file, 'r') as f:
             self.retrieved_trials = json.load(f)
         
-        self.logger.info(f"Loaded {len(self.queries)} queries")
-        self.logger.info(f"Loaded relevance judgments for {len(self.relevance_judgments)} queries")
-        self.logger.info(f"Loaded retrieved trials for {len(self.retrieved_trials)} patients")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded relevance judgments for {len(self.relevance_judgments)} queries")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded retrieved trials for {len(self.retrieved_trials)} patients")
     
     def extract_conditions_from_query(self, query: Dict[str, Any]) -> List[str]:
         """
@@ -219,22 +218,22 @@ class FilteringBenchmark:
         query_id = query['_id']
         patient_id = query_id  # In TREC dataset, query_id matches patient_id
         
-        self.logger.info(f"Evaluating query: {query_id}")
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
         
         # Extract conditions from query
         conditions = self.extract_conditions_from_query(query)
-        self.logger.info(f"Extracted conditions: {conditions}")
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Extracted conditions: {conditions}")
         
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
-        self.logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Ground truth relevant trials: {len(ground_truth_trials)}")
         
         # Get retrieved trials for this patient
         retrieved_trials_data = self.get_retrieved_trials_for_patient(patient_id)
-        self.logger.info(f"Retrieved trials: {len(retrieved_trials_data)}")
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Retrieved trials: {len(retrieved_trials_data)}")
         
         if not retrieved_trials_data:
-            self.logger.warning(f"No retrieved trials found for patient {patient_id}")
+            logger.warning(f"FilteringBenchmark.evaluate_filtering_performance: No retrieved trials found for patient {patient_id}")
             return {
                 'query_id': query_id,
                 'conditions': conditions,
@@ -308,7 +307,7 @@ class FilteringBenchmark:
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing query {query_id}: {str(e)}")
+            logger.error(f"FilteringBenchmark.evaluate_filtering_performance: Error processing query {query_id}: {str(e)}")
             return {
                 'query_id': query_id,
                 'conditions': conditions,
@@ -337,7 +336,7 @@ class FilteringBenchmark:
         Returns:
             Dictionary with overall benchmark results
         """
-        self.logger.info("Starting filtering performance benchmark...")
+        logger.info("FilteringBenchmark.run_benchmark: Starting filtering performance benchmark...")
         
         queries_to_process = self.queries[:max_queries] if max_queries else self.queries
         
@@ -346,7 +345,7 @@ class FilteringBenchmark:
         total_api_cost = 0.0
         
         for i, query in enumerate(queries_to_process, 1):
-            self.logger.info(f"Processing query {i}/{len(queries_to_process)}")
+            logger.info(f"FilteringBenchmark.run_benchmark: Processing query {i}/{len(queries_to_process)}")
             
             result = self.evaluate_filtering_performance(query)
             results.append(result)
@@ -356,7 +355,7 @@ class FilteringBenchmark:
             
             # Log progress
             if i % 10 == 0:
-                self.logger.info(f"Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+                logger.info(f"FilteringBenchmark.run_benchmark: Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
         successful_results = [r for r in results if r['error'] is None]
@@ -388,15 +387,15 @@ class FilteringBenchmark:
             'detailed_results': results
         }
         
-        self.logger.info("Benchmark completed!")
-        self.logger.info(f"Total queries processed: {len(queries_to_process)}")
-        self.logger.info(f"Successful queries: {len(successful_results)}")
-        self.logger.info(f"Failed queries: {len(results) - len(successful_results)}")
-        self.logger.info(f"Total processing time: {total_processing_time:.2f}s")
-        self.logger.info(f"Total API cost: ${total_api_cost:.4f}")
-        self.logger.info(f"Average precision: {avg_precision:.4f}")
-        self.logger.info(f"Average recall: {avg_recall:.4f}")
-        self.logger.info(f"Average F1-score: {avg_f1:.4f}")
+        logger.info("FilteringBenchmark.run_benchmark: Benchmark completed!")
+        logger.info(f"FilteringBenchmark.run_benchmark: Total queries processed: {len(queries_to_process)}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Successful queries: {len(successful_results)}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Failed queries: {len(results) - len(successful_results)}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Total processing time: {total_processing_time:.2f}s")
+        logger.info(f"FilteringBenchmark.run_benchmark: Total API cost: ${total_api_cost:.4f}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Average precision: {avg_precision:.4f}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Average recall: {avg_recall:.4f}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Average F1-score: {avg_f1:.4f}")
         
         return benchmark_results
 
@@ -454,8 +453,8 @@ def main():
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"Benchmark results saved to: {output_path}")
-    print(f"Log file: {benchmark.log_file}")
+    logger.info(f"FilteringBenchmark.main: Benchmark results saved to: {output_path}")
+    logger.info(f"FilteringBenchmark.main: Log file: {log_file}")
 
 
 if __name__ == "__main__":
