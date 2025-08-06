@@ -140,7 +140,7 @@ class FilteringBenchmark:
             List of NCT IDs of relevant trials
         """
         if query_id not in self.relevance_judgments:
-            return []
+            raise KeyError(f"Query ID '{query_id}' not found in relevance judgments.")
         
         relevant_trials: List[str] = []
         for trial_id, relevance in self.relevance_judgments[query_id].items():
@@ -168,7 +168,7 @@ class FilteringBenchmark:
                         # Trials are stored as arrays with numeric keys
                         trials.extend(value)  # type: ignore
                 return trials
-        return []
+        raise KeyError(f"Patient ID '{patient_id}' not found in retrieved trials.")
     
     def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
         """
@@ -218,8 +218,6 @@ class FilteringBenchmark:
         
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
         
-
-        
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Ground truth relevant trials: {len(ground_truth_trials)}")
@@ -229,23 +227,7 @@ class FilteringBenchmark:
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Retrieved trials: {len(retrieved_trials_data)}")
         
         if not retrieved_trials_data:
-            logger.warning(f"FilteringBenchmark.evaluate_filtering_performance: No retrieved trials found for patient {patient_id}")
-            return {
-                'query_id': query_id,
-                'ground_truth_count': len(ground_truth_trials),
-                'retrieved_count': 0,
-                'predicted_eligible_count': 0,
-                'true_positives': 0,
-                'false_positives': 0,
-                'false_negatives': 0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'f1_score': 0.0,
-                'accuracy': 0.0,
-                'processing_time': 0.0,
-                'api_cost': 0.0,
-                'error': 'No retrieved trials found'
-            }
+            raise ValueError(f"No retrieved trials found for patient {patient_id}")
         
         # Apply filtering directly on the trial data
         start_time = time.time()
