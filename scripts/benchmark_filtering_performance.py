@@ -35,6 +35,97 @@ logger: logging.Logger = logging.getLogger(__name__)
 log_file: str = setup_logging("benchmark_filtering", "INFO")
 
 
+class Query:
+    """
+    A class to represent a clinical trial query.
+    
+    This class encapsulates query information from the TREC 2021 dataset,
+    including the query ID and text content.
+    """
+    
+    def __init__(self, query_id: str, text: str):
+        """
+        Initialize a Query instance.
+        
+        Args:
+            query_id: Unique identifier for the query
+            text: The query text describing the patient case
+        """
+        self.query_id = query_id
+        self.text = text
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Query':
+        """
+        Create a Query instance from a dictionary.
+        
+        Args:
+            data: Dictionary containing query data with keys '_id' and 'text'
+            
+        Returns:
+            Query instance
+        """
+        return cls(
+            query_id=data['_id'],
+            text=data['text']
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the Query instance to a dictionary.
+        
+        Returns:
+            Dictionary representation of the query
+        """
+        return {
+            '_id': self.query_id,
+            'text': self.text
+        }
+    
+    def get_patient_id(self) -> str:
+        """
+        Get the patient ID from the query ID.
+        In TREC dataset, query_id matches patient_id.
+        
+        Returns:
+            Patient ID string
+        """
+        return self.query_id
+    
+    def get_text_summary(self, max_length: int = 100) -> str:
+        """
+        Get a summary of the query text.
+        
+        Args:
+            max_length: Maximum length of the summary
+            
+        Returns:
+            Truncated text summary
+        """
+        if len(self.text) <= max_length:
+            return self.text
+        return self.text[:max_length] + "..."
+    
+    def __str__(self) -> str:
+        """String representation of the query."""
+        return f"Query(id={self.query_id}, text='{self.get_text_summary(50)}')"
+    
+    def __repr__(self) -> str:
+        """Detailed string representation of the query."""
+        return f"Query(query_id='{self.query_id}', text='{self.text}')"
+    
+    def __eq__(self, other: Any) -> bool:
+        """Check if two queries are equal."""
+        if not isinstance(other, Query):
+            return False
+        return (self.query_id == other.query_id and 
+                self.text == other.text)
+    
+    def __hash__(self) -> int:
+        """Hash based on query_id."""
+        return hash(self.query_id)
+
+
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
     
@@ -60,16 +151,17 @@ class FilteringBenchmark:
         
         # Load queries
         queries_file = self.dataset_path / "queries.jsonl"
-        self.queries: List[Dict[str, Any]] = []
+        self.queries: List[Query] = []
         with open(queries_file, 'r') as f:
             for line in f:
-                self.queries.append(json.loads(line))
+                query_data = json.loads(line)
+                self.queries.append(Query.from_dict(query_data))
         
         # Log the number of queries and the first 10 queries
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
         logger.info("FilteringBenchmark._load_dataset: First 10 queries:")
         for i, query in enumerate(self.queries[:10], 1):
-            logger.info(f"  {i}. {query['_id']}: {query['text'][:100]}...")
+            logger.info(f"  {i}. {query.query_id}: {query.get_text_summary(100)}")
         
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
@@ -213,18 +305,18 @@ class FilteringBenchmark:
             'false_negatives': false_negatives
         }
     
-    def evaluate_filtering_performance(self, query: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate_filtering_performance(self, query: Query) -> Dict[str, Any]:
         """
         Evaluate filtering performance for a single query.
         
         Args:
-            query: Query dictionary
+            query: Query object
             
         Returns:
             Dictionary with evaluation metrics
         """
-        query_id = query['_id']
-        patient_id = query_id  # In TREC dataset, query_id matches patient_id
+        query_id = query.query_id
+        patient_id = query.get_patient_id()  # In TREC dataset, query_id matches patient_id
         
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
         
