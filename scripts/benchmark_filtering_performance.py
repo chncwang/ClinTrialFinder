@@ -113,9 +113,14 @@ class FilteringBenchmark:
             
             # Get trials from the first patient (they're stored as arrays with numeric keys)
             patient_trials: List[Dict[str, Any]] = []
+            seen_trial_ids: set[str] = set()
             for key, value in first_patient.items():
                 if key not in ['patient_id', 'patient'] and isinstance(value, list):
-                    patient_trials.extend(value)  # type: ignore
+                    for trial in value:  # type: ignore
+                        trial_id = trial.get('NCTID', '')  # type: ignore
+                        if trial_id and trial_id not in seen_trial_ids:
+                            patient_trials.append(trial)  # type: ignore
+                            seen_trial_ids.add(trial_id)  # type: ignore
             
             logger.info(f"FilteringBenchmark._load_dataset: Found {len(patient_trials)} trials for first patient")
             for i, trial in enumerate(patient_trials[:10], 1):
@@ -157,16 +162,21 @@ class FilteringBenchmark:
             patient_id: Patient identifier
             
         Returns:
-            List of trial dictionaries
+            List of trial dictionaries (deduplicated by NCT ID)
         """
         for patient_data in self.retrieved_trials:
             if patient_data.get('patient_id') == patient_id:
                 # Extract trials from the patient data structure
                 trials: List[Dict[str, Any]] = []
+                seen_trial_ids: set[str] = set()
                 for key, value in patient_data.items():
                     if key not in ['patient_id', 'patient'] and isinstance(value, list):
                         # Trials are stored as arrays with numeric keys
-                        trials.extend(value)  # type: ignore
+                        for trial in value:  # type: ignore
+                            trial_id = trial.get('NCTID', '')  # type: ignore
+                            if trial_id and trial_id not in seen_trial_ids:
+                                trials.append(trial)  # type: ignore
+                                seen_trial_ids.add(trial_id)  # type: ignore
                 return trials
         raise KeyError(f"Patient ID '{patient_id}' not found in retrieved trials.")
     
