@@ -126,6 +126,94 @@ class Query:
         return hash(self.query_id)
 
 
+class RelevanceJudgment:
+    """
+    A class to represent a single relevance judgment.
+    
+    This class encapsulates a single relevance judgment from the TREC 2021 dataset,
+    including the query ID, trial ID, and relevance score.
+    """
+    
+    def __init__(self, query_id: str, trial_id: str, relevance_score: int):
+        """
+        Initialize a RelevanceJudgment instance.
+        
+        Args:
+            query_id: Unique identifier for the query
+            trial_id: Unique identifier for the trial (NCT ID)
+            relevance_score: Relevance score (0 = not relevant, >0 = relevant)
+        """
+        self.query_id = query_id
+        self.trial_id = trial_id
+        self.relevance_score = relevance_score
+    
+    @classmethod
+    def from_tsv_line(cls, line: str) -> Optional['RelevanceJudgment']:
+        """
+        Create a RelevanceJudgment instance from a TSV line.
+        
+        Args:
+            line: TSV line with format: query_id\ttrial_id\trelevance_score
+            
+        Returns:
+            RelevanceJudgment instance or None if line is invalid
+        """
+        parts = line.strip().split('\t')
+        if len(parts) == 3:
+            query_id, trial_id, relevance = parts
+            # Skip header row
+            if relevance == 'score':
+                return None
+            try:
+                return cls(query_id, trial_id, int(relevance))
+            except ValueError:
+                # Skip lines that can't be converted to int
+                return None
+        return None
+    
+    def is_relevant(self) -> bool:
+        """
+        Check if the trial is considered relevant.
+        
+        Returns:
+            True if relevance_score > 0, False otherwise
+        """
+        return self.relevance_score > 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the RelevanceJudgment instance to a dictionary.
+        
+        Returns:
+            Dictionary representation of the relevance judgment
+        """
+        return {
+            'query_id': self.query_id,
+            'trial_id': self.trial_id,
+            'relevance_score': self.relevance_score
+        }
+    
+    def __str__(self) -> str:
+        """String representation of the relevance judgment."""
+        return f"RelevanceJudgment(query_id='{self.query_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
+    
+    def __repr__(self) -> str:
+        """Detailed string representation of the relevance judgment."""
+        return f"RelevanceJudgment(query_id='{self.query_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
+    
+    def __eq__(self, other: Any) -> bool:
+        """Check if two RelevanceJudgment instances are equal."""
+        if not isinstance(other, RelevanceJudgment):
+            return False
+        return (self.query_id == other.query_id and 
+                self.trial_id == other.trial_id and 
+                self.relevance_score == other.relevance_score)
+    
+    def __hash__(self) -> int:
+        """Hash value for the relevance judgment."""
+        return hash((self.query_id, self.trial_id, self.relevance_score))
+
+
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
     
@@ -165,31 +253,24 @@ class FilteringBenchmark:
         
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
-        self.relevance_judgments: Dict[str, Dict[str, int]] = {}
+        self.relevance_judgments: List[RelevanceJudgment] = []
         with open(qrels_file, 'r') as f:
-            for line_num, line in enumerate(f):
-                parts = line.strip().split('\t')
-                if len(parts) == 3:
-                    query_id, trial_id, relevance = parts
-                    # Skip header row
-                    if line_num == 0 and relevance == 'score':
-                        continue
-                    try:
-                        if query_id not in self.relevance_judgments:
-                            self.relevance_judgments[query_id] = {}
-                        self.relevance_judgments[query_id][trial_id] = int(relevance)
-                    except ValueError:
-                        # Skip lines that can't be converted to int
-                        continue
+            for line in f:
+                judgment = RelevanceJudgment.from_tsv_line(line)
+                if judgment is not None:
+                    self.relevance_judgments.append(judgment)
+        
+        # Validate that the set of query_ids in relevance_judgments is the same as the set of query_ids in queries
+        relevance_query_ids = set(judgment.query_id for judgment in self.relevance_judgments)
+        query_ids = set(query.query_id for query in self.queries)
+        if relevance_query_ids != query_ids:
+            raise ValueError("The set of query_ids in relevance_judgments is not the same as the set of query_ids in queries")
         
         # Log the number of relevance judgments and the first 10 relevance judgments
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
         logger.info("FilteringBenchmark._load_dataset: First 10 relevance judgments:")
-        for i, (query_id, relevance_dict) in enumerate(list(self.relevance_judgments.items())[:10], 1):
-            # Log only the first 5 trial_ids and their relevance scores for brevity
-            short_relevance = dict(list(relevance_dict.items())[:5])
-            more = "..." if len(relevance_dict) > 5 else ""
-            logger.info(f"  {i}. {query_id}: {short_relevance}{more}")
+        for i, judgment in enumerate(self.relevance_judgments[:10], 1):
+            logger.info(f"  {i}. {judgment}")
         
         # Load retrieved trials
         trials_file = self.dataset_path / "retrieved_trials.json"
@@ -221,7 +302,7 @@ class FilteringBenchmark:
                 logger.info(f"FilteringBenchmark._load_dataset: {i}. {trial_id}: {title}...")
         
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded relevance judgments for {len(self.relevance_judgments)} queries")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
         logger.info(f"FilteringBenchmark._load_dataset: Loaded retrieved trials for {len(self.retrieved_trials)} patients")
     
 
@@ -236,13 +317,13 @@ class FilteringBenchmark:
         Returns:
             List of NCT IDs of relevant trials
         """
-        if query_id not in self.relevance_judgments:
-            raise KeyError(f"Query ID '{query_id}' not found in relevance judgments.")
-        
         relevant_trials: List[str] = []
-        for trial_id, relevance in self.relevance_judgments[query_id].items():
-            if relevance > 0:  # Consider trials with relevance > 0 as relevant
-                relevant_trials.append(trial_id)
+        for judgment in self.relevance_judgments:
+            if judgment.query_id == query_id and judgment.is_relevant():
+                relevant_trials.append(judgment.trial_id)
+        
+        if not relevant_trials:
+            logger.warning(f"Query ID '{query_id}' not found in relevance judgments or has no relevant trials.")
         
         return relevant_trials
     
