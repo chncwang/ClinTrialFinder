@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
+from tqdm import tqdm
 
 
 # Add parent directory to Python path
@@ -309,11 +310,15 @@ class FilteringBenchmark:
 
     def download_trials(self, trial_ids: set[str]):
         """Download trials for the given trial IDs."""
-        logger.info(f"FilteringBenchmark._download_trials: Downloading {len(trial_ids)} trials...")
-        
         import requests
         import json
         import time
+        import warnings
+        import urllib3
+        
+        # Suppress SSL warnings to clean up output
+        warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
         # ClinicalTrials.gov API endpoint
         api_base_url = "https://clinicaltrials.gov/api/v2/studies"
@@ -321,66 +326,66 @@ class FilteringBenchmark:
         trials_data: List[Dict[str, Any]] = []
         total_trials = len(trial_ids)
         
-        for i, trial_id in enumerate(trial_ids, 1):
-            try:
-                logger.info(f"FilteringBenchmark._download_trials: Downloading trial {i}/{total_trials}: {trial_id}")
-                
-                # API parameters
-                params = {
-                    "format": "json",
-                    "fields": "ProtocolSection",
-                    "markupFormat": "markdown"
-                }
-                
-                # Make API request with SSL verification disabled to handle certificate issues
-                url = f"{api_base_url}/{trial_id}"
+        # Create progress bar for trial downloading
+        with tqdm(total=total_trials, desc="Downloading trials", unit="trial") as pbar:
+            for trial_id in trial_ids:
                 try:
-                    response = requests.get(url, params=params, timeout=30, verify=False)
+                    # Update progress bar description with current trial ID
+                    pbar.set_description(f"Downloading {trial_id}")
                     
-                    if response.status_code == 200:
-                        data = response.json()
+                    # API parameters
+                    params = {
+                        "format": "json",
+                        "fields": "ProtocolSection",
+                        "markupFormat": "markdown"
+                    }
+                    
+                    # Make API request with SSL verification disabled to handle certificate issues
+                    url = f"{api_base_url}/{trial_id}"
+                    try:
+                        response = requests.get(url, params=params, timeout=30, verify=False)
                         
-                        if "protocolSection" in data:
-                            # Extract trial data using the same structure as the spider
-                            trial_data = self._extract_trial_data(data["protocolSection"])
-                            trials_data.append(trial_data)
-                            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {trial_id}")
-                        else:
-                            logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                        if response.status_code == 200:
+                            data = response.json()
                             
-                    else:
-                        logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id}, status: {response.status_code}")
-                        
-                except requests.exceptions.SSLError as ssl_error:
-                    logger.warning(f"FilteringBenchmark._download_trials: SSL error for {trial_id}, retrying without verification: {ssl_error}")
-                    # Retry without SSL verification
-                    response = requests.get(url, params=params, timeout=30, verify=False)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if "protocolSection" in data:
-                            trial_data = self._extract_trial_data(data["protocolSection"])
-                            trials_data.append(trial_data)
-                            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {trial_id} (no SSL verification)")
+                            if "protocolSection" in data:
+                                # Extract trial data using the same structure as the spider
+                                trial_data = self._extract_trial_data(data["protocolSection"])
+                                trials_data.append(trial_data)
+                            else:
+                                logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                                
                         else:
-                            logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
-                    else:
-                        logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
-                        
-                # Rate limiting - be respectful to the API
-                if i < total_trials:
+                            logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id}, status: {response.status_code}")
+                            
+                    except requests.exceptions.SSLError as ssl_error:
+                        logger.warning(f"FilteringBenchmark._download_trials: SSL error for {trial_id}, retrying without verification: {ssl_error}")
+                        # Retry without SSL verification
+                        response = requests.get(url, params=params, timeout=30, verify=False)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if "protocolSection" in data:
+                                trial_data = self._extract_trial_data(data["protocolSection"])
+                                trials_data.append(trial_data)
+                            else:
+                                logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                        else:
+                            logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
+                            
+                    # Rate limiting - be respectful to the API
                     time.sleep(0.1)  # 100ms delay between requests
                     
-            except Exception as e:
-                logger.error(f"FilteringBenchmark._download_trials: Error downloading {trial_id}: {e}")
-                continue
+                except Exception as e:
+                    logger.error(f"FilteringBenchmark._download_trials: Error downloading {trial_id}: {e}")
+                finally:
+                    # Update progress bar regardless of success/failure
+                    pbar.update(1)
         
         # Save all trials to file
         if trials_data:
             output_path = self.dataset_path / "retrieved_trials.json"
             with open(output_path, 'w') as f:
                 json.dump(trials_data, f, indent=2)
-            
-            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {len(trials_data)} trials to {output_path}")
         else:
             raise RuntimeError("No trials were successfully downloaded")
     
@@ -647,18 +652,24 @@ class FilteringBenchmark:
         total_processing_time = 0.0
         total_api_cost = 0.0
         
-        for i, query in enumerate(queries_to_process, 1):
-            logger.info(f"FilteringBenchmark.run_benchmark: Processing query {i}/{len(queries_to_process)}")
-            
-            result = self.evaluate_filtering_performance(query)
-            results.append(result)
-            
-            total_processing_time += result['processing_time']
-            total_api_cost += result['api_cost']
-            
-            # Log progress
-            if i % 10 == 0:
-                logger.info(f"FilteringBenchmark.run_benchmark: Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+        # Create progress bar for query processing
+        with tqdm(total=len(queries_to_process), desc="Processing queries", unit="query") as pbar:
+            for i, query in enumerate(queries_to_process, 1):
+                # Update progress bar description with current query ID
+                pbar.set_description(f"Processing {query.query_id}")
+                
+                result = self.evaluate_filtering_performance(query)
+                results.append(result)
+                
+                total_processing_time += result['processing_time']
+                total_api_cost += result['api_cost']
+                
+                # Update progress bar
+                pbar.update(1)
+                
+                # Log progress every 10 queries
+                if i % 10 == 0:
+                    logger.info(f"FilteringBenchmark.run_benchmark: Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
         successful_results = [r for r in results if r['error'] is None]
