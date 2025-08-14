@@ -318,7 +318,7 @@ class FilteringBenchmark:
         # ClinicalTrials.gov API endpoint
         api_base_url = "https://clinicaltrials.gov/api/v2/studies"
         
-        trials_data = []
+        trials_data: List[Dict[str, Any]] = []
         total_trials = len(trial_ids)
         
         for i, trial_id in enumerate(trial_ids, 1):
@@ -391,7 +391,7 @@ class FilteringBenchmark:
             for key in keys:
                 if not isinstance(d, dict):
                     return default
-                d = d.get(key, default)
+                d = d.get(str(key), default)  # type: ignore
                 if d is None:
                     return default
             return d
