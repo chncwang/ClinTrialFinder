@@ -19,10 +19,9 @@ import argparse
 import json
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 import logging
 
 
@@ -30,7 +29,6 @@ import logging
 sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
-from base.clinical_trial import TRECTrial, TRECTrialsParser
 
 logger: logging.Logger = logging.getLogger(__name__)
 log_file: str = setup_logging("benchmark_filtering", "INFO")
@@ -273,62 +271,8 @@ class FilteringBenchmark:
         for i, judgment in enumerate(self.relevance_judgments[:10], 1):
             logger.info(f"  {i}. {judgment}")
         
-        # Load retrieved trials and convert to TRECTrial objects
-        trials_file = self.dataset_path / "retrieved_trials.json"
-        with open(trials_file, 'r') as f:
-            self.retrieved_trials = json.load(f)
-        
-        # Extract all trials from the patient data structure and convert to TRECTrial objects
-        self.all_trials: List[TRECTrial] = []
-        
-        for patient_data in self.retrieved_trials:
-            for key, value in patient_data.items():
-                # Create a set of trial IDs for the patient under the current key
-                trial_ids: set[str] = set()
-
-                # key is supposed to be '0', '1', or '2', if not 'patient_id' or 'patient'.
-                if key not in ['patient_id', 'patient'] and isinstance(value, list):
-                    # Then key is either '0', '1', or '2', validate that
-                    if key not in ['0', '1', '2']:
-                        raise ValueError(f"Key '{key}' is not valid")
-
-                    for trial_data in value:  # type: ignore
-                        trial_id = trial_data.get('NCTID', '') # type: ignore
-                        if trial_id and isinstance(trial_id, str) and trial_id not in trial_ids:
-                            trial = TRECTrial.from_dict(trial_data) # type: ignore
-                            self.all_trials.append(trial)
-                            trial_ids.add(trial_id)
-                        else:
-                            raise ValueError(f"Trial ID '{trial_id}' already exists in the set of trial IDs for the patient under the current key")
-                
-                    # Validate that between retrieved_trials.json and test.tsv, for each patient, the set of trial IDs under the same key (score in test.tsv) is the same
-                    patient_trial_ids_in_qrels: set[str] = set()
-                    for judgment in self.relevance_judgments:
-                        if judgment.query_id == patient_data['patient_id'] and judgment.relevance_score == int(key):
-                            patient_trial_ids_in_qrels.add(judgment.trial_id)  # type: ignore
-                    # Allow non-equivalence for key '0'
-                    if key != '0' and patient_trial_ids_in_qrels != trial_ids:
-                        # Log the difference between the two sets
-                        logger.error(f"FilteringBenchmark._load_dataset: patient_id: {patient_data['patient_id']}, key: {key}")
-                        logger.error(f"FilteringBenchmark._load_dataset: ids in qrels but not in retrieved_trials: {patient_trial_ids_in_qrels - trial_ids}")
-                        logger.error(f"FilteringBenchmark._load_dataset: ids in retrieved_trials but not in qrels: {trial_ids - patient_trial_ids_in_qrels}")
-
-                        raise ValueError(f"The set of trial IDs under the same key (score in test.tsv) is not the same for patient {patient_data['patient_id']}")
-        
-        # Create a parser for easy access to trials
-        self.trials_parser = TRECTrialsParser([trial.to_dict() for trial in self.all_trials])
-        
-        # Log the number of retrieved trials and the first 10 retrieved trials
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.all_trials)} unique trials")
-        logger.info("FilteringBenchmark._load_dataset: First 10 trials:")
-        for i, trial in enumerate(self.all_trials[:10], 1):
-            logger.info(f"FilteringBenchmark._load_dataset: {i}. {trial.nct_id}: {trial.get_title_summary(80)}...")
-        
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded retrieved trials for {len(self.retrieved_trials)} patients")
-        logger.info(f"FilteringBenchmark._load_dataset: Extracted {len(self.all_trials)} unique trials")
-    
 
     
     def get_ground_truth_trials(self, query_id: str) -> List[str]:
@@ -350,33 +294,6 @@ class FilteringBenchmark:
             logger.warning(f"Query ID '{query_id}' not found in relevance judgments or has no relevant trials.")
         
         return relevant_trials
-    
-    def get_retrieved_trials_for_patient(self, patient_id: str) -> List[TRECTrial]:
-        """
-        Get retrieved trials for a specific patient.
-        
-        Args:
-            patient_id: Patient identifier
-            
-        Returns:
-            List of TRECTrial objects (deduplicated by NCT ID)
-        """
-        for patient_data in self.retrieved_trials:
-            if patient_data.get('patient_id') == patient_id:
-                # Extract trials from the patient data structure
-                trials: List[TRECTrial] = []
-                seen_trial_ids: set[str] = set()
-                for key, value in patient_data.items():
-                    if key not in ['patient_id', 'patient'] and isinstance(value, list):
-                        # Trials are stored as arrays with numeric keys
-                        for trial_data in value:  # type: ignore
-                            trial_id = trial_data.get('NCTID', '')  # type: ignore
-                            if trial_id and trial_id not in seen_trial_ids:
-                                trial = TRECTrial.from_dict(trial_data)  # type: ignore
-                                trials.append(trial)
-                                seen_trial_ids.add(trial_id)  # type: ignore
-                return trials
-        raise KeyError(f"Patient ID '{patient_id}' not found in retrieved trials.")
     
     def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
         """
@@ -422,7 +339,6 @@ class FilteringBenchmark:
             Dictionary with evaluation metrics
         """
         query_id = query.query_id
-        patient_id = query.get_patient_id()  # In TREC dataset, query_id matches patient_id
         
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
         
@@ -430,50 +346,12 @@ class FilteringBenchmark:
         ground_truth_trials = self.get_ground_truth_trials(query_id)
         logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Ground truth relevant trials: {len(ground_truth_trials)}")
         
-        # Get retrieved trials for this patient
-        retrieved_trials_data = self.get_retrieved_trials_for_patient(patient_id)
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Retrieved trials: {len(retrieved_trials_data)}")
-        
-        if not retrieved_trials_data:
-            raise ValueError(f"No retrieved trials found for patient {patient_id}")
-        
-        # Apply filtering directly on the trial data
-        start_time = time.time()
-        
         try:
-            # Simple filtering approach - consider all trials as eligible for now
-            # In a real implementation, you would apply your filtering algorithm here
-            predicted_eligible_trials = [trial.nct_id for trial in retrieved_trials_data]
-            total_cost = 0.0
-            
-            processing_time = time.time() - start_time
-            
-            # Calculate metrics
-            metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
-            
+            # TODO: Implement filtering
             return {
                 'query_id': query_id,
                 'ground_truth_count': len(ground_truth_trials),
-                'retrieved_count': len(retrieved_trials_data),
-                'predicted_eligible_count': len(predicted_eligible_trials),
-                'true_positives': metrics['true_positives'],
-                'false_positives': metrics['false_positives'],
-                'false_negatives': metrics['false_negatives'],
-                'precision': metrics['precision'],
-                'recall': metrics['recall'],
-                'f1_score': metrics['f1_score'],
-                'accuracy': metrics['accuracy'],
-                'processing_time': processing_time,
-                'api_cost': total_cost,
-                'error': None
-            }
-            
-        except Exception as e:
-            logger.error(f"FilteringBenchmark.evaluate_filtering_performance: Error processing query {query_id}: {str(e)}")
-            return {
-                'query_id': query_id,
-                'ground_truth_count': len(ground_truth_trials),
-                'retrieved_count': len(retrieved_trials_data),
+                'retrieved_count': 0,
                 'predicted_eligible_count': 0,
                 'true_positives': 0,
                 'false_positives': 0,
@@ -484,6 +362,23 @@ class FilteringBenchmark:
                 'accuracy': 0.0,
                 'processing_time': 0.0,
                 'api_cost': 0.0,
+                'error': None
+            }
+            
+        except Exception as e:
+            logger.error(f"FilteringBenchmark.evaluate_filtering_performance: Error processing query {query_id}: {str(e)}")
+            return {
+                'query_id': query_id,
+                'ground_truth_count': len(ground_truth_trials),
+                'retrieved_count': 0,
+                'predicted_eligible_count': 0,
+                'true_positives': 0,
+                'false_positives': 0,
+                'false_negatives': 0,
+                'precision': 0.0,
+                'recall': 0.0,
+                'f1_score': 0.0,
+                'accuracy': 0.0,
                 'error': str(e)
             }
     
