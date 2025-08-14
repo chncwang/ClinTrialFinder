@@ -229,6 +229,9 @@ class FilteringBenchmark:
         self.api_key = api_key
         self.cache_size = cache_size
         
+        # Initialize trials attribute
+        self.trials: Dict[str, Dict[str, Any]] = {}
+        
         # Load dataset
         self._load_dataset()
         
@@ -271,9 +274,253 @@ class FilteringBenchmark:
         for i, judgment in enumerate(self.relevance_judgments[:10], 1):
             logger.info(f"  {i}. {judgment}")
         
+        # Extract unique trial IDs from relevance judgments
+        trial_ids = set(judgment.trial_id for judgment in self.relevance_judgments)
+        logger.info(f"FilteringBenchmark._load_dataset: Found {len(trial_ids)} unique trial IDs in relevance judgments")
+        
+        # Check if trial data file exists, if not download trials
+        trials_file = self.dataset_path / "retrieved_trials.json"
+        if not trials_file.exists():
+            logger.info("FilteringBenchmark._load_dataset: Trial data file not found. Downloading trials...")
+            try:
+                self.download_trials(trial_ids)
+                # Verify the file was created
+                if not trials_file.exists():
+                    raise RuntimeError("Trial data file was not created after download")
+            except Exception as e:
+                logger.error(f"FilteringBenchmark._load_dataset: Failed to download trials: {e}")
+                raise RuntimeError(f"Failed to download trials: {e}")
+        else:
+            logger.info(f"FilteringBenchmark._load_dataset: Trial data file found: {trials_file}")
+        
+        # Load trial data
+        self.trials = self._load_trials(trials_file)
+        if not self.trials:
+            raise RuntimeError("No trials were loaded from the trial data file")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.trials)} trials")
+        
+        # Validate trial coverage
+        if not self.validate_trial_coverage():
+            raise RuntimeError("Some trials are missing from the dataset")
+        
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
         logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
+        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.trials)} trials")
 
+    def download_trials(self, trial_ids: set[str]):
+        """Download trials for the given trial IDs."""
+        logger.info(f"FilteringBenchmark._download_trials: Downloading {len(trial_ids)} trials...")
+        
+        import requests
+        import json
+        import time
+        
+        # ClinicalTrials.gov API endpoint
+        api_base_url = "https://clinicaltrials.gov/api/v2/studies"
+        
+        trials_data = []
+        total_trials = len(trial_ids)
+        
+        for i, trial_id in enumerate(trial_ids, 1):
+            try:
+                logger.info(f"FilteringBenchmark._download_trials: Downloading trial {i}/{total_trials}: {trial_id}")
+                
+                # API parameters
+                params = {
+                    "format": "json",
+                    "fields": "ProtocolSection",
+                    "markupFormat": "markdown"
+                }
+                
+                # Make API request with SSL verification disabled to handle certificate issues
+                url = f"{api_base_url}/{trial_id}"
+                try:
+                    response = requests.get(url, params=params, timeout=30, verify=False)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if "protocolSection" in data:
+                            # Extract trial data using the same structure as the spider
+                            trial_data = self._extract_trial_data(data["protocolSection"])
+                            trials_data.append(trial_data)
+                            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {trial_id}")
+                        else:
+                            logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                            
+                    else:
+                        logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id}, status: {response.status_code}")
+                        
+                except requests.exceptions.SSLError as ssl_error:
+                    logger.warning(f"FilteringBenchmark._download_trials: SSL error for {trial_id}, retrying without verification: {ssl_error}")
+                    # Retry without SSL verification
+                    response = requests.get(url, params=params, timeout=30, verify=False)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if "protocolSection" in data:
+                            trial_data = self._extract_trial_data(data["protocolSection"])
+                            trials_data.append(trial_data)
+                            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {trial_id} (no SSL verification)")
+                        else:
+                            logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                    else:
+                        logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
+                        
+                # Rate limiting - be respectful to the API
+                if i < total_trials:
+                    time.sleep(0.1)  # 100ms delay between requests
+                    
+            except Exception as e:
+                logger.error(f"FilteringBenchmark._download_trials: Error downloading {trial_id}: {e}")
+                continue
+        
+        # Save all trials to file
+        if trials_data:
+            output_path = self.dataset_path / "retrieved_trials.json"
+            with open(output_path, 'w') as f:
+                json.dump(trials_data, f, indent=2)
+            
+            logger.info(f"FilteringBenchmark._download_trials: Successfully downloaded {len(trials_data)} trials to {output_path}")
+        else:
+            raise RuntimeError("No trials were successfully downloaded")
+    
+    def _extract_trial_data(self, protocol: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract trial data from protocol section (same structure as spider)."""
+        def safe_get(d: Any, *keys: str, default: Any = None) -> Any:
+            """Safely get nested dictionary values"""
+            for key in keys:
+                if not isinstance(d, dict):
+                    return default
+                d = d.get(key, default)
+                if d is None:
+                    return default
+            return d
+        
+        return {
+            "identification": {
+                "nct_id": safe_get(protocol, "identificationModule", "nctId"),
+                "url": (
+                    f"https://clinicaltrials.gov/study/{safe_get(protocol, 'identificationModule', 'nctId')}"
+                    if safe_get(protocol, "identificationModule", "nctId")
+                    else None
+                ),
+                "brief_title": safe_get(protocol, "identificationModule", "briefTitle"),
+                "official_title": safe_get(protocol, "identificationModule", "officialTitle"),
+                "acronym": safe_get(protocol, "identificationModule", "acronym"),
+                "org_study_id": safe_get(protocol, "identificationModule", "orgStudyIdInfo", "id"),
+            },
+            "status": {
+                "overall_status": safe_get(protocol, "statusModule", "overallStatus"),
+                "start_date": safe_get(protocol, "statusModule", "startDateStruct", "date"),
+                "completion_date": safe_get(protocol, "statusModule", "completionDateStruct", "date"),
+                "primary_completion_date": safe_get(protocol, "statusModule", "primaryCompletionDateStruct", "date"),
+            },
+            "description": {
+                "brief_summary": safe_get(protocol, "descriptionModule", "briefSummary"),
+                "detailed_description": safe_get(protocol, "descriptionModule", "detailedDescription"),
+                "conditions": safe_get(protocol, "descriptionModule", "conditions"),
+                "keywords": safe_get(protocol, "descriptionModule", "keywords"),
+            },
+            "design": {
+                "study_type": safe_get(protocol, "designModule", "studyType"),
+                "phases": safe_get(protocol, "designModule", "phases", default=[]),
+                "enrollment": safe_get(protocol, "designModule", "enrollmentInfo", "count"),
+                "arms": [
+                    {
+                        "name": safe_get(arm, "label"),
+                        "type": safe_get(arm, "type"),
+                        "description": safe_get(arm, "description"),
+                        "interventions": safe_get(arm, "interventionNames", default=[]),
+                    }
+                    for arm in safe_get(protocol, "armsInterventionsModule", "armGroups", default=[])
+                ],
+            },
+            "eligibility": {
+                "criteria": safe_get(protocol, "eligibilityModule", "eligibilityCriteria"),
+                "gender": safe_get(protocol, "eligibilityModule", "sex"),
+                "minimum_age": safe_get(protocol, "eligibilityModule", "minimumAge"),
+                "maximum_age": safe_get(protocol, "eligibilityModule", "maximumAge"),
+                "healthy_volunteers": safe_get(protocol, "eligibilityModule", "healthyVolunteers"),
+            },
+            "contacts_locations": {
+                "locations": [
+                    {
+                        "facility": safe_get(loc, "facility", "name") or safe_get(loc, "name"),
+                        "city": safe_get(loc, "facility", "city") or safe_get(loc, "city"),
+                        "state": safe_get(loc, "facility", "state") or safe_get(loc, "city"),
+                        "country": safe_get(loc, "facility", "country") or safe_get(loc, "city"),
+                        "status": safe_get(loc, "status"),
+                    }
+                    for loc in safe_get(protocol, "contactsLocationsModule", "locations", default=[])
+                ],
+            },
+            "sponsor": {
+                "lead_sponsor": safe_get(protocol, "sponsorCollaboratorsModule", "leadSponsor", "name"),
+                "collaborators": [
+                    safe_get(collab, "name", default="")
+                    for collab in safe_get(protocol, "sponsorCollaboratorsModule", "collaborators", default=[])
+                ],
+            },
+        }
+    
+    def _load_trials(self, trials_file: Path) -> Dict[str, Dict[str, Any]]:
+        """Load trial data from file."""
+        try:
+            with open(trials_file, 'r') as f:
+                trials_data: List[Dict[str, Any]] = json.load(f)
+            
+            # Convert to dictionary with NCT ID as key for faster lookup
+            trials_dict: Dict[str, Dict[str, Any]] = {}
+            for trial in trials_data:
+                nct_id = trial.get('identification', {}).get('nct_id')
+                if nct_id:
+                    trials_dict[nct_id] = trial
+            
+            logger.info(f"FilteringBenchmark._load_trials: Successfully loaded {len(trials_dict)} trials")
+            return trials_dict
+            
+        except Exception as e:
+            logger.error(f"FilteringBenchmark._load_trials: Error loading trials: {e}")
+            return {}
+    
+    def get_trial_data(self, trial_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get trial data by NCT ID.
+        
+        Args:
+            trial_id: NCT ID of the trial
+            
+        Returns:
+            Trial data dictionary or None if not found
+        """
+        return self.trials.get(trial_id)
+    
+    def get_missing_trials(self) -> List[str]:
+        """
+        Get list of trial IDs that are referenced in relevance judgments but not available in trials data.
+        
+        Returns:
+            List of missing trial IDs
+        """
+        available_trials = set(self.trials.keys())
+        required_trials = set(judgment.trial_id for judgment in self.relevance_judgments)
+        missing_trials = required_trials - available_trials
+        return list(missing_trials)
+    
+    def validate_trial_coverage(self) -> bool:
+        """
+        Validate that all trials referenced in relevance judgments are available in trials data.
+        
+        Returns:
+            True if all trials are available, False otherwise
+        """
+        missing_trials = self.get_missing_trials()
+        if missing_trials:
+            logger.warning(f"FilteringBenchmark.validate_trial_coverage: {len(missing_trials)} trials are missing: {missing_trials[:10]}{'...' if len(missing_trials) > 10 else ''}")
+            return False
+        else:
+            logger.info("FilteringBenchmark.validate_trial_coverage: All required trials are available")
+            return True
     
     def get_ground_truth_trials(self, query_id: str) -> List[str]:
         """
