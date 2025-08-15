@@ -364,7 +364,7 @@ class FilteringBenchmark:
                             if "protocolSection" in data:
                                 # Extract trial data using the same structure as the spider
                                 trial_data = self._extract_trial_data(data["protocolSection"])
-                                trials_data.append(ClinicalTrial(trial_data))
+                                trials_data.append(trial_data)
                                 
                                 # Save individual trial file if requested
                                 if save_individual:
@@ -385,7 +385,7 @@ class FilteringBenchmark:
                             data = response.json()
                             if "protocolSection" in data:
                                 trial_data = self._extract_trial_data(data["protocolSection"])
-                                trials_data.append(ClinicalTrial(trial_data))
+                                trials_data.append(trial_data)
                                 
                                 # Save individual trial file if requested
                                 if save_individual:
@@ -433,8 +433,8 @@ class FilteringBenchmark:
         else:
             raise RuntimeError("No trials were successfully downloaded")
     
-    def _extract_trial_data(self, protocol: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract trial data from protocol section (same structure as spider)."""
+    def _extract_trial_data(self, protocol: Dict[str, Any]) -> ClinicalTrial:
+        """Extract trial data from protocol section and return ClinicalTrial object."""
         def safe_get(d: Any, *keys: str, default: Any = None) -> Any:
             """Safely get nested dictionary values"""
             for key in keys:
@@ -445,7 +445,7 @@ class FilteringBenchmark:
                     return default
             return d
         
-        return {
+        trial_dict = {
             "identification": {
                 "nct_id": safe_get(protocol, "identificationModule", "nctId"),
                 "url": (
@@ -511,6 +511,8 @@ class FilteringBenchmark:
                 ],
             },
         }
+        
+        return ClinicalTrial(trial_dict)
     
     def retry_download_missing_trials(self, batch_size: int = 1000, delay: float = 0.1, timeout: int = 30, save_individual: bool = False, individual_format: str = "json") -> int:
         """
