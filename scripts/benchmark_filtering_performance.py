@@ -354,9 +354,11 @@ class FilteringBenchmark:
                     url = f"{api_base_url}/{trial_id}"
                     try:
                         response = requests.get(url, params=params, timeout=timeout, verify=False)
+                        logger.debug(f"FilteringBenchmark._download_trials: Response for {trial_id}: {response.status_code}")
                         
                         if response.status_code == 200:
                             data = response.json()
+                            logger.debug(f"FilteringBenchmark._download_trials: Data for {trial_id}: {data}")
                             
                             if "protocolSection" in data:
                                 # Extract trial data using the same structure as the spider
