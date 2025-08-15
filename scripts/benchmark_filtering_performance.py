@@ -31,6 +31,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
+from base.clinical_trial import ClinicalTrial
 
 logger: logging.Logger = logging.getLogger(__name__)
 # log_file will be set after parsing arguments
@@ -333,7 +334,7 @@ class FilteringBenchmark:
         # ClinicalTrials.gov API endpoint
         api_base_url = "https://clinicaltrials.gov/api/v2/studies"
         
-        trials_data: List[Dict[str, Any]] = []
+        trials_data: List[ClinicalTrial] = []
         total_trials = len(trial_ids)
         
         # Create progress bar for trial downloading
@@ -363,7 +364,7 @@ class FilteringBenchmark:
                             if "protocolSection" in data:
                                 # Extract trial data using the same structure as the spider
                                 trial_data = self._extract_trial_data(data["protocolSection"])
-                                trials_data.append(trial_data)
+                                trials_data.append(ClinicalTrial(trial_data))
                                 
                                 # Save individual trial file if requested
                                 if save_individual:
@@ -384,7 +385,7 @@ class FilteringBenchmark:
                             data = response.json()
                             if "protocolSection" in data:
                                 trial_data = self._extract_trial_data(data["protocolSection"])
-                                trials_data.append(trial_data)
+                                trials_data.append(ClinicalTrial(trial_data))
                                 
                                 # Save individual trial file if requested
                                 if save_individual:
@@ -422,7 +423,7 @@ class FilteringBenchmark:
             
             # Merge existing and new trials, avoiding duplicates
             existing_trial_ids = {trial.get('identification', {}).get('nct_id') for trial in existing_trials if trial.get('identification', {}).get('nct_id')}
-            new_trials_only = [trial for trial in trials_data if trial.get('identification', {}).get('nct_id') not in existing_trial_ids]
+            new_trials_only = [trial.to_dict() for trial in trials_data if trial.identification.nct_id not in existing_trial_ids]
             
             all_trials: List[Dict[str, Any]] = existing_trials + new_trials_only
             logger.info(f"FilteringBenchmark.download_trials: Saving {len(all_trials)} total trials (existing: {len(existing_trials)}, new unique: {len(new_trials_only)})")
