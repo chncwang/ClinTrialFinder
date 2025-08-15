@@ -408,8 +408,27 @@ class FilteringBenchmark:
         # Save all trials to file
         if trials_data:
             output_path = self.dataset_path / "retrieved_trials.json"
+            
+            # Load existing trials if file exists to avoid overwriting
+            existing_trials: List[Dict[str, Any]] = []
+            if output_path.exists():
+                try:
+                    with open(output_path, 'r') as f:
+                        existing_trials = json.load(f)
+                    logger.info(f"FilteringBenchmark.download_trials: Loaded {len(existing_trials)} existing trials")
+                except Exception as e:
+                    logger.warning(f"FilteringBenchmark.download_trials: Could not load existing trials: {e}")
+                    existing_trials = []
+            
+            # Merge existing and new trials, avoiding duplicates
+            existing_trial_ids = {trial.get('identification', {}).get('nct_id') for trial in existing_trials if trial.get('identification', {}).get('nct_id')}
+            new_trials_only = [trial for trial in trials_data if trial.get('identification', {}).get('nct_id') not in existing_trial_ids]
+            
+            all_trials: List[Dict[str, Any]] = existing_trials + new_trials_only
+            logger.info(f"FilteringBenchmark.download_trials: Saving {len(all_trials)} total trials (existing: {len(existing_trials)}, new unique: {len(new_trials_only)})")
+            
             with open(output_path, 'w') as f:
-                json.dump(trials_data, f, indent=2)
+                json.dump(all_trials, f, indent=2)
         else:
             raise RuntimeError("No trials were successfully downloaded")
     
