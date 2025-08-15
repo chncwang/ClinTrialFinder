@@ -234,7 +234,7 @@ class FilteringBenchmark:
         self.cache_size = cache_size
         
         # Initialize trials attribute
-        self.trials: Dict[str, Dict[str, Any]] = {}
+        self.trials: Dict[str, ClinicalTrial] = {}
         
         # Load dataset
         self._load_dataset()
@@ -558,18 +558,18 @@ class FilteringBenchmark:
             logger.warning("FilteringBenchmark.retry_download_missing_trials: No trials file found after download attempt")
             return 0
     
-    def _load_trials(self, trials_file: Path) -> Dict[str, Dict[str, Any]]:
+    def _load_trials(self, trials_file: Path) -> Dict[str, ClinicalTrial]:
         """Load trial data from file."""
         try:
             with open(trials_file, 'r') as f:
                 trials_data: List[Dict[str, Any]] = json.load(f)
             
             # Convert to dictionary with NCT ID as key for faster lookup
-            trials_dict: Dict[str, Dict[str, Any]] = {}
+            trials_dict: Dict[str, ClinicalTrial] = {}
             for trial in trials_data:
                 nct_id = trial.get('identification', {}).get('nct_id')
                 if nct_id:
-                    trials_dict[nct_id] = trial
+                    trials_dict[nct_id] = ClinicalTrial(trial)
             
             logger.info(f"FilteringBenchmark._load_trials: Successfully loaded {len(trials_dict)} trials")
             return trials_dict
@@ -578,7 +578,7 @@ class FilteringBenchmark:
             logger.error(f"FilteringBenchmark._load_trials: Error loading trials: {e}")
             return {}
     
-    def get_trial_data(self, trial_id: str) -> Optional[Dict[str, Any]]:
+    def get_trial_data(self, trial_id: str) -> Optional[ClinicalTrial]:
         """
         Get trial data by NCT ID.
         
@@ -586,7 +586,7 @@ class FilteringBenchmark:
             trial_id: NCT ID of the trial
             
         Returns:
-            Trial data dictionary or None if not found
+            Trial data object or None if not found
         """
         return self.trials.get(trial_id)
     
