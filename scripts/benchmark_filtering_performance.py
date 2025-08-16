@@ -14,9 +14,9 @@ Example:
         --output results/benchmark_results.json \
         --api-key $OPENAI_API_KEY
 
-    # Run benchmark on a specific query ID only
+    # Run benchmark on a specific patient ID only
     python scripts/benchmark_filtering_performance.py \
-        --query-id "query_123" \
+        --patient-id "patient_123" \
         --api-key $OPENAI_API_KEY
 """
 
@@ -44,66 +44,66 @@ logger: logging.Logger = logging.getLogger(__name__)
 log_file: str = ""
 
 
-class Query:
+class Patient:
     """
-    A class to represent a clinical trial query.
+    A class to represent a patient case for clinical trial matching.
     
-    This class encapsulates query information from the TREC 2021 dataset,
-    including the query ID and text content.
+    This class encapsulates patient information from the TREC 2021 dataset,
+    including the patient ID and medical record text content.
     """
     
-    def __init__(self, query_id: str, text: str):
+    def __init__(self, patient_id: str, text: str):
         """
-        Initialize a Query instance.
+        Initialize a Patient instance.
         
         Args:
-            query_id: Unique identifier for the query
-            text: The query text describing the patient case
+            patient_id: Unique identifier for the patient
+            text: The medical record text describing the patient case
         """
-        self.query_id = query_id
+        self.patient_id = patient_id
         self.text = text
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Query':
+    def from_dict(cls, data: Dict[str, Any]) -> 'Patient':
         """
-        Create a Query instance from a dictionary.
+        Create a Patient instance from a dictionary.
         
         Args:
-            data: Dictionary containing query data with keys '_id' and 'text'
+            data: Dictionary containing patient data with keys '_id' and 'text'
             
         Returns:
-            Query instance
+            Patient instance
         """
         return cls(
-            query_id=data['_id'],
+            patient_id=data['_id'],
             text=data['text']
         )
     
     def to_dict(self) -> Dict[str, Any]:
         """
-        Convert the Query instance to a dictionary.
+        Convert the Patient instance to a dictionary.
         
         Returns:
-            Dictionary representation of the query
+            Dictionary representation of the patient
         """
         return {
-            '_id': self.query_id,
+            '_id': self.patient_id,
             'text': self.text
         }
     
     def get_patient_id(self) -> str:
         """
-        Get the patient ID from the query ID.
-        In TREC dataset, query_id matches patient_id.
+        Get the patient ID from the patient ID.
+        In TREC dataset, patient_id matches patient_id.
         
         Returns:
             Patient ID string
         """
-        return self.query_id
+        return self.patient_id
     
     def get_text_summary(self, max_length: int = 100) -> str:
         """
-        Get a summary of the query text.
+        Get a summary of the patient medical record text.
         
         Args:
             max_length: Maximum length of the summary
@@ -116,23 +116,23 @@ class Query:
         return self.text[:max_length] + "..."
     
     def __str__(self) -> str:
-        """String representation of the query."""
-        return f"Query(id={self.query_id}, text='{self.get_text_summary(50)}')"
+        """String representation of the patient."""
+        return f"Patient(id={self.patient_id}, text='{self.get_text_summary(50)}')"
     
     def __repr__(self) -> str:
-        """Detailed string representation of the query."""
-        return f"Query(query_id='{self.query_id}', text='{self.text}')"
+        """Detailed string representation of the patient."""
+        return f"Patient(patient_id='{self.patient_id}', text='{self.text}')"
     
     def __eq__(self, other: Any) -> bool:
-        """Check if two queries are equal."""
-        if not isinstance(other, Query):
+        """Check if two patients are equal."""
+        if not isinstance(other, Patient):
             return False
-        return (self.query_id == other.query_id and 
+        return (self.patient_id == other.patient_id and 
                 self.text == other.text)
     
     def __hash__(self) -> int:
-        """Hash based on query_id."""
-        return hash(self.query_id)
+        """Hash based on patient_id."""
+        return hash(self.patient_id)
 
 
 class RelevanceJudgment:
@@ -140,19 +140,19 @@ class RelevanceJudgment:
     A class to represent a single relevance judgment.
     
     This class encapsulates a single relevance judgment from the TREC 2021 dataset,
-    including the query ID, trial ID, and relevance score.
+    including the patient ID, trial ID, and relevance score.
     """
     
-    def __init__(self, query_id: str, trial_id: str, relevance_score: int):
+    def __init__(self, patient_id: str, trial_id: str, relevance_score: int):
         """
         Initialize a RelevanceJudgment instance.
         
         Args:
-            query_id: Unique identifier for the query
+            patient_id: Unique identifier for the patient
             trial_id: Unique identifier for the trial (NCT ID)
             relevance_score: Relevance score (0 = not relevant, >0 = relevant)
         """
-        self.query_id = query_id
+        self.patient_id = patient_id
         self.trial_id = trial_id
         self.relevance_score = relevance_score
     
@@ -162,19 +162,19 @@ class RelevanceJudgment:
         Create a RelevanceJudgment instance from a TSV line.
         
         Args:
-            line: TSV line with format: query_id\ttrial_id\trelevance_score
+            line: TSV line with format: patient_id\ttrial_id\trelevance_score
             
         Returns:
             RelevanceJudgment instance or None if line is invalid
         """
         parts = line.strip().split('\t')
         if len(parts) == 3:
-            query_id, trial_id, relevance = parts
+            patient_id, trial_id, relevance = parts
             # Skip header row
             if relevance == 'score':
                 return None
             try:
-                return cls(query_id, trial_id, int(relevance))
+                return cls(patient_id, trial_id, int(relevance))
             except ValueError:
                 # Skip lines that can't be converted to int
                 return None
@@ -197,30 +197,30 @@ class RelevanceJudgment:
             Dictionary representation of the relevance judgment
         """
         return {
-            'query_id': self.query_id,
+            'patient_id': self.patient_id,
             'trial_id': self.trial_id,
             'relevance_score': self.relevance_score
         }
     
     def __str__(self) -> str:
         """String representation of the relevance judgment."""
-        return f"RelevanceJudgment(query_id='{self.query_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
+        return f"RelevanceJudgment(patient_id='{self.patient_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
     
     def __repr__(self) -> str:
         """Detailed string representation of the relevance judgment."""
-        return f"RelevanceJudgment(query_id='{self.query_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
+        return f"RelevanceJudgment(patient_id='{self.patient_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
     
     def __eq__(self, other: Any) -> bool:
         """Check if two RelevanceJudgment instances are equal."""
         if not isinstance(other, RelevanceJudgment):
             return False
-        return (self.query_id == other.query_id and 
+        return (self.patient_id == other.patient_id and 
                 self.trial_id == other.trial_id and 
                 self.relevance_score == other.relevance_score)
     
     def __hash__(self) -> int:
         """Hash value for the relevance judgment."""
-        return hash((self.query_id, self.trial_id, self.relevance_score))
+        return hash((self.patient_id, self.trial_id, self.relevance_score))
 
 
 class FilteringBenchmark:
@@ -256,19 +256,19 @@ class FilteringBenchmark:
         """Load TREC 2021 dataset components."""
         logger.info("Loading TREC 2021 dataset...")
         
-        # Load queries
-        queries_file = self.dataset_path / "queries.jsonl"
-        self.queries: List[Query] = []
-        with open(queries_file, 'r') as f:
+        # Load patients (from queries.jsonl file which contains patient medical records)
+        patients_file = self.dataset_path / "queries.jsonl"
+        self.patients: List[Patient] = []
+        with open(patients_file, 'r') as f:
             for line in f:
-                query_data = json.loads(line)
-                self.queries.append(Query.from_dict(query_data))
+                patient_data = json.loads(line)
+                self.patients.append(Patient.from_dict(patient_data))
         
-        # Log the number of queries and the first 10 queries
-        logger.info(f"Loaded {len(self.queries)} queries")
-        logger.info("First 10 queries:")
-        for i, query in enumerate(self.queries[:10], 1):
-            logger.info(f"  {i}. {query.query_id}: {query.get_text_summary(100)}")
+        # Log the number of patients and the first 10 patients
+        logger.info(f"Loaded {len(self.patients)} patients")
+        logger.info("First 10 patients:")
+        for i, patient in enumerate(self.patients[:10], 1):
+            logger.info(f"  {i}. {patient.patient_id}: {patient.get_text_summary(100)}")
         
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
@@ -279,11 +279,11 @@ class FilteringBenchmark:
                 if judgment is not None:
                     self.relevance_judgments.append(judgment)
         
-        # Validate that the set of query_ids in relevance_judgments is the same as the set of query_ids in queries
-        relevance_query_ids = set(judgment.query_id for judgment in self.relevance_judgments)
-        query_ids = set(query.query_id for query in self.queries)
-        if relevance_query_ids != query_ids:
-            raise ValueError("The set of query_ids in relevance_judgments is not the same as the set of query_ids in queries")
+        # Validate that the set of patient_ids in relevance_judgments is the same as the set of patient_ids in patients
+        relevance_patient_ids = set(judgment.patient_id for judgment in self.relevance_judgments)
+        patient_ids = set(patient.patient_id for patient in self.patients)
+        if relevance_patient_ids != patient_ids:
+            raise ValueError("The set of patient_ids in relevance_judgments is not the same as the set of patient_ids in patients")
         
         # Log the number of relevance judgments and the first 10 relevance judgments
         logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
@@ -328,7 +328,7 @@ class FilteringBenchmark:
         coverage_stats = self.get_trial_coverage_stats()
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.1f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
         
-        logger.info(f"Loaded {len(self.queries)} queries")
+        logger.info(f"Loaded {len(self.patients)} patients")
         logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
         logger.info(f"Loaded {len(self.trials)} trials")
 
@@ -639,12 +639,12 @@ class FilteringBenchmark:
             logger.info("All required trials are available")
             return True
     
-    def get_ground_truth_trials(self, query_id: str) -> List[str]:
+    def get_ground_truth_trials(self, patient_id: str) -> List[str]:
         """
-        Get ground truth relevant trials for a query.
+        Get ground truth relevant trials for a patient.
         
         Args:
-            query_id: Query identifier
+            patient_id: Patient identifier
             
         Returns:
             List of NCT IDs of relevant trials (only those available in the dataset)
@@ -653,7 +653,7 @@ class FilteringBenchmark:
         available_trials = set(self.trials.keys())
         
         for judgment in self.relevance_judgments:
-            if judgment.query_id == query_id and judgment.is_relevant():
+            if judgment.patient_id == patient_id and judgment.is_relevant():
                 # Only include trials that are actually available in the dataset
                 if judgment.trial_id in available_trials:
                     relevant_trials.append(judgment.trial_id)
@@ -661,7 +661,7 @@ class FilteringBenchmark:
                     logger.debug(f"Trial {judgment.trial_id} is not available in dataset, skipping")
         
         if not relevant_trials:
-            logger.warning(f"Query ID '{query_id}' not found in relevance judgments or has no relevant trials available in dataset.")
+            logger.warning(f"Patient ID '{patient_id}' not found in relevance judgments or has no relevant trials available in dataset.")
         
         return relevant_trials
     
@@ -698,36 +698,36 @@ class FilteringBenchmark:
             'false_negatives': false_negatives
         }
     
-    def evaluate_filtering_performance(self, query: Query) -> Dict[str, Any]:
+    def evaluate_filtering_performance(self, patient: Patient) -> Dict[str, Any]:
         """
-        Evaluate filtering performance for a single query.
+        Evaluate filtering performance for a single patient.
         
         Args:
-            query: Query object
+            patient: Patient object
             
         Returns:
             Dictionary with evaluation metrics
         """
-        query_id = query.query_id
+        patient_id = patient.patient_id
         
         # Extract disease name if GPT client is available
         disease_name: str = "Unknown"
         if self.gpt_client:
-            disease_name, _ = extract_disease_from_record(query.text, self.gpt_client)
+            disease_name, _ = extract_disease_from_record(patient.text, self.gpt_client)
         else:
             raise ValueError("GPT client not initialized")
         
-        logger.info(f"Evaluating query: {query_id} text: {query.text} disease: {disease_name}")
+        logger.info(f"Evaluating patient: {patient_id} text: {patient.get_text_summary(100)} disease: {disease_name}")
         
         # Get ground truth relevant trials
-        ground_truth_trials = self.get_ground_truth_trials(query_id)
+        ground_truth_trials = self.get_ground_truth_trials(patient_id)
         logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
         
-        # Check if there are any ground truth trials available for this query
+        # Check if there are any ground truth trials available for this patient
         if not ground_truth_trials:
-            logger.warning(f"No ground truth trials available for query {query_id}, skipping evaluation")
+            logger.warning(f"No ground truth trials available for patient {patient_id}, skipping evaluation")
             return {
-                'query_id': query_id,
+                'patient_id': patient_id,
                 'ground_truth_count': 0,
                 'retrieved_count': 0,
                 'predicted_eligible_count': 0,
@@ -747,7 +747,7 @@ class FilteringBenchmark:
         try:
             # TODO: Implement filtering
             return {
-                'query_id': query_id,
+                'patient_id': patient_id,
                 'ground_truth_count': len(ground_truth_trials),
                 'retrieved_count': 0,
                 'predicted_eligible_count': 0,
@@ -765,9 +765,9 @@ class FilteringBenchmark:
             }
             
         except Exception as e:
-            logger.error(f"Error processing query {query_id}: {str(e)}")
+            logger.error(f"Error processing patient {patient_id}: {str(e)}")
             return {
-                'query_id': query_id,
+                'patient_id': patient_id,
                 'ground_truth_count': len(ground_truth_trials),
                 'retrieved_count': 0,
                 'predicted_eligible_count': 0,
@@ -782,24 +782,24 @@ class FilteringBenchmark:
                 'skipped': False
             }
     
-    def run_benchmark(self, max_queries: Optional[int] = None) -> Dict[str, Any]:
+    def run_benchmark(self, max_patients: Optional[int] = None) -> Dict[str, Any]:
         """
         Run the complete benchmark.
         
         Args:
-            max_queries: Maximum number of queries to process (for testing)
+            max_patients: Maximum number of patients to process (for testing)
             
         Returns:
             Dictionary with overall benchmark results
         """
         logger.info("Starting filtering performance benchmark...")
         
-        queries_to_process: List[Query] = self.queries[:max_queries] if max_queries else self.queries
+        patients_to_process: List[Patient] = self.patients[:max_patients] if max_patients else self.patients
 
         # Extract disease names and record their indices
         disease_data: List[tuple[str, int]] = []
-        for i, query in enumerate(queries_to_process):
-            disease_name = extract_disease_from_record(query.text, self.gpt_client)[0]
+        for i, patient in enumerate(patients_to_process):
+            disease_name = extract_disease_from_record(patient.text, self.gpt_client)[0]
             disease_data.append((disease_name, i))
         
         disease_names: List[str] = [data[0] for data in disease_data]
@@ -814,35 +814,31 @@ class FilteringBenchmark:
 
         # For each oncology disease name, log the number of trials under that disease in test.tsv
         for disease_name, idx in oncology_disease_data:
-            # Get the query directly by index
-            query = queries_to_process[idx]
+            # Get the patient directly by index
+            patient = patients_to_process[idx]
             
-            # Get trial IDs for this specific query from relevance judgments
+            # Get trial IDs for this specific patient from relevance judgments
             disease_trial_ids: set[str] = set()
             for judgment in self.relevance_judgments:
-                if judgment.query_id == query.query_id:
+                if judgment.patient_id == patient.patient_id:
                     disease_trial_ids.add(judgment.trial_id)
             
-            # Count relevant trials (relevance score > 0) for this query
-            relevant_trial_count = sum(1 for judgment in self.relevance_judgments 
-                                     if judgment.query_id == query.query_id and judgment.is_relevant())
-            
-            # Count total trials for this disease (all trials associated with this query)
+            # Count total trials for this disease (all trials associated with this patient)
             total_trial_count = len(disease_trial_ids)
             
-            logger.info(f"Disease '{disease_name}' (query {query.query_id}): {relevant_trial_count} relevant trials out of {total_trial_count} total trials")
+            logger.info(f"Disease '{disease_name}' (patient {patient.patient_id}): {total_trial_count} trials")
         
         results: List[Dict[str, Any]] = []
         total_processing_time = 0.0
         total_api_cost = 0.0
         
-        # Create progress bar for query processing
-        with tqdm(total=len(queries_to_process), desc="Processing queries", unit="query") as pbar:
-            for i, query in enumerate(queries_to_process, 1):
-                # Update progress bar description with current query ID
-                pbar.set_description(f"Processing {query.query_id}")
+        # Create progress bar for patient processing
+        with tqdm(total=len(patients_to_process), desc="Processing patients", unit="patient") as pbar:
+            for i, patient in enumerate(patients_to_process, 1):
+                # Update progress bar description with current patient ID
+                pbar.set_description(f"Processing {patient.patient_id}")
                 
-                result = self.evaluate_filtering_performance(query)
+                result = self.evaluate_filtering_performance(patient)
                 results.append(result)
                 
                 total_processing_time += result['processing_time']
@@ -851,9 +847,9 @@ class FilteringBenchmark:
                 # Update progress bar
                 pbar.update(1)
                 
-                # Log progress every 10 queries
+                # Log progress every 10 patients
                 if i % 10 == 0:
-                    logger.info(f"Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+                    logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
         successful_results = [r for r in results if r['error'] is None and not r.get('skipped', False)]
@@ -875,14 +871,14 @@ class FilteringBenchmark:
             'timestamp': datetime.now().isoformat(),
             'dataset_path': str(self.dataset_path),
             'trial_coverage': coverage_stats,
-            'total_queries': len(queries_to_process),
-            'successful_queries': len(successful_results),
-            'skipped_queries': len(skipped_results),
-            'failed_queries': len(failed_results),
+            'total_patients': len(patients_to_process),
+            'successful_patients': len(successful_results),
+            'skipped_patients': len(skipped_results),
+            'failed_patients': len(failed_results),
             'total_processing_time': total_processing_time,
             'total_api_cost': total_api_cost,
-            'average_processing_time_per_query': total_processing_time / len(queries_to_process) if queries_to_process else 0.0,
-            'average_api_cost_per_query': total_api_cost / len(queries_to_process) if queries_to_process else 0.0,
+            'average_processing_time_per_patient': total_processing_time / len(patients_to_process) if patients_to_process else 0.0,
+            'average_api_cost_per_patient': total_api_cost / len(patients_to_process) if patients_to_process else 0.0,
             'metrics': {
                 'average_precision': avg_precision,
                 'average_recall': avg_recall,
@@ -893,10 +889,10 @@ class FilteringBenchmark:
         }
         
         logger.info("Benchmark completed!")
-        logger.info(f"Total queries processed: {len(queries_to_process)}")
-        logger.info(f"Successful queries: {len(successful_results)}")
-        logger.info(f"Skipped queries: {len(skipped_results)}")
-        logger.info(f"Failed queries: {len(failed_results)}")
+        logger.info(f"Total patients processed: {len(patients_to_process)}")
+        logger.info(f"Successful patients: {len(successful_results)}")
+        logger.info(f"Skipped patients: {len(skipped_results)}")
+        logger.info(f"Failed patients: {len(failed_results)}")
         # Calculate effective available trials (excluding additional trials that aren't required)
         effective_available: set[str] = set(judgment.trial_id for judgment in self.relevance_judgments) & set(self.trials.keys())
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
@@ -940,13 +936,13 @@ def main():
         help="Size of GPT response cache"
     )
     parser.add_argument(
-        "--max-queries",
+        "--max-patients",
         type=int,
-        help="Maximum number of queries to process (for testing)"
+        help="Maximum number of patients to process (for testing)"
     )
     parser.add_argument(
-        "--query-id",
-        help="Run benchmark only on a specific query ID"
+        "--patient-id",
+        help="Run benchmark only on a specific patient ID"
     )
     parser.add_argument(
         "--save-coverage",
@@ -1025,7 +1021,7 @@ def main():
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
-        logger.info("4. Run benchmark on specific query: python script.py --query-id <query_id>")
+        logger.info("4. Run benchmark on specific patient: python script.py --patient-id <patient_id>")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1085,26 +1081,26 @@ def main():
         logger.info("Coverage check completed. Exiting.")
         return
     
-    # Filter queries by query ID if specified
-    if args.query_id:
-        # Find the specific query
-        target_query = None
-        for query in benchmark.queries:
-            if query.query_id == args.query_id:
-                target_query = query
+    # Filter patients by patient ID if specified
+    if args.patient_id:
+        # Find the specific patient
+        target_patient = None
+        for patient in benchmark.patients:
+            if patient.patient_id == args.patient_id:
+                target_patient = patient
                 break
         
-        if target_query is None:
-            logger.error(f"Query ID '{args.query_id}' not found in the dataset.")
-            logger.info(f"Available query IDs: {[q.query_id for q in benchmark.queries[:10]]}{'...' if len(benchmark.queries) > 10 else ''}")
+        if target_patient is None:
+            logger.error(f"Patient ID '{args.patient_id}' not found in the dataset.")
+            logger.info(f"Available patient IDs: {[p.patient_id for p in benchmark.patients[:10]]}{'...' if len(benchmark.patients) > 10 else ''}")
             sys.exit(1)
         
-        logger.info(f"Running benchmark on single query: {args.query_id}")
-        logger.info(f"Query text: {target_query.get_text_summary(200)}")
+        logger.info(f"Running benchmark on single patient: {args.patient_id}")
+        logger.info(f"Patient text: {target_patient.get_text_summary(200)}")
         
-        # Override max_queries to 1 and set queries to only the target query
-        args.max_queries = 1
-        benchmark.queries = [target_query]
+        # Override max_patients to 1 and set patients to only the target patient
+        args.max_patients = 1
+        benchmark.patients = [target_patient]
     
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
@@ -1112,7 +1108,7 @@ def main():
         logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
         logger.warning("The benchmark will continue with available trials.")
     
-    results = benchmark.run_benchmark(args.max_queries)
+    results = benchmark.run_benchmark(args.max_patients)
     
     # Save results
     with open(output_path, 'w') as f:
