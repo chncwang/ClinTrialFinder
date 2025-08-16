@@ -13,6 +13,11 @@ Example:
         --dataset-path dataset/trec_2021 \
         --output results/benchmark_results.json \
         --api-key $OPENAI_API_KEY
+
+    # Run benchmark on a specific query ID only
+    python scripts/benchmark_filtering_performance.py \
+        --query-id "query_123" \
+        --api-key $OPENAI_API_KEY
 """
 
 import argparse
@@ -940,6 +945,10 @@ def main():
         help="Maximum number of queries to process (for testing)"
     )
     parser.add_argument(
+        "--query-id",
+        help="Run benchmark only on a specific query ID"
+    )
+    parser.add_argument(
         "--save-coverage",
         action="store_true",
         help="Save coverage statistics to a separate file"
@@ -1016,6 +1025,7 @@ def main():
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
+        logger.info("4. Run benchmark on specific query: python script.py --query-id <query_id>")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1074,6 +1084,27 @@ def main():
     if args.coverage_only:
         logger.info("Coverage check completed. Exiting.")
         return
+    
+    # Filter queries by query ID if specified
+    if args.query_id:
+        # Find the specific query
+        target_query = None
+        for query in benchmark.queries:
+            if query.query_id == args.query_id:
+                target_query = query
+                break
+        
+        if target_query is None:
+            logger.error(f"Query ID '{args.query_id}' not found in the dataset.")
+            logger.info(f"Available query IDs: {[q.query_id for q in benchmark.queries[:10]]}{'...' if len(benchmark.queries) > 10 else ''}")
+            sys.exit(1)
+        
+        logger.info(f"Running benchmark on single query: {args.query_id}")
+        logger.info(f"Query text: {target_query.get_text_summary(200)}")
+        
+        # Override max_queries to 1 and set queries to only the target query
+        args.max_queries = 1
+        benchmark.queries = [target_query]
     
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
