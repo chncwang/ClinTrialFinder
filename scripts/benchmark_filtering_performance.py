@@ -696,7 +696,7 @@ class FilteringBenchmark:
         """
         query_id = query.query_id
         
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id}")
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id} text: {query.text}")
         
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
