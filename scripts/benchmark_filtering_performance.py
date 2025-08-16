@@ -29,6 +29,17 @@ Example:
     python scripts/benchmark_filtering_performance.py \
         --max-patients 50 \
         --api-key $OPENAI_API_KEY
+        
+    # Run benchmark only on cancer patients
+    python scripts/benchmark_filtering_performance.py \
+        --cancer-only \
+        --api-key $OPENAI_API_KEY
+        
+    # Run benchmark on cancer patients with limited trials
+    python scripts/benchmark_filtering_performance.py \
+        --cancer-only \
+        --max-trials 100 \
+        --api-key $OPENAI_API_KEY
 """
 
 import argparse
@@ -1020,6 +1031,11 @@ def main():
         type=int,
         help="Maximum number of trials to use for the benchmark (for faster testing). Uses deterministic sampling with fixed seed for consistent results across executions and devices."
     )
+    parser.add_argument(
+        "--cancer-only",
+        action="store_true",
+        help="Run benchmark only on cancer patients. When combined with --max-trials, samples from trials associated with cancer patients."
+    )
     
     args = parser.parse_args()
     
@@ -1038,12 +1054,18 @@ def main():
         logger.info("- Use --max-trials to limit the number of trials for faster testing")
         logger.info("- Sampling is deterministic (seed=42) for consistent results across executions and devices")
         logger.info("- This ensures reproducible benchmark results regardless of system differences")
+        logger.info("\nCANCER PATIENT FILTERING:")
+        logger.info("- Use --cancer-only to run benchmark only on cancer patients")
+        logger.info("- When combined with --max-trials, samples from trials associated with cancer patients")
+        logger.info("- This is useful for oncology-specific clinical trial research")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
         logger.info("4. Run benchmark on specific patient: python script.py --patient-id <patient_id>")
         logger.info("5. Run benchmark with limited trials: python script.py --max-trials 100")
+        logger.info("6. Run benchmark only on cancer patients: python script.py --cancer-only")
+        logger.info("7. Run benchmark on cancer patients with limited trials: python script.py --cancer-only --max-trials 100")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1124,6 +1146,50 @@ def main():
         args.max_patients = 1
         benchmark.patients = [target_patient]
     
+    # Initialize variables for cancer filtering
+    cancer_trial_ids: set[str] = set()
+    
+    # Filter for cancer patients if --cancer-only is specified
+    if args.cancer_only:
+        logger.info("Filtering for cancer patients only...")
+        
+        # Extract disease names for all patients to identify cancer patients
+        # This uses the same disease extraction logic as the main benchmark
+        cancer_patients: List[Patient] = []
+        
+        for patient in benchmark.patients:
+            try:
+                disease_name = extract_disease_from_record(patient.text, benchmark.gpt_client)[0]
+                if is_oncology_disease(disease_name):
+                    cancer_patients.append(patient)
+                    
+                    # Collect trial IDs associated with this cancer patient
+                    # These trials will be used for sampling when --max-trials is specified
+                    for judgment in benchmark.relevance_judgments:
+                        if judgment.patient_id == patient.patient_id:
+                            cancer_trial_ids.add(judgment.trial_id)
+                    
+                    logger.info(f"Cancer patient {patient.patient_id}: {disease_name}")
+                else:
+                    logger.debug(f"Non-cancer patient {patient.patient_id}: {disease_name}")
+            except Exception as e:
+                logger.warning(f"Failed to extract disease for patient {patient.patient_id}: {e}")
+                continue
+        
+        if not cancer_patients:
+            logger.error("No cancer patients found in the dataset!")
+            sys.exit(1)
+        
+        # Update patients list to only include cancer patients
+        # This ensures the benchmark only processes cancer patients
+        benchmark.patients = cancer_patients
+        logger.info(f"Found {len(cancer_patients)} cancer patients out of {len(benchmark.patients) + len([p for p in benchmark.patients if p not in cancer_patients])} total patients")
+        
+        # If max_trials is specified, we need to sample from cancer-related trials
+        # This ensures that when limiting trials, we only sample from trials relevant to cancer patients
+        if args.max_trials is not None:
+            logger.info(f"Will sample {args.max_trials} trials from {len(cancer_trial_ids)} cancer-related trials")
+    
     # Determine the number of trials to use for the benchmark
     num_trials_to_use = args.max_trials if args.max_trials is not None else len(benchmark.trials)
     
@@ -1136,9 +1202,19 @@ def main():
         # - The order of trials in the original dataset
         random.seed(42)  # Fixed seed for reproducibility
         
+        # Determine which trials to sample from
+        if args.cancer_only:
+            # When cancer-only is specified, sample from cancer-related trials
+            available_trial_ids = list(cancer_trial_ids)
+            logger.info(f"Sampling from {len(available_trial_ids)} cancer-related trials")
+        else:
+            # Sample from all available trials
+            available_trial_ids = list(benchmark.trials.keys())
+            logger.info(f"Sampling from {len(available_trial_ids)} total trials")
+        
         # Sort trial IDs to ensure consistent sampling order across different systems
         # This is crucial because different systems might load trials in different orders
-        sorted_trial_ids = sorted(benchmark.trials.keys())
+        sorted_trial_ids = sorted(available_trial_ids)
         
         # Sample trials deterministically using the sorted list
         sampled_trial_ids = random.sample(sorted_trial_ids, min(num_trials_to_use, len(sorted_trial_ids)))
@@ -1154,7 +1230,10 @@ def main():
         logger.info("Re-checking trial coverage after sampling...")
         benchmark.print_coverage_summary(args.verbose_coverage)
     else:
-        logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials).")
+        if args.cancer_only:
+            logger.info(f"Using all cancer-related trials for benchmark ({len(cancer_trial_ids)} trials).")
+        else:
+            logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials).")
     
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
