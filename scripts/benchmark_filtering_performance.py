@@ -31,7 +31,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
-from base.disease_expert import extract_disease_from_record
+from base.disease_expert import extract_disease_from_record, is_oncology_disease
 from base.gpt_client import GPTClient
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -789,7 +789,43 @@ class FilteringBenchmark:
         """
         logger.info("FilteringBenchmark.run_benchmark: Starting filtering performance benchmark...")
         
-        queries_to_process = self.queries[:max_queries] if max_queries else self.queries
+        queries_to_process: List[Query] = self.queries[:max_queries] if max_queries else self.queries
+
+        # Extract disease names and record their indices
+        disease_data: List[tuple[str, int]] = []
+        for i, query in enumerate(queries_to_process):
+            disease_name = extract_disease_from_record(query.text, self.gpt_client)[0]
+            disease_data.append((disease_name, i))
+        
+        disease_names: List[str] = [data[0] for data in disease_data]
+        logger.info(f"FilteringBenchmark.run_benchmark: Disease names: {disease_names}")
+        
+        # Filter oncology diseases and keep their indices
+        oncology_disease_data: List[tuple[str, int]] = [(disease_name, idx) for disease_name, idx in disease_data if is_oncology_disease(disease_name)]
+        oncology_disease_names: List[str] = [data[0] for data in oncology_disease_data]
+        oncology_indices: List[int] = [data[1] for data in oncology_disease_data]
+        logger.info(f"FilteringBenchmark.run_benchmark: Oncology disease names: {oncology_disease_names}")
+        logger.info(f"FilteringBenchmark.run_benchmark: Oncology disease indices: {oncology_indices}")
+
+        # For each oncology disease name, log the number of trials under that disease in test.tsv
+        for disease_name, idx in oncology_disease_data:
+            # Get the query directly by index
+            query = queries_to_process[idx]
+            
+            # Get trial IDs for this specific query from relevance judgments
+            disease_trial_ids: set[str] = set()
+            for judgment in self.relevance_judgments:
+                if judgment.query_id == query.query_id:
+                    disease_trial_ids.add(judgment.trial_id)
+            
+            # Count relevant trials (relevance score > 0) for this query
+            relevant_trial_count = sum(1 for judgment in self.relevance_judgments 
+                                     if judgment.query_id == query.query_id and judgment.is_relevant())
+            
+            # Count total trials for this disease (all trials associated with this query)
+            total_trial_count = len(disease_trial_ids)
+            
+            logger.info(f"FilteringBenchmark.run_benchmark: Disease '{disease_name}' (query {query.query_id}): {relevant_trial_count} relevant trials out of {total_trial_count} total trials")
         
         results: List[Dict[str, Any]] = []
         total_processing_time = 0.0
