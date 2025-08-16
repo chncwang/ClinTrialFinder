@@ -19,7 +19,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -514,52 +513,6 @@ class FilteringBenchmark:
         
         return ClinicalTrial(trial_dict)
     
-    def retry_download_missing_trials(self, batch_size: int = 1000, delay: float = 0.1, timeout: int = 30, save_individual: bool = False, individual_format: str = "json") -> int:
-        """
-        Retry downloading trials that were previously missing.
-        
-        Args:
-            batch_size: Number of trials to download in a single batch
-            delay: Delay in seconds between individual trial downloads
-            timeout: Timeout in seconds for individual trial downloads
-            save_individual: Whether to save individual trial files
-            
-        Returns:
-            Number of newly downloaded trials
-        """
-        missing_trials = self.get_missing_trials()
-        if not missing_trials:
-            logger.info("FilteringBenchmark.retry_download_missing_trials: No missing trials to download")
-            return 0
-        
-        logger.info(f"FilteringBenchmark.retry_download_missing_trials: Attempting to download {len(missing_trials)} missing trials in batches of {batch_size}")
-        
-        # Download missing trials in batches
-        all_missing = list(missing_trials)
-        for i in range(0, len(all_missing), batch_size):
-            batch = all_missing[i:i + batch_size]
-            logger.info(f"FilteringBenchmark.retry_download_missing_trials: Downloading batch {i//batch_size + 1}/{(len(all_missing) + batch_size - 1)//batch_size} ({len(batch)} trials)")
-            self.download_trials(set(batch), delay=delay, timeout=timeout, save_individual=save_individual, individual_format=individual_format)
-        
-        # Reload trials to include newly downloaded ones
-        trials_file = self.dataset_path / "retrieved_trials.json"
-        if trials_file.exists():
-            new_trials = self._load_trials(trials_file)
-            # Update trials dict with new trials
-            self.trials.update(new_trials)
-            
-            # Check new coverage
-            new_missing = self.get_missing_trials()
-            newly_downloaded = len(missing_trials) - len(new_missing)
-            
-            logger.info(f"FilteringBenchmark.retry_download_missing_trials: Successfully downloaded {newly_downloaded} new trials")
-            logger.info(f"FilteringBenchmark.retry_download_missing_trials: Remaining missing trials: {len(new_missing)}")
-            
-            return newly_downloaded
-        else:
-            logger.warning("FilteringBenchmark.retry_download_missing_trials: No trials file found after download attempt")
-            return 0
-    
     def _load_trials(self, trials_file: Path) -> Dict[str, ClinicalTrial]:
         """Load trial data from file."""
         try:
@@ -649,9 +602,9 @@ class FilteringBenchmark:
                 print(f"\nMissing trials: {', '.join(coverage_stats['missing_trials'])}")
             
             print(f"\nTo improve coverage, you can:")
-            print(f"  1. Run with --retry-download flag to attempt re-download")
-            print(f"  2. Check if trials are available on ClinicalTrials.gov")
-            print(f"  3. Verify network connectivity and API access")
+            print(f"  1. Check if trials are available on ClinicalTrials.gov")
+            print(f"  2. Verify network connectivity and API access")
+            print(f"  3. Manually download missing trials if needed")
         
         print("="*60 + "\n")
     
@@ -930,28 +883,6 @@ def main():
         help="Maximum number of queries to process (for testing)"
     )
     parser.add_argument(
-        "--retry-download",
-        action="store_true",
-        help="Retry downloading missing trials before running benchmark"
-    )
-    parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Maximum number of retry attempts for downloading missing trials"
-    )
-    parser.add_argument(
-        "--retry-delay",
-        type=int,
-        default=5,
-        help="Delay in seconds between retry attempts for downloading missing trials"
-    )
-    parser.add_argument(
-        "--max-missing-trials",
-        type=int,
-        help="Maximum number of missing trials allowed before continuing with benchmark"
-    )
-    parser.add_argument(
         "--save-coverage",
         action="store_true",
         help="Save coverage statistics to a separate file"
@@ -1024,15 +955,13 @@ def main():
         print("- The script checks if all trials referenced in the dataset are available")
         print("- Missing trials can occur due to network issues, API limits, or trial unavailability")
         print("- Use --coverage-only to check status without running the full benchmark")
-        print("- Use --retry-download to attempt re-downloading missing trials")
         print("\nRECOMMENDED WORKFLOW:")
         print("1. First run: python script.py --coverage-only")
-        print("2. If trials are missing: python script.py --retry-download")
-        print("3. Check coverage again: python script.py --coverage-only")
-        print("4. Run benchmark: python script.py")
+        print("2. Check coverage status: python script.py --coverage-only")
+        print("3. Run benchmark: python script.py")
         print("\nTROUBLESHOOTING:")
         print("- Check network connectivity and ClinicalTrials.gov access")
-        print("- Verify API rate limits and retry settings")
+        print("- Verify API rate limits and settings")
         print("- Some trials may be permanently unavailable or withdrawn")
         print("="*80 + "\n")
         return
@@ -1073,46 +1002,16 @@ def main():
             json.dump(coverage_stats, f, indent=2)
         logger.info(f"FilteringBenchmark.main: Coverage statistics saved to: {coverage_file}")
     
-    # Optionally retry downloading missing trials
-    if args.retry_download:
-        logger.info(f"FilteringBenchmark.main: Retrying download of missing trials (max {args.max_retries} attempts)...")
-        
-        for attempt in range(1, args.max_retries + 1):
-            logger.info(f"FilteringBenchmark.main: Download attempt {attempt}/{args.max_retries}")
-            newly_downloaded = benchmark.retry_download_missing_trials(args.batch_size, args.download_delay, args.download_timeout, args.save_individual_trials, args.individual_trial_format)
-            
-            if newly_downloaded > 0:
-                logger.info(f"FilteringBenchmark.main: Successfully downloaded {newly_downloaded} additional trials on attempt {attempt}")
-                # Show updated coverage summary
-                benchmark.print_coverage_summary(args.verbose_coverage)
-                
-                # Check if we have full coverage
-                coverage_stats = benchmark.get_trial_coverage_stats()
-                if coverage_stats['total_missing'] == 0:
-                    logger.info("FilteringBenchmark.main: Full trial coverage achieved!")
-                    break
-            else:
-                logger.info(f"FilteringBenchmark.main: No additional trials were downloaded on attempt {attempt}")
-                if attempt < args.max_retries:
-                    logger.info(f"FilteringBenchmark.main: Waiting {args.retry_delay} seconds before next attempt...")
-                    time.sleep(args.retry_delay)
-                else:
-                    logger.warning("FilteringBenchmark.main: Maximum retry attempts reached")
-    
     # If only coverage check is requested, exit here
     if args.coverage_only:
         logger.info("FilteringBenchmark.main: Coverage check completed. Exiting.")
         return
     
-    # Check if missing trials exceed the threshold
-    if args.max_missing_trials is not None:
-        coverage_stats = benchmark.get_trial_coverage_stats()
-        if coverage_stats['total_missing'] > args.max_missing_trials:
-            logger.error(f"FilteringBenchmark.main: Too many missing trials ({coverage_stats['total_missing']}) exceed threshold ({args.max_missing_trials})")
-            logger.error("FilteringBenchmark.main: Consider using --retry-download or check trial availability")
-            sys.exit(1)
-        else:
-            logger.info(f"FilteringBenchmark.main: Missing trials ({coverage_stats['total_missing']}) within acceptable threshold ({args.max_missing_trials})")
+    # Check current trial coverage
+    coverage_stats = benchmark.get_trial_coverage_stats()
+    if coverage_stats['total_missing'] > 0:
+        logger.warning(f"FilteringBenchmark.main: {coverage_stats['total_missing']} trials are missing from the dataset.")
+        logger.warning("FilteringBenchmark.main: The benchmark will continue with available trials.")
     
     results = benchmark.run_benchmark(args.max_queries)
     
