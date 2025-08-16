@@ -3,16 +3,17 @@ import logging.config
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 
-def setup_logging(script_name: str, log_level: Optional[str] = None) -> str:
+def setup_logging(script_name: str, log_level: Optional[str] = None, specific_loggers: Optional[Dict[str, str]] = None) -> str:
     """
     Setup standard Python logging for a script.
     
     Args:
         script_name: Name of the script (e.g., 'filter_trials')
         log_level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        specific_loggers: Dictionary mapping logger names to their desired log levels
         
     Returns:
         Path to the log file
@@ -48,6 +49,13 @@ def setup_logging(script_name: str, log_level: Optional[str] = None) -> str:
     logging.getLogger('requests').setLevel(logging.WARNING)
     logging.getLogger('base.pricing').setLevel(logging.WARNING)
     logging.getLogger('base.gpt_client').setLevel(logging.WARNING)
-    logging.getLogger('base.prompt_cache').setLevel(logging.WARNING)
+    
+    # Set specific logger levels if provided
+    if specific_loggers:
+        for logger_name, logger_level in specific_loggers.items():
+            logging.getLogger(logger_name).setLevel(getattr(logging, logger_level.upper()))
+    else:
+        # Default behavior - set base.prompt_cache to WARNING
+        logging.getLogger('base.prompt_cache').setLevel(logging.WARNING)
     
     return str(log_file)

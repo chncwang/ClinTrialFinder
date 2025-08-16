@@ -997,7 +997,13 @@ def main():
     
     # Setup logging with specified level
     global log_file
-    log_file = setup_logging("benchmark_filtering", args.log_level)
+    
+    # Set specific loggers to DEBUG if main log level is DEBUG
+    specific_loggers = None
+    if args.log_level == "DEBUG":
+        specific_loggers = {"base.prompt_cache": "DEBUG"}
+    
+    log_file = setup_logging("benchmark_filtering", args.log_level, specific_loggers)
     
     # Create output directory
     output_dir = Path(args.output_dir)
