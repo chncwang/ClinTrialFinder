@@ -31,6 +31,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
+from base.disease_expert import extract_disease_from_record
+from base.gpt_client import GPTClient
 
 logger: logging.Logger = logging.getLogger(__name__)
 # log_file will be set after parsing arguments
@@ -219,18 +221,25 @@ class RelevanceJudgment:
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
     
-    def __init__(self, dataset_path: str, api_key: Optional[str] = None, cache_size: int = 100000):
+    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
         """
         Initialize the benchmark.
         
         Args:
             dataset_path: Path to TREC 2021 dataset directory
-            api_key: OpenAI API key for GPT filtering (optional)
+            api_key: OpenAI API key for GPT filtering (required)
             cache_size: Size of GPT response cache
         """
+        if not api_key:
+            logger.error("FilteringBenchmark.__init__: API key is required for disease extraction")
+            sys.exit(1)
+            
         self.dataset_path = Path(dataset_path)
         self.api_key = api_key
         self.cache_size = cache_size
+        
+        # Initialize GPT client
+        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size)
         
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
@@ -696,7 +705,14 @@ class FilteringBenchmark:
         """
         query_id = query.query_id
         
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id} text: {query.text}")
+        # Extract disease name if GPT client is available
+        disease_name: str = "Unknown"
+        if self.gpt_client:
+            disease_name, _ = extract_disease_from_record(query.text, self.gpt_client)
+        else:
+            raise ValueError("GPT client not initialized")
+        
+        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id} text: {query.text} disease: {disease_name}")
         
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
@@ -873,7 +889,8 @@ def main():
     )
     parser.add_argument(
         "--api-key",
-        help="OpenAI API key (alternatively, set OPENAI_API_KEY environment variable)"
+        required=True,
+        help="OpenAI API key (required for disease extraction, alternatively set OPENAI_API_KEY environment variable)"
     )
     parser.add_argument(
         "--cache-size",
@@ -950,28 +967,33 @@ def main():
     
     # Show additional help if requested
     if args.show_help:
-        print("\n" + "="*80)
-        print("TRIAL COVERAGE HELP")
-        print("="*80)
-        print("This script evaluates clinical trial filtering performance on the TREC 2021 dataset.")
-        print("It requires downloading clinical trial data from ClinicalTrials.gov.")
-        print("\nTRIAL COVERAGE:")
-        print("- The script checks if all trials referenced in the dataset are available")
-        print("- Missing trials can occur due to network issues, API limits, or trial unavailability")
-        print("- Use --coverage-only to check status without running the full benchmark")
-        print("\nRECOMMENDED WORKFLOW:")
-        print("1. First run: python script.py --coverage-only")
-        print("2. Check coverage status: python script.py --coverage-only")
-        print("3. Run benchmark: python script.py")
-        print("\nTROUBLESHOOTING:")
-        print("- Check network connectivity and ClinicalTrials.gov access")
-        print("- Verify API rate limits and settings")
-        print("- Some trials may be permanently unavailable or withdrawn")
-        print("="*80 + "\n")
+        logger.info("\n" + "="*80)
+        logger.info("main: TRIAL COVERAGE HELP")
+        logger.info("="*80)
+        logger.info("main: This script evaluates clinical trial filtering performance on the TREC 2021 dataset.")
+        logger.info("main: It requires downloading clinical trial data from ClinicalTrials.gov.")
+        logger.info("\nmain: TRIAL COVERAGE:")
+        logger.info("main: - The script checks if all trials referenced in the dataset are available")
+        logger.info("main: - Missing trials can occur due to network issues, API limits, or trial unavailability")
+        logger.info("main: - Use --coverage-only to check status without running the full benchmark")
+        logger.info("\nmain: RECOMMENDED WORKFLOW:")
+        logger.info("main: 1. First run: python script.py --coverage-only")
+        logger.info("main: 2. Check coverage status: python script.py --coverage-only")
+        logger.info("main: 3. Run benchmark: python script.py")
+        logger.info("\nmain: TROUBLESHOOTING:")
+        logger.info("main: - Check network connectivity and ClinicalTrials.gov access")
+        logger.info("main: - Verify API rate limits and settings")
+        logger.info("main: - Some trials may be permanently unavailable or withdrawn")
+        logger.info("="*80 + "\n")
         return
     
-    # Get API key (optional for current implementation)
+    # Get API key (required for disease extraction)
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    
+    if not api_key:
+        logger.error("main: ERROR: OpenAI API key is required for disease extraction.")
+        logger.error("main: Please provide it via --api-key argument or set the OPENAI_API_KEY environment variable.")
+        sys.exit(1)
     
     # Setup logging with specified level
     global log_file
