@@ -564,14 +564,16 @@ class FilteringBenchmark:
         Returns:
             Dictionary with coverage statistics
         """
-        available_trials = set(self.trials.keys())
-        required_trials = set(judgment.trial_id for judgment in self.relevance_judgments)
-        missing_trials = required_trials - available_trials
+        available_trials: set[str] = set(self.trials.keys())
+        required_trials: set[str] = set(judgment.trial_id for judgment in self.relevance_judgments)
+        missing_trials: set[str] = required_trials - available_trials
+        additional_trials: set[str] = available_trials - required_trials
+        additional_trials_count: int = len(additional_trials)
         
-        total_required = len(required_trials)
-        total_available = len(available_trials)
-        total_missing = len(missing_trials)
-        coverage_percentage = (total_available / total_required * 100) if total_required > 0 else 0.0
+        total_required: int = len(required_trials)
+        total_available: int = len(available_trials)
+        total_missing: int = len(missing_trials)
+        coverage_percentage: float = ((total_available - additional_trials_count) / total_required * 100) if total_required > 0 else 0.0
         
         return {
             'total_required': total_required,
@@ -585,28 +587,28 @@ class FilteringBenchmark:
         """Print a summary of trial coverage status."""
         coverage_stats = self.get_trial_coverage_stats()
         
-        print("\n" + "="*60)
-        print("TRIAL COVERAGE SUMMARY")
-        print("="*60)
-        print(f"Total trials required: {coverage_stats['total_required']}")
-        print(f"Total trials available: {coverage_stats['total_available']}")
-        print(f"Total trials missing: {coverage_stats['total_missing']}")
-        print(f"Coverage: {coverage_stats['coverage_percentage']:.1f}%")
+        logger.info("\n" + "="*60)
+        logger.info("FilteringBenchmark.print_coverage_summary: TRIAL COVERAGE SUMMARY")
+        logger.info("="*60)
+        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials required: {coverage_stats['total_required']}")
+        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials available: {coverage_stats['total_available']}")
+        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials missing: {coverage_stats['total_missing']}")
+        logger.info(f"FilteringBenchmark.print_coverage_summary: Coverage: {coverage_stats['coverage_percentage']:.2f}%")
         
         if coverage_stats['missing_trials']:
             if verbose:
-                print(f"\nMissing trials ({len(coverage_stats['missing_trials'])}):")
+                logger.info(f"\nMissing trials ({len(coverage_stats['missing_trials'])}):")
                 for i, trial_id in enumerate(coverage_stats['missing_trials'], 1):
-                    print(f"  {i:2d}. {trial_id}")
+                    logger.info(f"  {i:2d}. {trial_id}")
             else:
-                print(f"\nMissing trials: {', '.join(coverage_stats['missing_trials'])}")
+                logger.info(f"\nMissing trials: {', '.join(coverage_stats['missing_trials'])}")
             
-            print(f"\nTo improve coverage, you can:")
-            print(f"  1. Check if trials are available on ClinicalTrials.gov")
-            print(f"  2. Verify network connectivity and API access")
-            print(f"  3. Manually download missing trials if needed")
+            logger.info(f"FilteringBenchmark.print_coverage_summary: To improve coverage, you can:")
+            logger.info(f"  1. Check if trials are available on ClinicalTrials.gov")
+            logger.info(f"  2. Verify network connectivity and API access")
+            logger.info(f"  3. Manually download missing trials if needed")
         
-        print("="*60 + "\n")
+        logger.info("="*60 + "\n")
     
     def validate_trial_coverage(self) -> bool:
         """
@@ -838,7 +840,7 @@ class FilteringBenchmark:
         logger.info(f"FilteringBenchmark.run_benchmark: Successful queries: {len(successful_results)}")
         logger.info(f"FilteringBenchmark.run_benchmark: Skipped queries: {len(skipped_results)}")
         logger.info(f"FilteringBenchmark.run_benchmark: Failed queries: {len(failed_results)}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Trial coverage: {coverage_stats['coverage_percentage']:.1f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
+        logger.info(f"FilteringBenchmark.run_benchmark: Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
         logger.info(f"FilteringBenchmark.run_benchmark: Total processing time: {total_processing_time:.2f}s")
         logger.info(f"FilteringBenchmark.run_benchmark: Total API cost: ${total_api_cost:.4f}")
         logger.info(f"FilteringBenchmark.run_benchmark: Average precision: {avg_precision:.4f}")
