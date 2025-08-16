@@ -1,5 +1,6 @@
 import json
 import time
+import atexit
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,28 @@ class PromptCache:
         self.modified_since_save = False
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
+        
+        # Register cleanup function to run at program exit
+        atexit.register(self._cleanup_on_exit)
+
+    def _cleanup_on_exit(self):
+        """Cleanup function registered with atexit to save cache on program exit."""
+        try:
+            if hasattr(self, 'modified_since_save') and self.modified_since_save:
+                logger.info("Saving cache on program exit...")
+                self._write_cache_to_disk()
+        except Exception as e:
+            logger.error(f"Error saving cache on exit: {e}")
+
+    def __del__(self):
+        """Destructor to ensure cache is saved when object is destroyed."""
+        try:
+            if hasattr(self, 'modified_since_save') and self.modified_since_save:
+                logger.info("Saving cache before destruction...")
+                self._write_cache_to_disk()
+        except Exception as e:
+            # Don't raise exceptions in destructor
+            logger.error(f"Error saving cache during destruction: {e}")
 
     def _load_cache(self):
         """Load the cache from disk."""
@@ -37,22 +60,28 @@ class PromptCache:
         else:
             logger.info(f"No cache file found at {cache_path}")
 
+    def _write_cache_to_disk(self):
+        """Write the cache data to disk."""
+        start_time = time.time()
+        cache_path = self.cache_dir / "prompt_cache.json"
+        try:
+            with open(cache_path, "w") as f:
+                json.dump(list(self.cache_data.items()), f)
+            save_time = time.time() - start_time
+            logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
+            return True
+        except IOError as e:
+            logger.error(f"Failed to save cache: {str(e)}")
+            return False
+
     def _save_cache(self, force: bool = False):
         """Save the cache to disk if modified or forced."""
         current_time = time.time()
         # Only save if it's been modified and either forced or it's been > 5 minutes
         if (self.modified_since_save or force) and (force or current_time - self.last_save_time > 300):
-            start_time = time.time()
-            cache_path = self.cache_dir / "prompt_cache.json"
-            try:
-                with open(cache_path, "w") as f:
-                    json.dump(list(self.cache_data.items()), f)
+            if self._write_cache_to_disk():
                 self.last_save_time = current_time
                 self.modified_since_save = False
-                save_time = time.time() - start_time
-                logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
-            except IOError as e:
-                logger.error(f"Failed to save cache: {str(e)}")
         elif self.modified_since_save:
             logger.debug(f"Skipping cache save (last save was {current_time - self.last_save_time:.1f}s ago, will save after 300s)")
 
@@ -102,4 +131,14 @@ class PromptCache:
         self.cache_data[cache_key] = result
         self.modified_since_save = True
         self._save_cache()
+
+    def save(self, force: bool = True):
+        """Manually save the cache to disk."""
+        logger.info("Manual cache save requested")
+        if self._write_cache_to_disk():
+            self.last_save_time = time.time()
+            self.modified_since_save = False
+            logger.info("Manual cache save completed successfully")
+        else:
+            logger.error("Manual cache save failed")
         
