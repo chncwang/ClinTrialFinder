@@ -18,12 +18,24 @@ Example:
     python scripts/benchmark_filtering_performance.py \
         --patient-id "patient_123" \
         --api-key $OPENAI_API_KEY
+        
+    # Run benchmark with limited number of trials for faster testing
+    # Note: Uses deterministic sampling (seed=42) for consistent results
+    python scripts/benchmark_filtering_performance.py \
+        --max-trials 100 \
+        --api-key $OPENAI_API_KEY
+        
+    # Run benchmark with limited number of patients for faster testing
+    python scripts/benchmark_filtering_performance.py \
+        --max-patients 50 \
+        --api-key $OPENAI_API_KEY
 """
 
 import argparse
 import json
 import os
 import sys
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -1003,6 +1015,11 @@ def main():
         default="INFO",
         help="Logging level"
     )
+    parser.add_argument(
+        "--max-trials",
+        type=int,
+        help="Maximum number of trials to use for the benchmark (for faster testing). Uses deterministic sampling with fixed seed for consistent results across executions and devices."
+    )
     
     args = parser.parse_args()
     
@@ -1017,11 +1034,16 @@ def main():
         logger.info("- The script checks if all trials referenced in the dataset are available")
         logger.info("- Missing trials can occur due to network issues, API limits, or trial unavailability")
         logger.info("- Use --coverage-only to check status without running the full benchmark")
+        logger.info("\nTRIAL SAMPLING:")
+        logger.info("- Use --max-trials to limit the number of trials for faster testing")
+        logger.info("- Sampling is deterministic (seed=42) for consistent results across executions and devices")
+        logger.info("- This ensures reproducible benchmark results regardless of system differences")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
         logger.info("4. Run benchmark on specific patient: python script.py --patient-id <patient_id>")
+        logger.info("5. Run benchmark with limited trials: python script.py --max-trials 100")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1101,6 +1123,38 @@ def main():
         # Override max_patients to 1 and set patients to only the target patient
         args.max_patients = 1
         benchmark.patients = [target_patient]
+    
+    # Determine the number of trials to use for the benchmark
+    num_trials_to_use = args.max_trials if args.max_trials is not None else len(benchmark.trials)
+    
+    # Sample trials deterministically if max_trials is specified
+    if args.max_trials is not None:
+        # Set a fixed seed for deterministic sampling across different executions and devices
+        # This ensures that the same trials are selected regardless of:
+        # - When the script is run
+        # - Which device/system it's run on
+        # - The order of trials in the original dataset
+        random.seed(42)  # Fixed seed for reproducibility
+        
+        # Sort trial IDs to ensure consistent sampling order across different systems
+        # This is crucial because different systems might load trials in different orders
+        sorted_trial_ids = sorted(benchmark.trials.keys())
+        
+        # Sample trials deterministically using the sorted list
+        sampled_trial_ids = random.sample(sorted_trial_ids, min(num_trials_to_use, len(sorted_trial_ids)))
+        
+        # Filter trials to only include sampled ones
+        benchmark.trials = {k: v for k, v in benchmark.trials.items() if k in sampled_trial_ids}
+        
+        logger.info(f"Sampled {len(sampled_trial_ids)} trials deterministically for benchmark (seed=42).")
+        logger.info(f"First 5 sampled trial IDs: {sampled_trial_ids[:5]}")
+        logger.info(f"Last 5 sampled trial IDs: {sampled_trial_ids[-5:]}")
+        
+        # Re-check coverage after sampling to show updated statistics
+        logger.info("Re-checking trial coverage after sampling...")
+        benchmark.print_coverage_summary(args.verbose_coverage)
+    else:
+        logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials).")
     
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
