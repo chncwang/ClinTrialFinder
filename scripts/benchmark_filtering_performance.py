@@ -231,7 +231,7 @@ class FilteringBenchmark:
             cache_size: Size of GPT response cache
         """
         if not api_key:
-            logger.error("FilteringBenchmark.__init__: API key is required for disease extraction")
+            logger.error("API key is required for disease extraction")
             sys.exit(1)
             
         self.dataset_path = Path(dataset_path)
@@ -249,7 +249,7 @@ class FilteringBenchmark:
         
     def _load_dataset(self):
         """Load TREC 2021 dataset components."""
-        logger.info("FilteringBenchmark._load_dataset: Loading TREC 2021 dataset...")
+        logger.info("Loading TREC 2021 dataset...")
         
         # Load queries
         queries_file = self.dataset_path / "queries.jsonl"
@@ -260,8 +260,8 @@ class FilteringBenchmark:
                 self.queries.append(Query.from_dict(query_data))
         
         # Log the number of queries and the first 10 queries
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
-        logger.info("FilteringBenchmark._load_dataset: First 10 queries:")
+        logger.info(f"Loaded {len(self.queries)} queries")
+        logger.info("First 10 queries:")
         for i, query in enumerate(self.queries[:10], 1):
             logger.info(f"  {i}. {query.query_id}: {query.get_text_summary(100)}")
         
@@ -281,51 +281,51 @@ class FilteringBenchmark:
             raise ValueError("The set of query_ids in relevance_judgments is not the same as the set of query_ids in queries")
         
         # Log the number of relevance judgments and the first 10 relevance judgments
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
-        logger.info("FilteringBenchmark._load_dataset: First 10 relevance judgments:")
+        logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
+        logger.info("First 10 relevance judgments:")
         for i, judgment in enumerate(self.relevance_judgments[:10], 1):
             logger.info(f"  {i}. {judgment}")
         
         # Extract unique trial IDs from relevance judgments
         trial_ids = set(judgment.trial_id for judgment in self.relevance_judgments)
-        logger.info(f"FilteringBenchmark._load_dataset: Found {len(trial_ids)} unique trial IDs in relevance judgments")
+        logger.info(f"Found {len(trial_ids)} unique trial IDs in relevance judgments")
         
         # Check if trial data file exists, if not download trials
         trials_file = self.dataset_path / "retrieved_trials.json"
         if not trials_file.exists():
-            logger.info("FilteringBenchmark._load_dataset: Trial data file not found. Downloading trials...")
+            logger.info("Trial data file not found. Downloading trials...")
             try:
                 self.download_trials(trial_ids, delay=0.1, timeout=30, save_individual=False, individual_format="json")  # Use default delay and timeout for initial download
                 # Verify the file was created
                 if not trials_file.exists():
                     raise RuntimeError("Trial data file was not created after download")
             except Exception as e:
-                logger.error(f"FilteringBenchmark._load_dataset: Failed to download trials: {e}")
+                logger.error(f"Failed to download trials: {e}")
                 raise RuntimeError(f"Failed to download trials: {e}")
         else:
-            logger.info(f"FilteringBenchmark._load_dataset: Trial data file found: {trials_file}")
+            logger.info(f"Trial data file found: {trials_file}")
         
         # Load trial data
         self.trials = self._load_trials(trials_file)
         if not self.trials:
             raise RuntimeError("No trials were loaded from the trial data file")
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.trials)} trials")
+        logger.info(f"Loaded {len(self.trials)} trials")
         
         # Validate trial coverage
         missing_trials = self.get_missing_trials()
         if missing_trials:
-            logger.warning(f"FilteringBenchmark._load_dataset: {len(missing_trials)} trials are missing from the dataset. Continuing with available trials.")
+            logger.warning(f"{len(missing_trials)} trials are missing from the dataset. Continuing with available trials.")
             logger.warning(f"Missing trials: {missing_trials}")
         else:
-            logger.info("FilteringBenchmark._load_dataset: All required trials are available")
+            logger.info("All required trials are available")
         
         # Log coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
-        logger.info(f"FilteringBenchmark._load_dataset: Trial coverage: {coverage_stats['coverage_percentage']:.1f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
+        logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.1f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
         
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.queries)} queries")
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.relevance_judgments)} relevance judgments")
-        logger.info(f"FilteringBenchmark._load_dataset: Loaded {len(self.trials)} trials")
+        logger.info(f"Loaded {len(self.queries)} queries")
+        logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
+        logger.info(f"Loaded {len(self.trials)} trials")
 
     def download_trials(self, trial_ids: set[str], delay: float = 0.1, timeout: int = 30, save_individual: bool = False, individual_format: str = "json"):
         """Download trials for the given trial IDs."""
@@ -363,11 +363,11 @@ class FilteringBenchmark:
                     url = f"{api_base_url}/{trial_id}"
                     try:
                         response = requests.get(url, params=params, timeout=timeout, verify=False)
-                        logger.debug(f"FilteringBenchmark._download_trials: Response for {trial_id}: {response.status_code}")
+                        logger.debug(f"Response for {trial_id}: {response.status_code}")
                         
                         if response.status_code == 200:
                             data = response.json()
-                            logger.debug(f"FilteringBenchmark._download_trials: Data for {trial_id}: {data}")
+                            logger.debug(f"Data for {trial_id}: {data}")
                             
                             if "protocolSection" in data:
                                 # Extract trial data using the same structure as the spider
@@ -380,13 +380,13 @@ class FilteringBenchmark:
                                     with open(individual_file, 'w') as f:
                                         json.dump(trial_data, f, indent=2)
                             else:
-                                logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                                logger.warning(f"No protocol section found for {trial_id}")
                                 
                         else:
-                            logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id}, status: {response.status_code}")
+                            logger.warning(f"Failed to download {trial_id}, status: {response.status_code}")
                             
                     except requests.exceptions.SSLError as ssl_error:
-                        logger.warning(f"FilteringBenchmark._download_trials: SSL error for {trial_id}, retrying without verification: {ssl_error}")
+                        logger.warning(f"SSL error for {trial_id}, retrying without verification: {ssl_error}")
                         # Retry without SSL verification
                         response = requests.get(url, params=params, timeout=timeout, verify=False)
                         if response.status_code == 200:
@@ -401,15 +401,15 @@ class FilteringBenchmark:
                                     with open(individual_file, 'w') as f:
                                         json.dump(trial_data, f, indent=2)
                             else:
-                                logger.warning(f"FilteringBenchmark._download_trials: No protocol section found for {trial_id}")
+                                logger.warning(f"No protocol section found for {trial_id}")
                         else:
-                            logger.warning(f"FilteringBenchmark._download_trials: Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
+                            logger.warning(f"Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
                             
                     # Rate limiting - be respectful to the API
                     time.sleep(delay)  # Delay between requests
                     
                 except Exception as e:
-                    logger.error(f"FilteringBenchmark._download_trials: Error downloading {trial_id}: {e}")
+                    logger.error(f"Error downloading {trial_id}: {e}")
                 finally:
                     # Update progress bar regardless of success/failure
                     pbar.update(1)
@@ -424,9 +424,9 @@ class FilteringBenchmark:
                 try:
                     with open(output_path, 'r') as f:
                         existing_trials = json.load(f)
-                    logger.info(f"FilteringBenchmark.download_trials: Loaded {len(existing_trials)} existing trials")
+                    logger.info(f"Loaded {len(existing_trials)} existing trials")
                 except Exception as e:
-                    logger.warning(f"FilteringBenchmark.download_trials: Could not load existing trials: {e}")
+                    logger.warning(f"Could not load existing trials: {e}")
                     existing_trials = []
             
             # Merge existing and new trials, avoiding duplicates
@@ -434,7 +434,7 @@ class FilteringBenchmark:
             new_trials_only = [trial.to_dict() for trial in trials_data if trial.identification.nct_id not in existing_trial_ids]
             
             all_trials: List[Dict[str, Any]] = existing_trials + new_trials_only
-            logger.info(f"FilteringBenchmark.download_trials: Saving {len(all_trials)} total trials (existing: {len(existing_trials)}, new unique: {len(new_trials_only)})")
+            logger.info(f"Saving {len(all_trials)} total trials (existing: {len(existing_trials)}, new unique: {len(new_trials_only)})")
             
             with open(output_path, 'w') as f:
                 json.dump(all_trials, f, indent=2)
@@ -535,11 +535,11 @@ class FilteringBenchmark:
                 if nct_id:
                     trials_dict[nct_id] = ClinicalTrial(trial)
             
-            logger.info(f"FilteringBenchmark._load_trials: Successfully loaded {len(trials_dict)} trials")
+            logger.info(f"Successfully loaded {len(trials_dict)} trials")
             return trials_dict
             
         except Exception as e:
-            logger.error(f"FilteringBenchmark._load_trials: Error loading trials: {e}")
+            logger.error(f"Error loading trials: {e}")
             return {}
     
     def get_trial_data(self, trial_id: str) -> Optional[ClinicalTrial]:
@@ -597,12 +597,12 @@ class FilteringBenchmark:
         coverage_stats = self.get_trial_coverage_stats()
         
         logger.info("\n" + "="*60)
-        logger.info("FilteringBenchmark.print_coverage_summary: TRIAL COVERAGE SUMMARY")
+        logger.info("TRIAL COVERAGE SUMMARY")
         logger.info("="*60)
-        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials required: {coverage_stats['total_required']}")
-        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials available: {coverage_stats['total_available']}")
-        logger.info(f"FilteringBenchmark.print_coverage_summary: Total trials missing: {coverage_stats['total_missing']}")
-        logger.info(f"FilteringBenchmark.print_coverage_summary: Coverage: {coverage_stats['coverage_percentage']:.2f}%")
+        logger.info(f"Total trials required: {coverage_stats['total_required']}")
+        logger.info(f"Total trials available: {coverage_stats['total_available']}")
+        logger.info(f"Total trials missing: {coverage_stats['total_missing']}")
+        logger.info(f"Coverage: {coverage_stats['coverage_percentage']:.2f}%")
         
         if coverage_stats['missing_trials']:
             if verbose:
@@ -612,7 +612,7 @@ class FilteringBenchmark:
             else:
                 logger.info(f"\nMissing trials: {', '.join(coverage_stats['missing_trials'])}")
             
-            logger.info(f"FilteringBenchmark.print_coverage_summary: To improve coverage, you can:")
+            logger.info(f"To improve coverage, you can:")
             logger.info(f"  1. Check if trials are available on ClinicalTrials.gov")
             logger.info(f"  2. Verify network connectivity and API access")
             logger.info(f"  3. Manually download missing trials if needed")
@@ -628,10 +628,10 @@ class FilteringBenchmark:
         """
         missing_trials = self.get_missing_trials()
         if missing_trials:
-            logger.warning(f"FilteringBenchmark.validate_trial_coverage: {len(missing_trials)} trials are missing: {missing_trials[:10]}{'...' if len(missing_trials) > 10 else ''}")
+            logger.warning(f"{len(missing_trials)} trials are missing: {missing_trials[:10]}{'...' if len(missing_trials) > 10 else ''}")
             return False
         else:
-            logger.info("FilteringBenchmark.validate_trial_coverage: All required trials are available")
+            logger.info("All required trials are available")
             return True
     
     def get_ground_truth_trials(self, query_id: str) -> List[str]:
@@ -712,15 +712,15 @@ class FilteringBenchmark:
         else:
             raise ValueError("GPT client not initialized")
         
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Evaluating query: {query_id} text: {query.text} disease: {disease_name}")
+        logger.info(f"Evaluating query: {query_id} text: {query.text} disease: {disease_name}")
         
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(query_id)
-        logger.info(f"FilteringBenchmark.evaluate_filtering_performance: Ground truth relevant trials: {len(ground_truth_trials)}")
+        logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
         
         # Check if there are any ground truth trials available for this query
         if not ground_truth_trials:
-            logger.warning(f"FilteringBenchmark.evaluate_filtering_performance: No ground truth trials available for query {query_id}, skipping evaluation")
+            logger.warning(f"No ground truth trials available for query {query_id}, skipping evaluation")
             return {
                 'query_id': query_id,
                 'ground_truth_count': 0,
@@ -760,7 +760,7 @@ class FilteringBenchmark:
             }
             
         except Exception as e:
-            logger.error(f"FilteringBenchmark.evaluate_filtering_performance: Error processing query {query_id}: {str(e)}")
+            logger.error(f"Error processing query {query_id}: {str(e)}")
             return {
                 'query_id': query_id,
                 'ground_truth_count': len(ground_truth_trials),
@@ -787,7 +787,7 @@ class FilteringBenchmark:
         Returns:
             Dictionary with overall benchmark results
         """
-        logger.info("FilteringBenchmark.run_benchmark: Starting filtering performance benchmark...")
+        logger.info("Starting filtering performance benchmark...")
         
         queries_to_process: List[Query] = self.queries[:max_queries] if max_queries else self.queries
 
@@ -798,14 +798,14 @@ class FilteringBenchmark:
             disease_data.append((disease_name, i))
         
         disease_names: List[str] = [data[0] for data in disease_data]
-        logger.info(f"FilteringBenchmark.run_benchmark: Disease names: {disease_names}")
+        logger.info(f"Disease names: {disease_names}")
         
         # Filter oncology diseases and keep their indices
         oncology_disease_data: List[tuple[str, int]] = [(disease_name, idx) for disease_name, idx in disease_data if is_oncology_disease(disease_name)]
         oncology_disease_names: List[str] = [data[0] for data in oncology_disease_data]
         oncology_indices: List[int] = [data[1] for data in oncology_disease_data]
-        logger.info(f"FilteringBenchmark.run_benchmark: Oncology disease names: {oncology_disease_names}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Oncology disease indices: {oncology_indices}")
+        logger.info(f"Oncology disease names: {oncology_disease_names}")
+        logger.info(f"Oncology disease indices: {oncology_indices}")
 
         # For each oncology disease name, log the number of trials under that disease in test.tsv
         for disease_name, idx in oncology_disease_data:
@@ -825,7 +825,7 @@ class FilteringBenchmark:
             # Count total trials for this disease (all trials associated with this query)
             total_trial_count = len(disease_trial_ids)
             
-            logger.info(f"FilteringBenchmark.run_benchmark: Disease '{disease_name}' (query {query.query_id}): {relevant_trial_count} relevant trials out of {total_trial_count} total trials")
+            logger.info(f"Disease '{disease_name}' (query {query.query_id}): {relevant_trial_count} relevant trials out of {total_trial_count} total trials")
         
         results: List[Dict[str, Any]] = []
         total_processing_time = 0.0
@@ -848,7 +848,7 @@ class FilteringBenchmark:
                 
                 # Log progress every 10 queries
                 if i % 10 == 0:
-                    logger.info(f"FilteringBenchmark.run_benchmark: Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+                    logger.info(f"Processed {i} queries. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
         successful_results = [r for r in results if r['error'] is None and not r.get('skipped', False)]
@@ -887,19 +887,19 @@ class FilteringBenchmark:
             'detailed_results': results
         }
         
-        logger.info("FilteringBenchmark.run_benchmark: Benchmark completed!")
-        logger.info(f"FilteringBenchmark.run_benchmark: Total queries processed: {len(queries_to_process)}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Successful queries: {len(successful_results)}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Skipped queries: {len(skipped_results)}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Failed queries: {len(failed_results)}")
+        logger.info("Benchmark completed!")
+        logger.info(f"Total queries processed: {len(queries_to_process)}")
+        logger.info(f"Successful queries: {len(successful_results)}")
+        logger.info(f"Skipped queries: {len(skipped_results)}")
+        logger.info(f"Failed queries: {len(failed_results)}")
         # Calculate effective available trials (excluding additional trials that aren't required)
         effective_available: set[str] = set(judgment.trial_id for judgment in self.relevance_judgments) & set(self.trials.keys())
-        logger.info(f"FilteringBenchmark.run_benchmark: Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
-        logger.info(f"FilteringBenchmark.run_benchmark: Total processing time: {total_processing_time:.2f}s")
-        logger.info(f"FilteringBenchmark.run_benchmark: Total API cost: ${total_api_cost:.4f}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Average precision: {avg_precision:.4f}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Average recall: {avg_recall:.4f}")
-        logger.info(f"FilteringBenchmark.run_benchmark: Average F1-score: {avg_f1:.4f}")
+        logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
+        logger.info(f"Total processing time: {total_processing_time:.2f}s")
+        logger.info(f"Total API cost: ${total_api_cost:.4f}")
+        logger.info(f"Average precision: {avg_precision:.4f}")
+        logger.info(f"Average recall: {avg_recall:.4f}")
+        logger.info(f"Average F1-score: {avg_f1:.4f}")
         
         return benchmark_results
 
@@ -1004,22 +1004,22 @@ def main():
     # Show additional help if requested
     if args.show_help:
         logger.info("\n" + "="*80)
-        logger.info("main: TRIAL COVERAGE HELP")
+        logger.info("TRIAL COVERAGE HELP")
         logger.info("="*80)
-        logger.info("main: This script evaluates clinical trial filtering performance on the TREC 2021 dataset.")
-        logger.info("main: It requires downloading clinical trial data from ClinicalTrials.gov.")
-        logger.info("\nmain: TRIAL COVERAGE:")
-        logger.info("main: - The script checks if all trials referenced in the dataset are available")
-        logger.info("main: - Missing trials can occur due to network issues, API limits, or trial unavailability")
-        logger.info("main: - Use --coverage-only to check status without running the full benchmark")
-        logger.info("\nmain: RECOMMENDED WORKFLOW:")
-        logger.info("main: 1. First run: python script.py --coverage-only")
-        logger.info("main: 2. Check coverage status: python script.py --coverage-only")
-        logger.info("main: 3. Run benchmark: python script.py")
-        logger.info("\nmain: TROUBLESHOOTING:")
-        logger.info("main: - Check network connectivity and ClinicalTrials.gov access")
-        logger.info("main: - Verify API rate limits and settings")
-        logger.info("main: - Some trials may be permanently unavailable or withdrawn")
+        logger.info("This script evaluates clinical trial filtering performance on the TREC 2021 dataset.")
+        logger.info("It requires downloading clinical trial data from ClinicalTrials.gov.")
+        logger.info("\nTRIAL COVERAGE:")
+        logger.info("- The script checks if all trials referenced in the dataset are available")
+        logger.info("- Missing trials can occur due to network issues, API limits, or trial unavailability")
+        logger.info("- Use --coverage-only to check status without running the full benchmark")
+        logger.info("\nRECOMMENDED WORKFLOW:")
+        logger.info("1. First run: python script.py --coverage-only")
+        logger.info("2. Check coverage status: python script.py --coverage-only")
+        logger.info("3. Run benchmark: python script.py")
+        logger.info("\nTROUBLESHOOTING:")
+        logger.info("- Check network connectivity and ClinicalTrials.gov access")
+        logger.info("- Verify API rate limits and settings")
+        logger.info("- Some trials may be permanently unavailable or withdrawn")
         logger.info("="*80 + "\n")
         return
     
@@ -1027,8 +1027,8 @@ def main():
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
     
     if not api_key:
-        logger.error("main: ERROR: OpenAI API key is required for disease extraction.")
-        logger.error("main: Please provide it via --api-key argument or set the OPENAI_API_KEY environment variable.")
+        logger.error("ERROR: OpenAI API key is required for disease extraction.")
+        logger.error("Please provide it via --api-key argument or set the OPENAI_API_KEY environment variable.")
         sys.exit(1)
     
     # Setup logging with specified level
@@ -1068,18 +1068,18 @@ def main():
             coverage_file = output_dir / f"coverage_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(coverage_file, 'w') as f:
             json.dump(coverage_stats, f, indent=2)
-        logger.info(f"FilteringBenchmark.main: Coverage statistics saved to: {coverage_file}")
+        logger.info(f"Coverage statistics saved to: {coverage_file}")
     
     # If only coverage check is requested, exit here
     if args.coverage_only:
-        logger.info("FilteringBenchmark.main: Coverage check completed. Exiting.")
+        logger.info("Coverage check completed. Exiting.")
         return
     
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
     if coverage_stats['total_missing'] > 0:
-        logger.warning(f"FilteringBenchmark.main: {coverage_stats['total_missing']} trials are missing from the dataset.")
-        logger.warning("FilteringBenchmark.main: The benchmark will continue with available trials.")
+        logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
+        logger.warning("The benchmark will continue with available trials.")
     
     results = benchmark.run_benchmark(args.max_queries)
     
@@ -1087,8 +1087,8 @@ def main():
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
     
-    logger.info(f"FilteringBenchmark.main: Benchmark results saved to: {output_path}")
-    logger.info(f"FilteringBenchmark.main: Log file: {log_file}")
+    logger.info(f"Benchmark results saved to: {output_path}")
+    logger.info(f"Log file: {log_file}")
 
 
 if __name__ == "__main__":
