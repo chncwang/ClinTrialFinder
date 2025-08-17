@@ -1117,7 +1117,7 @@ class FilteringBenchmark:
                                 raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failed criterion was recorded")
                             if not failure_reason.failure_details:
                                 raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure details were recorded")
-                            reason: str = f"Trial failed full evaluation: {failure_reason.message} failed_condition: {failure_reason.failed_condition} failed_criterion: {failure_reason.failed_criterion} failure_details: {failure_reason.failure_details} "
+                            reason: str = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failure_reason.failed_condition}\n failed_criterion: {failure_reason.failed_criterion}\n failure_details: {failure_reason.failure_details} "
                         logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
                     total_api_cost += cost
