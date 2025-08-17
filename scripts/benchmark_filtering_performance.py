@@ -1024,11 +1024,7 @@ class FilteringBenchmark:
             
         except Exception as e:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
-            return PatientEvaluationResult.create_error_result(
-                patient_id=patient_id,
-                ground_truth_trials=ground_truth_trials,
-                error_message=str(e)
-            )
+            raise e
     
     def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -1089,7 +1085,7 @@ class FilteringBenchmark:
                 conditions = extract_conditions_from_content(patient.text, self.gpt_client)
                 logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
 
-                result = self.evaluate_filtering_performance(patient, gpt_filter)
+                result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter)
                 results.append(result)
                 
                 total_processing_time += result.processing_time
@@ -1103,9 +1099,11 @@ class FilteringBenchmark:
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
-        successful_results = [r for r in results if r.error is None and not r.skipped]
-        skipped_results = [r for r in results if r.skipped]
-        failed_results = [r for r in results if r.error is not None and not r.skipped]
+        successful_results: List[PatientEvaluationResult] = [r for r in results if r.error is None and not r.skipped]
+        skipped_results: List[PatientEvaluationResult] = [r for r in results if r.skipped]
+        failed_results: List[PatientEvaluationResult] = [r for r in results if r.error is not None and not r.skipped]
+        for failed_result in failed_results:
+            logger.warning(f"Failed result: {failed_result}")
         
         if successful_results:
             avg_precision = sum(r.precision for r in successful_results) / len(successful_results)
