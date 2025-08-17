@@ -75,7 +75,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease, extract_conditions_from_content
-from base.trial_expert import GPTTrialFilter
+from base.trial_expert import GPTTrialFilter, TrialFailureReason
 from base.gpt_client import GPTClient
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -1083,27 +1083,41 @@ class FilteringBenchmark:
             evaluation_desc = f"Evaluating trials for {patient_id} ({'title-only' if title_only else 'full evaluation'})"
             for trial_id in tqdm(all_trial_ids, desc=evaluation_desc):
                 try:
-                    trial = self.trials[trial_id]
+                    trial: ClinicalTrial = self.trials[trial_id]
 
                     # Use GPTTrialFilter to evaluate the trial based on title_only parameter
                     if title_only:
                         # Title-only evaluation (faster but less accurate)
+                        suitability_probability: float
+                        reason: str
+                        cost: float
                         suitability_probability, reason, cost = gpt_filter.evaluate_title(
                             trial, conditions, refresh_cache=False
                         )
                         logger.info(f"Trial {trial_id} title suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
-                        is_eligible = suitability_probability > 0.0
+                        is_eligible: bool = suitability_probability > 0.0
                     else:
                         # Full trial evaluation (title + inclusion criteria)
+                        is_eligible: bool
+                        cost: float
+                        failure_reason: Optional[TrialFailureReason]
                         is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
                             trial, conditions, refresh_cache=False
                         )
                         if is_eligible:
-                            suitability_probability = 1.0
-                            reason = "Trial passed full evaluation (title + inclusion criteria)"
+                            suitability_probability: float = 1.0
+                            reason: str = "Trial passed full evaluation (title + inclusion criteria)"
                         else:
-                            suitability_probability = 0.0
-                            reason = f"Trial failed full evaluation: {failure_reason.message if failure_reason else 'Unknown reason'}"
+                            suitability_probability: float = 0.0
+                            if not failure_reason:
+                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
+                            if not failure_reason.failed_condition:
+                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failed condition was recorded")
+                            if not failure_reason.failed_criterion:
+                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failed criterion was recorded")
+                            if not failure_reason.failure_details:
+                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure details were recorded")
+                            reason: str = f"Trial failed full evaluation: {failure_reason.message} failed_condition: {failure_reason.failed_condition} failed_criterion: {failure_reason.failed_criterion} failure_details: {failure_reason.failure_details} "
                         logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
                     total_api_cost += cost
