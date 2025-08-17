@@ -18,23 +18,23 @@ Example:
     python scripts/benchmark_filtering_performance.py \
         --patient-id "patient_123" \
         --api-key $OPENAI_API_KEY
-        
+
     # Run benchmark with limited total number of trials for faster testing
     # Note: Trials are allocated proportionally across patients, uses deterministic sampling (seed=42) for consistent results
     python scripts/benchmark_filtering_performance.py \
         --max-trials 100 \
         --api-key $OPENAI_API_KEY
-        
+
     # Run benchmark with limited number of patients for faster testing
     python scripts/benchmark_filtering_performance.py \
         --max-patients 50 \
         --api-key $OPENAI_API_KEY
-        
+
     # Run benchmark only on cancer patients
     python scripts/benchmark_filtering_performance.py \
         --cancer-only \
         --api-key $OPENAI_API_KEY
-        
+
     # Run benchmark on cancer patients with limited total trials
     python scripts/benchmark_filtering_performance.py \
         --cancer-only \
@@ -50,6 +50,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from enum import Enum
 import logging
 from tqdm import tqdm
 import time
@@ -72,30 +73,30 @@ log_file: str = ""
 class Patient:
     """
     A class to represent a patient case for clinical trial matching.
-    
+
     This class encapsulates patient information from the TREC 2021 dataset,
     including the patient ID and medical record text content.
     """
-    
+
     def __init__(self, patient_id: str, text: str):
         """
         Initialize a Patient instance.
-        
+
         Args:
             patient_id: Unique identifier for the patient
             text: The medical record text describing the patient case
         """
         self.patient_id = patient_id
         self.text = text
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Patient':
         """
         Create a Patient instance from a dictionary.
-        
+
         Args:
             data: Dictionary containing patient data with keys '_id' and 'text'
-            
+
         Returns:
             Patient instance
         """
@@ -103,11 +104,11 @@ class Patient:
             patient_id=data['_id'],
             text=data['text']
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the Patient instance to a dictionary.
-        
+
         Returns:
             Dictionary representation of the patient
         """
@@ -115,46 +116,46 @@ class Patient:
             '_id': self.patient_id,
             'text': self.text
         }
-    
+
     def get_patient_id(self) -> str:
         """
         Get the patient ID from the patient ID.
         In TREC dataset, patient_id matches patient_id.
-        
+
         Returns:
             Patient ID string
         """
         return self.patient_id
-    
+
     def get_text_summary(self, max_length: int = 100) -> str:
         """
         Get a summary of the patient medical record text.
-        
+
         Args:
             max_length: Maximum length of the summary
-            
+
         Returns:
             Truncated text summary
         """
         if len(self.text) <= max_length:
             return self.text
         return self.text[:max_length] + "..."
-    
+
     def __str__(self) -> str:
         """String representation of the patient."""
         return f"Patient(id={self.patient_id}, text='{self.get_text_summary(50)}')"
-    
+
     def __repr__(self) -> str:
         """Detailed string representation of the patient."""
         return f"Patient(patient_id='{self.patient_id}', text='{self.text}')"
-    
+
     def __eq__(self, other: Any) -> bool:
         """Check if two patients are equal."""
         if not isinstance(other, Patient):
             return False
-        return (self.patient_id == other.patient_id and 
+        return (self.patient_id == other.patient_id and
                 self.text == other.text)
-    
+
     def __hash__(self) -> int:
         """Hash based on patient_id."""
         return hash(self.patient_id)
@@ -163,15 +164,15 @@ class Patient:
 class RelevanceJudgment:
     """
     A class to represent a single relevance judgment.
-    
+
     This class encapsulates a single relevance judgment from the TREC 2021 dataset,
     including the patient ID, trial ID, and relevance score.
     """
-    
+
     def __init__(self, patient_id: str, trial_id: str, relevance_score: int):
         """
         Initialize a RelevanceJudgment instance.
-        
+
         Args:
             patient_id: Unique identifier for the patient
             trial_id: Unique identifier for the trial (NCT ID)
@@ -180,15 +181,15 @@ class RelevanceJudgment:
         self.patient_id = patient_id
         self.trial_id = trial_id
         self.relevance_score = relevance_score
-    
+
     @classmethod
     def from_tsv_line(cls, line: str) -> Optional['RelevanceJudgment']:
         """
         Create a RelevanceJudgment instance from a TSV line.
-        
+
         Args:
             line: TSV line with format: patient_id\ttrial_id\trelevance_score
-            
+
         Returns:
             RelevanceJudgment instance or None if line is invalid
         """
@@ -204,20 +205,20 @@ class RelevanceJudgment:
                 # Skip lines that can't be converted to int
                 return None
         return None
-    
+
     def is_relevant(self) -> bool:
         """
         Check if the trial is considered relevant.
-        
+
         Returns:
             True if relevance_score > 0, False otherwise
         """
         return self.relevance_score > 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the RelevanceJudgment instance to a dictionary.
-        
+
         Returns:
             Dictionary representation of the relevance judgment
         """
@@ -226,38 +227,111 @@ class RelevanceJudgment:
             'trial_id': self.trial_id,
             'relevance_score': self.relevance_score
         }
-    
+
     def __str__(self) -> str:
         """String representation of the relevance judgment."""
         return f"RelevanceJudgment(patient_id='{self.patient_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
-    
+
     def __repr__(self) -> str:
         """Detailed string representation of the relevance judgment."""
         return f"RelevanceJudgment(patient_id='{self.patient_id}', trial_id='{self.trial_id}', relevance_score={self.relevance_score})"
-    
+
     def __eq__(self, other: Any) -> bool:
         """Check if two RelevanceJudgment instances are equal."""
         if not isinstance(other, RelevanceJudgment):
             return False
-        return (self.patient_id == other.patient_id and 
-                self.trial_id == other.trial_id and 
+        return (self.patient_id == other.patient_id and
+                self.trial_id == other.trial_id and
                 self.relevance_score == other.relevance_score)
-    
+
     def __hash__(self) -> int:
         """Hash value for the relevance judgment."""
         return hash((self.patient_id, self.trial_id, self.relevance_score))
 
 
+class ErrorType(Enum):
+    """Enumeration of error types for trial evaluation."""
+    CORRECT = "correct"
+    FALSE_POSITIVE = "false_positive"
+    FALSE_NEGATIVE = "false_negative"
+
+
+class TrialEvaluationResult:
+    """
+    A class to represent the result of evaluating a single trial for a patient.
+
+    This class stores the trial evaluation details including the prediction,
+    ground truth, and evaluation metadata for error analysis.
+    """
+
+    def __init__(self,
+                 trial_id: str,
+                 trial_title: str,
+                 predicted_eligible: bool,
+                 ground_truth_relevant: bool,
+                 suitability_probability: float,
+                 reason: str,
+                 api_cost: float):
+        """
+        Initialize a TrialEvaluationResult instance.
+
+        Args:
+            trial_id: Unique identifier for the trial
+            trial_title: Title of the clinical trial
+            predicted_eligible: Whether the trial was predicted as eligible
+            ground_truth_relevant: Whether the trial is actually relevant (ground truth)
+            suitability_probability: Probability score from GPT evaluation
+            reason: Reasoning provided by GPT for the prediction
+            api_cost: API cost for this trial evaluation
+        """
+        self.trial_id = trial_id
+        self.trial_title = trial_title
+        self.predicted_eligible = predicted_eligible
+        self.ground_truth_relevant = ground_truth_relevant
+        self.suitability_probability = suitability_probability
+        self.reason = reason
+        self.api_cost = api_cost
+
+    @property
+    def is_error_case(self) -> bool:
+        """Check if this is an error case (incorrect prediction or failed recall)."""
+        return self.predicted_eligible != self.ground_truth_relevant
+
+    @property
+    def error_type(self) -> ErrorType:
+        """Get the type of error for this trial evaluation."""
+        if not self.is_error_case:
+            return ErrorType.CORRECT
+        elif self.predicted_eligible and not self.ground_truth_relevant:
+            return ErrorType.FALSE_POSITIVE
+        else:  # not predicted_eligible and ground_truth_relevant
+            return ErrorType.FALSE_NEGATIVE
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the result to a dictionary representation."""
+        return {
+            'trial_id': self.trial_id,
+            'trial_title': self.trial_title,
+            'predicted_eligible': self.predicted_eligible,
+            'ground_truth_relevant': self.ground_truth_relevant,
+            'suitability_probability': self.suitability_probability,
+            'reason': self.reason,
+            'api_cost': self.api_cost,
+            'is_error_case': self.is_error_case,
+            'error_type': self.error_type.value
+        }
+
+
 class PatientEvaluationResult:
     """
     A class to represent the results of evaluating filtering performance for a single patient.
-    
+
     This class encapsulates all the metrics and information from evaluating a patient's
     clinical trial filtering performance, including precision, recall, F1-score, and
     processing statistics.
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  patient_id: str,
                  ground_truth_count: int,
                  retrieved_count: int,
@@ -272,10 +346,11 @@ class PatientEvaluationResult:
                  processing_time: float,
                  api_cost: float,
                  error: Optional[str] = None,
-                 skipped: bool = False):
+                 skipped: bool = False,
+                 trial_evaluation_results: Optional[List['TrialEvaluationResult']] = None):
         """
         Initialize a PatientEvaluationResult instance.
-        
+
         Args:
             patient_id: Unique identifier for the patient
             ground_truth_count: Number of ground truth relevant trials
@@ -292,6 +367,7 @@ class PatientEvaluationResult:
             api_cost: Total API cost for processing the patient
             error: Error message if processing failed, None if successful
             skipped: Whether the patient was skipped during processing
+            trial_evaluation_results: List of individual trial evaluation results
         """
         self.patient_id = patient_id
         self.ground_truth_count = ground_truth_count
@@ -308,19 +384,21 @@ class PatientEvaluationResult:
         self.api_cost = api_cost
         self.error = error
         self.skipped = skipped
-    
+        self.trial_evaluation_results = trial_evaluation_results or []
+
     @classmethod
-    def create_success_result(cls, 
+    def create_success_result(cls,
                             patient_id: str,
                             ground_truth_trials: List[str],
                             all_trial_ids: List[str],
                             predicted_eligible_trials: List[str],
                             metrics: Dict[str, Any],
                             processing_time: float,
-                            total_api_cost: float) -> 'PatientEvaluationResult':
+                            total_api_cost: float,
+                            trial_evaluation_results: List['TrialEvaluationResult']) -> 'PatientEvaluationResult':
         """
         Create a successful evaluation result.
-        
+
         Args:
             patient_id: Patient identifier
             ground_truth_trials: List of ground truth relevant trial IDs
@@ -329,11 +407,12 @@ class PatientEvaluationResult:
             metrics: Dictionary containing calculated metrics
             processing_time: Time taken to process the patient
             total_api_cost: Total API cost for processing
-            
+            trial_evaluation_results: List of individual trial evaluation results
+
         Returns:
             PatientEvaluationResult instance for successful evaluation
         """
-        return cls(
+        result = cls(
             patient_id=patient_id,
             ground_truth_count=len(ground_truth_trials),
             retrieved_count=len(all_trial_ids),
@@ -350,20 +429,22 @@ class PatientEvaluationResult:
             error=None,
             skipped=False
         )
-    
+        result.trial_evaluation_results = trial_evaluation_results
+        return result
+
     @classmethod
-    def create_error_result(cls, 
+    def create_error_result(cls,
                           patient_id: str,
                           ground_truth_trials: List[str],
                           error_message: str) -> 'PatientEvaluationResult':
         """
         Create an error evaluation result when processing fails.
-        
+
         Args:
             patient_id: Patient identifier
             ground_truth_trials: List of ground truth relevant trial IDs
             error_message: Error message describing what went wrong
-            
+
         Returns:
             PatientEvaluationResult instance for failed evaluation
         """
@@ -384,15 +465,15 @@ class PatientEvaluationResult:
             error=error_message,
             skipped=False
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the result to a dictionary representation.
-        
+
         Returns:
             Dictionary representation of the evaluation result
         """
-        return {
+        result_dict: Dict[str, Any] = {
             'patient_id': self.patient_id,
             'ground_truth_count': self.ground_truth_count,
             'retrieved_count': self.retrieved_count,
@@ -409,16 +490,22 @@ class PatientEvaluationResult:
             'error': self.error,
             'skipped': self.skipped
         }
-    
+
+        # Add trial evaluation results if available
+        if hasattr(self, 'trial_evaluation_results') and self.trial_evaluation_results:
+            result_dict['trial_evaluation_results'] = [trial.to_dict() for trial in self.trial_evaluation_results]
+
+        return result_dict
+
     def is_successful(self) -> bool:
         """
         Check if the evaluation was successful.
-        
+
         Returns:
             True if no error occurred and patient wasn't skipped
         """
         return self.error is None and not self.skipped
-    
+
     def __str__(self) -> str:
         """String representation of the evaluation result."""
         if self.is_successful():
@@ -427,7 +514,7 @@ class PatientEvaluationResult:
                    f"f1={self.f1_score:.3f}, time={self.processing_time:.2f}s)")
         else:
             return f"PatientEvaluationResult(patient_id='{self.patient_id}', error='{self.error}')"
-    
+
     def __repr__(self) -> str:
         """Detailed string representation of the evaluation result."""
         return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
@@ -445,11 +532,11 @@ class PatientEvaluationResult:
 
 class FilteringBenchmark:
     """Benchmark class for evaluating clinical trial filtering performance."""
-    
+
     def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
         """
         Initialize the benchmark.
-        
+
         Args:
             dataset_path: Path to TREC 2021 dataset directory
             api_key: OpenAI API key for GPT filtering (required)
@@ -458,27 +545,27 @@ class FilteringBenchmark:
         if not api_key:
             logger.error("API key is required for disease extraction")
             sys.exit(1)
-            
+
         self.dataset_path = Path(dataset_path)
         self.api_key = api_key
         self.cache_size = cache_size
-        
+
         # Initialize GPT client
         self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size)
-        
+
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
-        
+
         # Initialize patient-trial mapping for max-trials allocation
         self.patient_trial_mapping: Dict[str, set[str]] = {}
-        
+
         # Load dataset
         self._load_dataset()
-        
+
     def _load_dataset(self):
         """Load TREC 2021 dataset components."""
         logger.info("Loading TREC 2021 dataset...")
-        
+
         # Load patients (from queries.jsonl file which contains patient medical records)
         patients_file = self.dataset_path / "queries.jsonl"
         self.patients: List[Patient] = []
@@ -486,13 +573,13 @@ class FilteringBenchmark:
             for line in f:
                 patient_data = json.loads(line)
                 self.patients.append(Patient.from_dict(patient_data))
-        
+
         # Log the number of patients and the first 10 patients
         logger.info(f"Loaded {len(self.patients)} patients")
         logger.info("First 10 patients:")
         for i, patient in enumerate(self.patients[:10], 1):
             logger.info(f"  {i}. {patient.patient_id}: {patient.get_text_summary(100)}")
-        
+
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
         self.relevance_judgments: List[RelevanceJudgment] = []
@@ -501,23 +588,23 @@ class FilteringBenchmark:
                 judgment = RelevanceJudgment.from_tsv_line(line)
                 if judgment is not None:
                     self.relevance_judgments.append(judgment)
-        
+
         # Validate that the set of patient_ids in relevance_judgments is the same as the set of patient_ids in patients
         relevance_patient_ids = set(judgment.patient_id for judgment in self.relevance_judgments)
         patient_ids = set(patient.patient_id for patient in self.patients)
         if relevance_patient_ids != patient_ids:
             raise ValueError("The set of patient_ids in relevance_judgments is not the same as the set of patient_ids in patients")
-        
+
         # Log the number of relevance judgments and the first 10 relevance judgments
         logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
         logger.info("First 10 relevance judgments:")
         for i, judgment in enumerate(self.relevance_judgments[:10], 1):
             logger.info(f"  {i}. {judgment}")
-        
+
         # Extract unique trial IDs from relevance judgments
         trial_ids = set(judgment.trial_id for judgment in self.relevance_judgments)
         logger.info(f"Found {len(trial_ids)} unique trial IDs in relevance judgments")
-        
+
         # Check if trial data file exists, if not download trials
         trials_file = self.dataset_path / "retrieved_trials.json"
         if not trials_file.exists():
@@ -532,13 +619,13 @@ class FilteringBenchmark:
                 raise RuntimeError(f"Failed to download trials: {e}")
         else:
             logger.info(f"Trial data file found: {trials_file}")
-        
+
         # Load trial data
         self.trials = self._load_trials(trials_file)
         if not self.trials:
             raise RuntimeError("No trials were loaded from the trial data file")
         logger.info(f"Loaded {len(self.trials)} trials")
-        
+
         # Validate trial coverage
         missing_trials = self.get_missing_trials()
         if missing_trials:
@@ -546,11 +633,11 @@ class FilteringBenchmark:
             logger.warning(f"Missing trials: {missing_trials}")
         else:
             logger.info("All required trials are available")
-        
+
         # Log coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.1f}% ({coverage_stats['total_available']}/{coverage_stats['total_required']})")
-        
+
         logger.info(f"Loaded {len(self.patients)} patients")
         logger.info(f"Loaded {len(self.relevance_judgments)} relevance judgments")
         logger.info(f"Loaded {len(self.trials)} trials")
@@ -562,46 +649,46 @@ class FilteringBenchmark:
         import time
         import warnings
         import urllib3
-        
+
         # Suppress SSL warnings to clean up output
         warnings.filterwarnings('ignore', message='Unverified HTTPS request')
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
+
         # ClinicalTrials.gov API endpoint
         api_base_url = "https://clinicaltrials.gov/api/v2/studies"
-        
+
         trials_data: List[ClinicalTrial] = []
         total_trials = len(trial_ids)
-        
+
         # Create progress bar for trial downloading
         with tqdm(total=total_trials, desc="Downloading trials", unit="trial") as pbar:
             for trial_id in trial_ids:
                 try:
                     # Update progress bar description with current trial ID
                     pbar.set_description(f"Downloading {trial_id}")
-                    
+
                     # API parameters
                     params = {
                         "format": "json",
                         "fields": "ProtocolSection",
                         "markupFormat": "markdown"
                     }
-                    
+
                     # Make API request with SSL verification disabled to handle certificate issues
                     url = f"{api_base_url}/{trial_id}"
                     try:
                         response = requests.get(url, params=params, timeout=timeout, verify=False)
                         logger.debug(f"Response for {trial_id}: {response.status_code}")
-                        
+
                         if response.status_code == 200:
                             data = response.json()
                             logger.debug(f"Data for {trial_id}: {data}")
-                            
+
                             if "protocolSection" in data:
                                 # Extract trial data using the same structure as the spider
                                 trial_data = self._extract_trial_data(data["protocolSection"])
                                 trials_data.append(trial_data)
-                                
+
                                 # Save individual trial file if requested
                                 if save_individual:
                                     individual_file = self.dataset_path / f"trial_{trial_id}.json"
@@ -609,10 +696,10 @@ class FilteringBenchmark:
                                         json.dump(trial_data, f, indent=2)
                             else:
                                 logger.warning(f"No protocol section found for {trial_id}")
-                                
+
                         else:
                             logger.warning(f"Failed to download {trial_id}, status: {response.status_code}")
-                            
+
                     except requests.exceptions.SSLError as ssl_error:
                         logger.warning(f"SSL error for {trial_id}, retrying without verification: {ssl_error}")
                         # Retry without SSL verification
@@ -622,7 +709,7 @@ class FilteringBenchmark:
                             if "protocolSection" in data:
                                 trial_data = self._extract_trial_data(data["protocolSection"])
                                 trials_data.append(trial_data)
-                                
+
                                 # Save individual trial file if requested
                                 if save_individual:
                                     individual_file = self.dataset_path / f"trial_{trial_id}.json"
@@ -632,20 +719,20 @@ class FilteringBenchmark:
                                 logger.warning(f"No protocol section found for {trial_id}")
                         else:
                             logger.warning(f"Failed to download {trial_id} even without SSL verification, status: {response.status_code}")
-                            
+
                     # Rate limiting - be respectful to the API
                     time.sleep(delay)  # Delay between requests
-                    
+
                 except Exception as e:
                     logger.error(f"Error downloading {trial_id}: {e}")
                 finally:
                     # Update progress bar regardless of success/failure
                     pbar.update(1)
-        
+
         # Save all trials to file
         if trials_data:
             output_path = self.dataset_path / "retrieved_trials.json"
-            
+
             # Load existing trials if file exists to avoid overwriting
             existing_trials: List[Dict[str, Any]] = []
             if output_path.exists():
@@ -656,19 +743,19 @@ class FilteringBenchmark:
                 except Exception as e:
                     logger.warning(f"Could not load existing trials: {e}")
                     existing_trials = []
-            
+
             # Merge existing and new trials, avoiding duplicates
             existing_trial_ids = {trial.get('identification', {}).get('nct_id') for trial in existing_trials if trial.get('identification', {}).get('nct_id')}
             new_trials_only = [trial.to_dict() for trial in trials_data if trial.identification.nct_id not in existing_trial_ids]
-            
+
             all_trials: List[Dict[str, Any]] = existing_trials + new_trials_only
             logger.info(f"Saving {len(all_trials)} total trials (existing: {len(existing_trials)}, new unique: {len(new_trials_only)})")
-            
+
             with open(output_path, 'w') as f:
                 json.dump(all_trials, f, indent=2)
         else:
             raise RuntimeError("No trials were successfully downloaded")
-    
+
     def _extract_trial_data(self, protocol: Dict[str, Any]) -> ClinicalTrial:
         """Extract trial data from protocol section and return ClinicalTrial object."""
         def safe_get(d: Any, *keys: str, default: Any = None) -> Any:
@@ -680,7 +767,7 @@ class FilteringBenchmark:
                 if d is None:
                     return default
             return d
-        
+
         trial_dict = {
             "identification": {
                 "nct_id": safe_get(protocol, "identificationModule", "nctId"),
@@ -747,45 +834,45 @@ class FilteringBenchmark:
                 ],
             },
         }
-        
+
         return ClinicalTrial(trial_dict)
-    
+
     def _load_trials(self, trials_file: Path) -> Dict[str, ClinicalTrial]:
         """Load trial data from file."""
         try:
             with open(trials_file, 'r') as f:
                 trials_data: List[Dict[str, Any]] = json.load(f)
-            
+
             # Convert to dictionary with NCT ID as key for faster lookup
             trials_dict: Dict[str, ClinicalTrial] = {}
             for trial in trials_data:
                 nct_id = trial.get('identification', {}).get('nct_id')
                 if nct_id:
                     trials_dict[nct_id] = ClinicalTrial(trial)
-            
+
             logger.info(f"Successfully loaded {len(trials_dict)} trials")
             return trials_dict
-            
+
         except Exception as e:
             logger.error(f"Error loading trials: {e}")
             return {}
-    
+
     def get_trial_data(self, trial_id: str) -> Optional[ClinicalTrial]:
         """
         Get trial data by NCT ID.
-        
+
         Args:
             trial_id: NCT ID of the trial
-            
+
         Returns:
             Trial data object or None if not found
         """
         return self.trials.get(trial_id)
-    
+
     def get_missing_trials(self) -> List[str]:
         """
         Get list of trial IDs that are referenced in relevance judgments but not available in trials data.
-        
+
         Returns:
             List of missing trial IDs
         """
@@ -793,11 +880,11 @@ class FilteringBenchmark:
         required_trials = set(judgment.trial_id for judgment in self.relevance_judgments)
         missing_trials = required_trials - available_trials
         return list(missing_trials)
-    
+
     def get_trial_coverage_stats(self) -> Dict[str, Any]:
         """
         Get statistics about trial coverage.
-        
+
         Returns:
             Dictionary with coverage statistics
         """
@@ -806,12 +893,12 @@ class FilteringBenchmark:
         missing_trials: set[str] = required_trials - available_trials
         additional_trials: set[str] = available_trials - required_trials
         additional_trials_count: int = len(additional_trials)
-        
+
         total_required: int = len(required_trials)
         total_available: int = len(available_trials)
         total_missing: int = len(missing_trials)
         coverage_percentage: float = ((total_available - additional_trials_count) / total_required * 100) if total_required > 0 else 0.0
-        
+
         return {
             'total_required': total_required,
             'total_available': total_available,
@@ -819,11 +906,11 @@ class FilteringBenchmark:
             'coverage_percentage': coverage_percentage,
             'missing_trials': list(missing_trials)
         }
-    
+
     def print_coverage_summary(self, verbose: bool = False):
         """Print a summary of trial coverage status."""
         coverage_stats = self.get_trial_coverage_stats()
-        
+
         logger.info("\n" + "="*60)
         logger.info("TRIAL COVERAGE SUMMARY")
         logger.info("="*60)
@@ -831,7 +918,7 @@ class FilteringBenchmark:
         logger.info(f"Total trials available: {coverage_stats['total_available']}")
         logger.info(f"Total trials missing: {coverage_stats['total_missing']}")
         logger.info(f"Coverage: {coverage_stats['coverage_percentage']:.2f}%")
-        
+
         if coverage_stats['missing_trials']:
             if verbose:
                 logger.info(f"\nMissing trials ({len(coverage_stats['missing_trials'])}):")
@@ -839,18 +926,18 @@ class FilteringBenchmark:
                     logger.info(f"  {i:2d}. {trial_id}")
             else:
                 logger.info(f"\nMissing trials: {', '.join(coverage_stats['missing_trials'])}")
-            
+
             logger.info(f"To improve coverage, you can:")
             logger.info(f"  1. Check if trials are available on ClinicalTrials.gov")
             logger.info(f"  2. Verify network connectivity and API access")
             logger.info(f"  3. Manually download missing trials if needed")
-        
+
         logger.info("="*60 + "\n")
-    
+
     def validate_trial_coverage(self) -> bool:
         """
         Validate that all trials referenced in relevance judgments are available in trials data.
-        
+
         Returns:
             True if all trials are available, False otherwise
         """
@@ -861,20 +948,20 @@ class FilteringBenchmark:
         else:
             logger.info("All required trials are available")
             return True
-    
+
     def get_ground_truth_trials(self, patient_id: str) -> List[str]:
         """
         Get ground truth relevant trials for a patient.
-        
+
         Args:
             patient_id: Patient identifier
-            
+
         Returns:
             List of NCT IDs of relevant trials (only those available in the dataset)
         """
         relevant_trials: List[str] = []
         available_trials = set(self.trials.keys())
-        
+
         for judgment in self.relevance_judgments:
             if judgment.patient_id == patient_id and judgment.is_relevant():
                 # Only include trials that are actually available in the dataset
@@ -882,35 +969,35 @@ class FilteringBenchmark:
                     relevant_trials.append(judgment.trial_id)
                 else:
                     logger.debug(f"Trial {judgment.trial_id} is not available in dataset, skipping")
-        
+
         if not relevant_trials:
             logger.warning(f"Patient ID '{patient_id}' not found in relevance judgments or has no relevant trials available in dataset.")
-        
+
         return relevant_trials
-    
+
     def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
         """
         Calculate precision, recall, F1-score, and accuracy.
-        
+
         Args:
             predicted_eligible: List of predicted eligible trial IDs
             ground_truth: List of ground truth relevant trial IDs
-            
+
         Returns:
             Dictionary with metrics
         """
         predicted_set = set(predicted_eligible)
         ground_truth_set = set(ground_truth)
-        
+
         true_positives = len(predicted_set & ground_truth_set)
         false_positives = len(predicted_set - ground_truth_set)
         false_negatives = len(ground_truth_set - predicted_set)
-        
+
         precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
         recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
         accuracy = true_positives / len(ground_truth_set) if ground_truth_set else 0.0
-        
+
         return {
             'precision': precision,
             'recall': recall,
@@ -920,41 +1007,41 @@ class FilteringBenchmark:
             'false_positives': false_positives,
             'false_negatives': false_negatives
         }
-    
+
     def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter) -> PatientEvaluationResult:
         """
         Evaluate filtering performance for a single patient.
-        
+
         Args:
             patient: Patient object
             gpt_filter: GPTTrialFilter instance for trial filtering
-            
+
         Returns:
             PatientEvaluationResult with evaluation metrics
         """
         patient_id = patient.patient_id
-        
+
         # Extract disease name if GPT client is available
         disease_name: str = "Unknown"
         if self.gpt_client:
             disease_name, _ = extract_disease_from_record(patient.text, self.gpt_client)
         else:
             raise ValueError("GPT client not initialized")
-        
+
         logger.info(f"Evaluating patient: {patient_id} text: {patient.get_text_summary(100)} disease: {disease_name}")
-        
+
         # Get ground truth relevant trials
         ground_truth_trials = self.get_ground_truth_trials(patient_id)
         logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
-        
+
         try:
             # Call title check and regard trials that pass the title check as eligible
             start_time = time.time()
-            
+
             # Extract conditions from patient record
             conditions = extract_conditions_from_content(patient.text, self.gpt_client)
             logger.info(f"Extracted conditions: {conditions}")
-            
+
             # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
             if hasattr(self, 'patient_trial_mapping') and self.patient_trial_mapping:
                 # Use allocated trials for this patient
@@ -964,7 +1051,7 @@ class FilteringBenchmark:
                 # Use all available trials (no max-trials limit)
                 all_trial_ids = list(self.trials.keys())
                 logger.info(f"Evaluating {len(all_trial_ids)} trials for patient {patient_id}")
-            
+
             # Check if patient has any trials to evaluate
             if not all_trial_ids:
                 logger.warning(f"Patient {patient_id} has no trials to evaluate")
@@ -973,15 +1060,16 @@ class FilteringBenchmark:
                     ground_truth_trials=ground_truth_trials,
                     error_message="No trials allocated to this patient"
                 )
-            
+
             # Evaluate each trial using title check
             predicted_eligible_trials: List[str] = []
             total_api_cost = 0.0
-            
+            trial_evaluation_results: List[TrialEvaluationResult] = []
+
             for trial_id in tqdm(all_trial_ids, desc=f"Evaluating trials for {patient_id}"):
                 try:
                     trial = self.trials[trial_id]
-                    
+
                     # Use GPTTrialFilter to evaluate the trial title
                     suitability_probability: float
                     reason: str
@@ -991,27 +1079,61 @@ class FilteringBenchmark:
                     )
                     logger.info(f"Trial {trial_id} suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
                     is_eligible = suitability_probability > 0.0
-                    
+
                     total_api_cost += cost
-                    
+
+                    # Determine ground truth relevance
+                    ground_truth_relevant = trial_id in ground_truth_trials
+
+                    trial_result = TrialEvaluationResult(
+                        trial_id=trial_id,
+                        trial_title=trial.identification.brief_title or trial.identification.official_title or trial.identification.acronym or trial_id,
+                        predicted_eligible=is_eligible,
+                        ground_truth_relevant=ground_truth_relevant,
+                        suitability_probability=suitability_probability,
+                        reason=reason,
+                        api_cost=cost
+                    )
+                    trial_evaluation_results.append(trial_result)
+
                     if is_eligible:
                         predicted_eligible_trials.append(trial_id)
                         logger.debug(f"Trial {trial_id} passed title check")
                     else:
                         logger.debug(f"Trial {trial_id} failed title check: {reason}")
-                        
+
                 except Exception as e:
                     logger.warning(f"Error evaluating trial {trial_id}: {str(e)}")
+                    # Get trial title safely, fallback to trial_id if trial object is not available
+                    trial_title = trial_id
+                    try:
+                        if 'trial' in locals():
+                            trial_obj = locals().get('trial')
+                            if trial_obj:
+                                trial_title = trial_obj.identification.brief_title or trial_obj.identification.official_title or trial_obj.identification.acronym or trial_id
+                    except:
+                        pass
+
+                    trial_result = TrialEvaluationResult(
+                        trial_id=trial_id,
+                        trial_title=trial_title,
+                        predicted_eligible=False,
+                        ground_truth_relevant=False,
+                        suitability_probability=0.0,
+                        reason=f"Evaluation failed: {e}",
+                        api_cost=0.0
+                    )
+                    trial_evaluation_results.append(trial_result)
                     continue
-            
+
             processing_time = time.time() - start_time
-            
+
             # Calculate performance metrics
             metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
-            
+
             logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed title check out of {len(all_trial_ids)} total trials")
             logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
-            
+
             return PatientEvaluationResult.create_success_result(
                 patient_id=patient_id,
                 ground_truth_trials=ground_truth_trials,
@@ -1019,25 +1141,27 @@ class FilteringBenchmark:
                 predicted_eligible_trials=predicted_eligible_trials,
                 metrics=metrics,
                 processing_time=processing_time,
-                total_api_cost=total_api_cost
+                total_api_cost=total_api_cost,
+                trial_evaluation_results=trial_evaluation_results
             )
-            
+
         except Exception as e:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
             raise e
-    
-    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None) -> Dict[str, Any]:
+
+    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Run the complete benchmark.
-        
+
         Args:
             gpt_filter: GPTTrialFilter instance for trial filtering
             max_patients: Maximum number of patients to process (for testing)
+            output_path: Path to the output file for error case export
         Returns:
             Dictionary with overall benchmark results
         """
         logger.info("Starting filtering performance benchmark...")
-        
+
         patients_to_process: List[Patient] = self.patients[:max_patients] if max_patients else self.patients
 
         # Extract disease names and record their indices
@@ -1045,10 +1169,10 @@ class FilteringBenchmark:
         for i, patient in enumerate(patients_to_process):
             disease_name = extract_disease_from_record(patient.text, self.gpt_client)[0]
             disease_data.append((disease_name, i))
-        
+
         disease_names: List[str] = [data[0] for data in disease_data]
         logger.info(f"Disease names: {disease_names}")
-        
+
         # Filter oncology diseases and keep their indices
         oncology_disease_data: List[tuple[str, int]] = [(disease_name, idx) for disease_name, idx in disease_data if is_oncology_disease(disease_name)]
         oncology_disease_names: List[str] = [data[0] for data in oncology_disease_data]
@@ -1060,51 +1184,51 @@ class FilteringBenchmark:
         for disease_name, idx in oncology_disease_data:
             # Get the patient directly by index
             patient = patients_to_process[idx]
-            
+
             # Get trial IDs for this specific patient from relevance judgments
             disease_trial_ids: set[str] = set()
             for judgment in self.relevance_judgments:
                 if judgment.patient_id == patient.patient_id:
                     disease_trial_ids.add(judgment.trial_id)
-            
+
             # Count total trials for this disease (all trials associated with this patient)
             total_trial_count = len(disease_trial_ids)
-            
+
             logger.info(f"Disease '{disease_name}' (patient {patient.patient_id}): {total_trial_count} trials")
-        
+
         results: List[PatientEvaluationResult] = []
         total_processing_time = 0.0
         total_api_cost = 0.0
-        
+
         # Create progress bar for patient processing
         with tqdm(total=len(patients_to_process), desc="Processing patients", unit="patient") as pbar:
             for i, patient in enumerate(patients_to_process, 1):
                 # Update progress bar description with current patient ID
                 pbar.set_description(f"Processing {patient.patient_id}")
-                
+
                 conditions = extract_conditions_from_content(patient.text, self.gpt_client)
                 logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
 
                 result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter)
                 results.append(result)
-                
+
                 total_processing_time += result.processing_time
                 total_api_cost += result.api_cost
-                
+
                 # Update progress bar
                 pbar.update(1)
-                
+
                 # Log progress every 10 patients
                 if i % 10 == 0:
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
-        
+
         # Calculate aggregate metrics
         successful_results: List[PatientEvaluationResult] = [r for r in results if r.error is None and not r.skipped]
         skipped_results: List[PatientEvaluationResult] = [r for r in results if r.skipped]
         failed_results: List[PatientEvaluationResult] = [r for r in results if r.error is not None and not r.skipped]
         for failed_result in failed_results:
             logger.warning(f"Failed result: {failed_result}")
-        
+
         if successful_results:
             avg_precision = sum(r.precision for r in successful_results) / len(successful_results)
             avg_recall = sum(r.recall for r in successful_results) / len(successful_results)
@@ -1112,10 +1236,10 @@ class FilteringBenchmark:
             avg_accuracy = sum(r.accuracy for r in successful_results) / len(successful_results)
         else:
             avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
-        
+
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
-        
+
         benchmark_results = {
             'timestamp': datetime.now().isoformat(),
             'dataset_path': str(self.dataset_path),
@@ -1136,7 +1260,7 @@ class FilteringBenchmark:
             },
             'detailed_results': [r.to_dict() for r in results]
         }
-        
+
         logger.info("Benchmark completed!")
         logger.info(f"Total patients processed: {len(patients_to_process)}")
         logger.info(f"Successful patients: {len(successful_results)}")
@@ -1150,8 +1274,190 @@ class FilteringBenchmark:
         logger.info(f"Average precision: {avg_precision:.4f}")
         logger.info(f"Average recall: {avg_recall:.4f}")
         logger.info(f"Average F1-score: {avg_f1:.4f}")
-        
+
+        # Log all error cases for analysis
+        self.log_error_cases(successful_results)
+
+        # Export error cases to a separate file for detailed analysis
+        if output_path:
+            error_cases_file = self.export_error_cases(successful_results, output_path)
+            if error_cases_file:
+                logger.info(f"Error cases exported to: {error_cases_file}")
+        else:
+            logger.info("No output path provided, skipping error case export")
+
         return benchmark_results
+
+    def log_error_cases(self, successful_results: List[PatientEvaluationResult]) -> None:
+        """
+        Log all error cases (incorrectly predicted or failed to recall) for analysis.
+
+        Args:
+            successful_results: List of successful patient evaluation results
+        """
+        logger.info("=" * 80)
+        logger.info("ERROR CASE ANALYSIS")
+        logger.info("=" * 80)
+
+        all_error_cases: List[tuple[PatientEvaluationResult, 'TrialEvaluationResult']] = []
+
+        # Collect all error cases from successful results
+        for result in successful_results:
+            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
+                for trial_result in result.trial_evaluation_results:
+                    if trial_result.is_error_case:
+                        all_error_cases.append((result, trial_result))
+
+        if not all_error_cases:
+            logger.info("No error cases found - all predictions were correct!")
+            return
+
+        logger.info(f"Found {len(all_error_cases)} error cases:")
+        logger.info(f"- False positives: {len([case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_POSITIVE])}")
+        logger.info(f"- False negatives: {len([case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_NEGATIVE])}")
+        logger.info("")
+
+        # Group error cases by type
+        false_positive_cases = [case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_POSITIVE]
+        false_negative_cases = [case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_NEGATIVE]
+
+        # Log false positive cases
+        if false_positive_cases:
+            logger.info("FALSE POSITIVE CASES:")
+            logger.info("-" * 60)
+            for i, (patient_result, trial_result) in enumerate([case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_POSITIVE]):
+                logger.info(f"Case {i+1}:")
+                logger.info(f"  Patient ID: {patient_result.patient_id}")
+                logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
+                logger.info(f"  Trial ID: {trial_result.trial_id}")
+                logger.info(f"  Trial Title: {trial_result.trial_title}")
+                logger.info(f"  Error Type: {trial_result.error_type}")
+                logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
+                logger.info(f"  Reason: {trial_result.reason}")
+                logger.info("")
+
+        # Log false negative cases
+        if false_negative_cases:
+            logger.info("FALSE NEGATIVE CASES:")
+            logger.info("-" * 60)
+            for i, (patient_result, trial_result) in enumerate([case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_NEGATIVE]):
+                logger.info(f"Case {i+1}:")
+                logger.info(f"  Patient ID: {patient_result.patient_id}")
+                logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
+                logger.info(f"  Trial ID: {trial_result.trial_id}")
+                logger.info(f"  Trial Title: {trial_result.trial_title}")
+                logger.info(f"  Error Type: {trial_result.error_type}")
+                logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
+                logger.info(f"  Reason: {trial_result.reason}")
+                logger.info("")
+
+        # Summary statistics
+        logger.info("ERROR CASE SUMMARY:")
+        logger.info("-" * 60)
+        logger.info(f"Total error cases: {len(all_error_cases)}")
+        logger.info(f"False positives: {len(false_positive_cases)}")
+        logger.info(f"False negatives: {len(false_negative_cases)}")
+
+        # Calculate average probabilities for error cases
+        if false_positive_cases:
+            avg_prob_false_pos = sum(case.suitability_probability for case in false_positive_cases) / len(false_positive_cases)
+            logger.info(f"Average suitability probability for false positives: {avg_prob_false_pos:.4f}")
+
+        if false_negative_cases:
+            avg_prob_false_neg = sum(case.suitability_probability for case in false_negative_cases) / len(false_negative_cases)
+            logger.info(f"Average suitability probability for false negatives: {avg_prob_false_neg:.4f}")
+
+        logger.info("=" * 80)
+
+    def _get_patient_disease(self, patient_id: str) -> str:
+        """
+        Get the disease name for a patient.
+
+        Args:
+            patient_id: Patient identifier
+
+        Returns:
+            Disease name or "Unknown" if not found
+        """
+        for patient in self.patients:
+            if patient.patient_id == patient_id:
+                try:
+                    disease_name, _ = extract_disease_from_record(patient.text, self.gpt_client)
+                    return disease_name
+                except:
+                    return "Unknown"
+        return "Unknown"
+
+    def export_error_cases(self, successful_results: List[PatientEvaluationResult], output_path: str) -> Optional[str]:
+        """
+        Export error cases to a separate JSON file for detailed analysis.
+
+        Args:
+            successful_results: List of successful patient evaluation results
+            output_path: Path to the main benchmark results file
+
+        Returns:
+            Path to the error cases file, or None if no errors found
+        """
+        all_error_cases: List[Dict[str, Any]] = []
+
+        # Collect all error cases from successful results
+        for result in successful_results:
+            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
+                for trial_result in result.trial_evaluation_results:
+                    if trial_result.is_error_case:
+                        # Get patient text summary and disease
+                        patient_text_summary = self._get_patient_text_summary(result.patient_id)
+                        disease_name = self._get_patient_disease(result.patient_id)
+
+                        error_case = {
+                            'patient_id': result.patient_id,
+                            'text_summary': patient_text_summary,
+                            'disease_name': disease_name,
+                            'trial_id': trial_result.trial_id,
+                            'trial_title': trial_result.trial_title,
+                            'error_type': trial_result.error_type.value,
+                            'suitability_probability': trial_result.suitability_probability,
+                            'reason': trial_result.reason,
+                            'ground_truth_relevant': trial_result.ground_truth_relevant,
+                            'predicted_eligible': trial_result.predicted_eligible
+                        }
+                        all_error_cases.append(error_case)
+
+        if not all_error_cases:
+            return None
+
+        # Create error cases file path
+        output_dir = Path(output_path).parent
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        error_cases_file = output_dir / f"error_cases_{timestamp}.json"
+
+        # Export to JSON
+        with open(error_cases_file, 'w') as f:
+            json.dump({
+                'timestamp': datetime.now().isoformat(),
+                'total_error_cases': len(all_error_cases),
+                'false_positives': len([case for case in all_error_cases if case['error_type'] == ErrorType.FALSE_POSITIVE.value]),
+                'false_negatives': len([case for case in all_error_cases if case['error_type'] == ErrorType.FALSE_NEGATIVE.value]),
+                'error_cases': all_error_cases
+            }, f, indent=2)
+
+        return str(error_cases_file)
+
+    def _get_patient_text_summary(self, patient_id: str) -> str:
+        """
+        Get a text summary for a patient.
+
+        Args:
+            patient_id: Patient identifier
+
+        Returns:
+            Text summary or "No text available" if not found
+        """
+        for patient in self.patients:
+            if patient.patient_id == patient_id:
+                return patient.get_text_summary(200)  # Get first 200 characters
+        return "No text available"
 
 
 def main():
@@ -1262,9 +1568,9 @@ def main():
         action="store_true",
         help="Run benchmark only on cancer patients. When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts."
     )
-    
+
     args = parser.parse_args()
-    
+
     # Show additional help if requested
     if args.show_help:
         logger.info("\n" + "="*80)
@@ -1299,29 +1605,29 @@ def main():
         logger.info("- Some trials may be permanently unavailable or withdrawn")
         logger.info("="*80 + "\n")
         return
-    
+
     # Get API key (required for disease extraction)
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    
+
     if not api_key:
         logger.error("ERROR: OpenAI API key is required for disease extraction.")
         logger.error("Please provide it via --api-key argument or set the OPENAI_API_KEY environment variable.")
         sys.exit(1)
-    
+
     # Setup logging with specified level
     global log_file
-    
+
     # Set specific loggers to DEBUG if main log level is DEBUG
     specific_loggers = None
     if args.log_level == "DEBUG":
         specific_loggers = {"base.prompt_cache": "DEBUG"}
-    
+
     log_file = setup_logging("benchmark_filtering", args.log_level, specific_loggers)
-    
+
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Generate output filename if not specified
     if args.output == f"results/benchmark_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json":
         output_filename = f"benchmark_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1329,13 +1635,13 @@ def main():
     else:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Run benchmark
     benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size)
-    
+
     # Show initial coverage summary
     benchmark.print_coverage_summary(args.verbose_coverage)
-    
+
     # Save coverage statistics if requested
     if args.save_coverage:
         coverage_stats = benchmark.get_trial_coverage_stats()
@@ -1346,12 +1652,12 @@ def main():
         with open(coverage_file, 'w') as f:
             json.dump(coverage_stats, f, indent=2)
         logger.info(f"Coverage statistics saved to: {coverage_file}")
-    
+
     # If only coverage check is requested, exit here
     if args.coverage_only:
         logger.info("Coverage check completed. Exiting.")
         return
-    
+
     # Filter patients by patient ID if specified
     if args.patient_id:
         # Find the specific patient
@@ -1360,70 +1666,70 @@ def main():
             if patient.patient_id == args.patient_id:
                 target_patient = patient
                 break
-        
+
         if target_patient is None:
             logger.error(f"Patient ID '{args.patient_id}' not found in the dataset.")
             logger.info(f"Available patient IDs: {[p.patient_id for p in benchmark.patients[:10]]}{'...' if len(benchmark.patients) > 10 else ''}")
             sys.exit(1)
-        
+
         logger.info(f"Running benchmark on single patient: {args.patient_id}")
         logger.info(f"Patient text: {target_patient.get_text_summary(200)}")
-        
+
         # Override max_patients to 1 and set patients to only the target patient
         args.max_patients = 1
         benchmark.patients = [target_patient]
-    
+
     # Initialize variables for cancer filtering
     cancer_trial_ids: set[str] = set()
-    
+
     # Filter for cancer patients if --cancer-only is specified
     if args.cancer_only:
         logger.info("Filtering for cancer patients only...")
-        
+
         # Extract disease names for all patients to identify cancer patients
         # This uses the same disease extraction logic as the main benchmark
         cancer_patients: List[Patient] = []
-        
+
         for patient in benchmark.patients:
             try:
                 disease_name = extract_disease_from_record(patient.text, benchmark.gpt_client)[0]
                 if is_oncology_disease(disease_name):
                     cancer_patients.append(patient)
-                    
+
                     # Collect trial IDs associated with this cancer patient
                     # These trials will be used for sampling when --max-trials is specified
                     for judgment in benchmark.relevance_judgments:
                         if judgment.patient_id == patient.patient_id:
                             cancer_trial_ids.add(judgment.trial_id)
-                    
+
                     logger.info(f"Cancer patient {patient.patient_id}: {disease_name}")
                 else:
                     logger.debug(f"Non-cancer patient {patient.patient_id}: {disease_name}")
             except Exception as e:
                 logger.warning(f"Failed to extract disease for patient {patient.patient_id}: {e}")
                 continue
-        
+
         if not cancer_patients:
             logger.error("No cancer patients found in the dataset!")
             sys.exit(1)
-        
+
         # Update patients list to only include cancer patients
         # This ensures the benchmark only processes cancer patients
         benchmark.patients = cancer_patients
         logger.info(f"Found {len(cancer_patients)} cancer patients out of {len(benchmark.patients) + len([p for p in benchmark.patients if p not in cancer_patients])} total patients")
-        
+
         # If max_trials is specified, we need to allocate trials proportionally across cancer patients
         # This ensures that when limiting trials, we allocate based on original trial counts for each cancer patient
         if args.max_trials is not None:
             logger.info(f"Will allocate {args.max_trials} trials proportionally across cancer patients based on their original trial counts")
-    
+
     # Determine the number of trials to use for the benchmark
     num_trials_to_use = args.max_trials if args.max_trials is not None else len(benchmark.trials)
-    
+
     logger.debug(f"args.max_trials = {args.max_trials}")
     logger.debug(f"num_trials_to_use = {num_trials_to_use}")
     logger.debug(f"len(benchmark.trials) = {len(benchmark.trials)}")
-    
+
     # Sample trials deterministically if max_trials is specified
     if args.max_trials is not None:
         logger.debug("Entering max-trials logic")
@@ -1433,7 +1739,7 @@ def main():
         # - Which device/system it's run on
         # - The order of trials in the original dataset
         random.seed(42)  # Fixed seed for reproducibility
-        
+
         # Calculate trial allocation per patient based on original trial counts
         patient_trial_counts: Dict[str, int] = {}
         for patient in benchmark.patients:
@@ -1442,17 +1748,17 @@ def main():
                 if judgment.patient_id == patient.patient_id:
                     patient_trial_ids.add(judgment.trial_id)
             patient_trial_counts[patient.patient_id] = len(patient_trial_ids)
-        
+
         total_original_trials = sum(patient_trial_counts.values())
         logger.info(f"Original trial distribution across patients:")
         for patient_id, count in patient_trial_counts.items():
             logger.info(f"  {patient_id}: {count} trials")
         logger.info(f"Total original trials: {total_original_trials}")
-        
+
         # Allocate max_trials proportionally across patients
         patient_trial_allocations: Dict[str, int] = {}
         remaining_trials = num_trials_to_use
-        
+
         for patient_id, original_count in patient_trial_counts.items():
             if total_original_trials > 0:
                 # Calculate proportional allocation (rounded down)
@@ -1461,7 +1767,7 @@ def main():
                 remaining_trials -= proportional_allocation
             else:
                 patient_trial_allocations[patient_id] = 0
-        
+
         # Distribute remaining trials to patients with highest original counts
         if remaining_trials > 0:
             sorted_patients = sorted(patient_trial_counts.items(), key=lambda x: x[1], reverse=True)
@@ -1471,15 +1777,15 @@ def main():
                     remaining_trials -= 1
                 else:
                     break
-        
+
         logger.info(f"Trial allocation with max_trials={num_trials_to_use}:")
         for patient_id, allocation in patient_trial_allocations.items():
             logger.info(f"  {patient_id}: {allocation} trials (originally had {patient_trial_counts[patient_id]})")
-        
+
         # Sample trials for each patient based on their allocation
         sampled_trial_ids: set[str] = set()
         patient_trial_mapping: Dict[str, set[str]] = {}  # Map patient_id to their allocated trials
-        
+
         for patient_id, allocation in patient_trial_allocations.items():
             if allocation > 0:
                 # Get trials for this patient
@@ -1487,14 +1793,14 @@ def main():
                 for judgment in benchmark.relevance_judgments:
                     if judgment.patient_id == patient_id:
                         patient_trial_ids.add(judgment.trial_id)
-                
+
                 # Filter to available trials (those that exist in benchmark.trials)
                 available_patient_trials = patient_trial_ids.intersection(set(benchmark.trials.keys()))
-                
+
                 if args.cancer_only:
                     # When cancer-only is specified, only use cancer-related trials for this patient
                     available_patient_trials = available_patient_trials.intersection(cancer_trial_ids)
-                
+
                 # Sample from available trials for this patient
                 if len(available_patient_trials) > 0:
                     sorted_patient_trials = sorted(list(available_patient_trials))
@@ -1502,22 +1808,22 @@ def main():
                     sampled_patient_trials = random.sample(sorted_patient_trials, num_to_sample)
                     sampled_trial_ids.update(sampled_patient_trials)
                     patient_trial_mapping[patient_id] = set(sampled_patient_trials)
-                    
+
                     logger.info(f"  Sampled {num_to_sample} trials for patient {patient_id}")
                 else:
                     logger.warning(f"  No available trials for patient {patient_id} after filtering")
                     patient_trial_mapping[patient_id] = set()
-        
+
         # Store the patient-trial mapping in the benchmark object for use during evaluation
         benchmark.patient_trial_mapping = patient_trial_mapping
-        
+
         # Filter trials to only include sampled ones
         benchmark.trials = {k: v for k, v in benchmark.trials.items() if k in sampled_trial_ids}
-        
+
         logger.info(f"Sampled {len(sampled_trial_ids)} trials deterministically for benchmark (seed=42).")
         logger.info(f"First 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[:5]}")
         logger.info(f"Last 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[-5:]}")
-        
+
         # Re-check coverage after sampling to show updated statistics
         logger.info("Re-checking trial coverage after sampling...")
         benchmark.print_coverage_summary(args.verbose_coverage)
@@ -1526,24 +1832,24 @@ def main():
             logger.info(f"Using all cancer-related trials for benchmark ({len(cancer_trial_ids)} trials).")
         else:
             logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials).")
-    
+
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
     if coverage_stats['total_missing'] > 0:
         logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
         logger.warning("The benchmark will continue with available trials.")
-    
+
     gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
-    
-    results = benchmark.run_benchmark(gpt_filter, args.max_patients)
-    
+
+    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path))
+
     # Save results
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
-    
+
     logger.info(f"Benchmark results saved to: {output_path}")
     logger.info(f"Log file: {log_file}")
 
 
 if __name__ == "__main__":
-    main() 
+    main()
