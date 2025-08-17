@@ -40,6 +40,18 @@ Example:
         --cancer-only \
         --max-trials 100 \
         --api-key $OPENAI_API_KEY
+
+    # Run benchmark with title-only evaluation (faster but less accurate)
+    python scripts/benchmark_filtering_performance.py \
+        --title-only \
+        --api-key $OPENAI_API_KEY
+
+    # Run benchmark with title-only evaluation on cancer patients with limited trials
+    python scripts/benchmark_filtering_performance.py \
+        --title-only \
+        --cancer-only \
+        --max-trials 100 \
+        --api-key $OPENAI_API_KEY
 """
 
 import argparse
@@ -1008,13 +1020,14 @@ class FilteringBenchmark:
             'false_negatives': false_negatives
         }
 
-    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter) -> PatientEvaluationResult:
+    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> PatientEvaluationResult:
         """
         Evaluate filtering performance for a single patient.
 
         Args:
             patient: Patient object
             gpt_filter: GPTTrialFilter instance for trial filtering
+            title_only: Whether to use title-only evaluation instead of full trial evaluation
 
         Returns:
             PatientEvaluationResult with evaluation metrics
@@ -1066,19 +1079,31 @@ class FilteringBenchmark:
             total_api_cost = 0.0
             trial_evaluation_results: List[TrialEvaluationResult] = []
 
-            for trial_id in tqdm(all_trial_ids, desc=f"Evaluating trials for {patient_id}"):
+            evaluation_desc = f"Evaluating trials for {patient_id} ({'title-only' if title_only else 'full evaluation'})"
+            for trial_id in tqdm(all_trial_ids, desc=evaluation_desc):
                 try:
                     trial = self.trials[trial_id]
 
-                    # Use GPTTrialFilter to evaluate the trial title
-                    suitability_probability: float
-                    reason: str
-                    cost: float
-                    suitability_probability, reason, cost = gpt_filter.evaluate_title(
-                        trial, conditions, refresh_cache=False
-                    )
-                    logger.info(f"Trial {trial_id} suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
-                    is_eligible = suitability_probability > 0.0
+                    # Use GPTTrialFilter to evaluate the trial based on title_only parameter
+                    if title_only:
+                        # Title-only evaluation (faster but less accurate)
+                        suitability_probability, reason, cost = gpt_filter.evaluate_title(
+                            trial, conditions, refresh_cache=False
+                        )
+                        logger.info(f"Trial {trial_id} title suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
+                        is_eligible = suitability_probability > 0.0
+                    else:
+                        # Full trial evaluation (title + inclusion criteria)
+                        is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
+                            trial, conditions, refresh_cache=False
+                        )
+                        if is_eligible:
+                            suitability_probability = 1.0
+                            reason = "Trial passed full evaluation (title + inclusion criteria)"
+                        else:
+                            suitability_probability = 0.0
+                            reason = f"Trial failed full evaluation: {failure_reason.message if failure_reason else 'Unknown reason'}"
+                        logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
                     total_api_cost += cost
 
@@ -1098,9 +1123,11 @@ class FilteringBenchmark:
 
                     if is_eligible:
                         predicted_eligible_trials.append(trial_id)
-                        logger.debug(f"Trial {trial_id} passed title check")
+                        evaluation_method = "title check" if title_only else "full evaluation"
+                        logger.debug(f"Trial {trial_id} passed {evaluation_method}")
                     else:
-                        logger.debug(f"Trial {trial_id} failed title check: {reason}")
+                        evaluation_method = "title check" if title_only else "full evaluation"
+                        logger.debug(f"Trial {trial_id} failed {evaluation_method}: {reason}")
 
                 except Exception as e:
                     logger.warning(f"Error evaluating trial {trial_id}: {str(e)}")
@@ -1131,7 +1158,8 @@ class FilteringBenchmark:
             # Calculate performance metrics
             metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
 
-            logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed title check out of {len(all_trial_ids)} total trials")
+            evaluation_method = "title check" if title_only else "full evaluation (title + inclusion criteria)"
+            logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed {evaluation_method} out of {len(all_trial_ids)} total trials")
             logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
 
             return PatientEvaluationResult.create_success_result(
@@ -1149,7 +1177,7 @@ class FilteringBenchmark:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
             raise e
 
-    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
+    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None, title_only: bool = False) -> Dict[str, Any]:
         """
         Run the complete benchmark.
 
@@ -1157,10 +1185,12 @@ class FilteringBenchmark:
             gpt_filter: GPTTrialFilter instance for trial filtering
             max_patients: Maximum number of patients to process (for testing)
             output_path: Path to the output file for error case export
+            title_only: Whether to use title-only evaluation instead of full trial evaluation
         Returns:
             Dictionary with overall benchmark results
         """
-        logger.info("Starting filtering performance benchmark...")
+        evaluation_method = "title-only evaluation (evaluate_title)" if title_only else "full trial evaluation (evaluate_trial)"
+        logger.info(f"Starting filtering performance benchmark using {evaluation_method}...")
 
         patients_to_process: List[Patient] = self.patients[:max_patients] if max_patients else self.patients
 
@@ -1201,7 +1231,8 @@ class FilteringBenchmark:
         total_api_cost = 0.0
 
         # Create progress bar for patient processing
-        with tqdm(total=len(patients_to_process), desc="Processing patients", unit="patient") as pbar:
+        progress_desc = f"Processing patients ({evaluation_method})"
+        with tqdm(total=len(patients_to_process), desc=progress_desc, unit="patient") as pbar:
             for i, patient in enumerate(patients_to_process, 1):
                 # Update progress bar description with current patient ID
                 pbar.set_description(f"Processing {patient.patient_id}")
@@ -1209,7 +1240,7 @@ class FilteringBenchmark:
                 conditions = extract_conditions_from_content(patient.text, self.gpt_client)
                 logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
 
-                result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter)
+                result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
                 results.append(result)
 
                 total_processing_time += result.processing_time
@@ -1262,6 +1293,7 @@ class FilteringBenchmark:
         benchmark_results = {
             'timestamp': datetime.now().isoformat(),
             'dataset_path': str(self.dataset_path),
+            'evaluation_method': 'title_only' if title_only else 'full_trial_evaluation',
             'trial_coverage': coverage_stats,
             'total_patients': len(patients_to_process),
             'successful_patients': len(successful_results),
@@ -1287,7 +1319,9 @@ class FilteringBenchmark:
             'detailed_results': [r.to_dict() for r in results]
         }
 
+        evaluation_method = "title-only evaluation (evaluate_title)" if title_only else "full trial evaluation (evaluate_trial)"
         logger.info("Benchmark completed!")
+        logger.info(f"Evaluation method used: {evaluation_method}")
         logger.info(f"Total patients processed: {len(patients_to_process)}")
         logger.info(f"Successful patients: {len(successful_results)}")
         logger.info(f"Skipped patients: {len(skipped_results)}")
@@ -1605,6 +1639,11 @@ def main():
         action="store_true",
         help="Run benchmark only on cancer patients. When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts."
     )
+    parser.add_argument(
+        "--title-only",
+        action="store_true",
+        help="Use title-only evaluation (evaluate_title) instead of full trial evaluation (evaluate_trial). Title-only is faster but less accurate."
+    )
 
     args = parser.parse_args()
 
@@ -1628,6 +1667,10 @@ def main():
         logger.info("- Use --cancer-only to run benchmark only on cancer patients")
         logger.info("- When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts")
         logger.info("- This is useful for oncology-specific clinical trial research")
+        logger.info("\nEVALUATION METHODS:")
+        logger.info("- Default: Uses evaluate_trial() for comprehensive evaluation (title + inclusion criteria)")
+        logger.info("- --title-only: Uses evaluate_title() for faster title-only evaluation")
+        logger.info("- Title-only is faster but less accurate than full evaluation")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
@@ -1636,6 +1679,8 @@ def main():
         logger.info("5. Run benchmark with limited total trials: python script.py --max-trials 100")
         logger.info("6. Run benchmark only on cancer patients: python script.py --cancer-only")
         logger.info("7. Run benchmark on cancer patients with limited total trials: python script.py --cancer-only --max-trials 100")
+        logger.info("8. Run benchmark with title-only evaluation (faster): python script.py --title-only")
+        logger.info("9. Run benchmark with title-only evaluation on cancer patients: python script.py --title-only --cancer-only")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1878,7 +1923,7 @@ def main():
 
     gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
 
-    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path))
+    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only)
 
     # Save results
     with open(output_path, 'w') as f:
