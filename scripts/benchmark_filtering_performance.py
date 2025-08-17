@@ -1237,6 +1237,25 @@ class FilteringBenchmark:
         else:
             avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
 
+        # Calculate trial-level metrics (across all trials regardless of patients)
+        all_trial_results: List[TrialEvaluationResult] = []
+        for result in successful_results:
+            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
+                all_trial_results.extend(result.trial_evaluation_results)
+
+        if all_trial_results:
+            # Calculate trial-level precision, recall, and F1
+            trial_true_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and trial.ground_truth_relevant)
+            trial_false_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and not trial.ground_truth_relevant)
+            trial_false_negatives = sum(1 for trial in all_trial_results if not trial.predicted_eligible and trial.ground_truth_relevant)
+
+            trial_precision = trial_true_positives / (trial_true_positives + trial_false_positives) if (trial_true_positives + trial_false_positives) > 0 else 0.0
+            trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
+            trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
+            trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
+        else:
+            trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
+
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
 
@@ -1258,6 +1277,13 @@ class FilteringBenchmark:
                 'average_f1_score': avg_f1,
                 'average_accuracy': avg_accuracy
             },
+            'trial_level_metrics': {
+                'trial_precision': trial_precision,
+                'trial_recall': trial_recall,
+                'trial_f1_score': trial_f1,
+                'trial_accuracy': trial_accuracy,
+                'total_trials_evaluated': len(all_trial_results)
+            },
             'detailed_results': [r.to_dict() for r in results]
         }
 
@@ -1274,6 +1300,17 @@ class FilteringBenchmark:
         logger.info(f"Average precision: {avg_precision:.4f}")
         logger.info(f"Average recall: {avg_recall:.4f}")
         logger.info(f"Average F1-score: {avg_f1:.4f}")
+
+        # Log trial-level metrics
+        logger.info("=" * 60)
+        logger.info("TRIAL-LEVEL METRICS (across all trials regardless of patients)")
+        logger.info("=" * 60)
+        logger.info(f"Total trials evaluated: {len(all_trial_results)}")
+        logger.info(f"Trial-level precision: {trial_precision:.4f}")
+        logger.info(f"Trial-level recall: {trial_recall:.4f}")
+        logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
+        logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
+        logger.info("=" * 60)
 
         # Log all error cases for analysis
         self.log_error_cases(successful_results)
