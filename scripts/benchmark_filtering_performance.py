@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
 from tqdm import tqdm
+import time
 
 
 # Add parent directory to Python path
@@ -60,6 +61,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease, extract_conditions_from_content
+from base.trial_expert import GPTTrialFilter
 from base.gpt_client import GPTClient
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -244,6 +246,201 @@ class RelevanceJudgment:
     def __hash__(self) -> int:
         """Hash value for the relevance judgment."""
         return hash((self.patient_id, self.trial_id, self.relevance_score))
+
+
+class PatientEvaluationResult:
+    """
+    A class to represent the results of evaluating filtering performance for a single patient.
+    
+    This class encapsulates all the metrics and information from evaluating a patient's
+    clinical trial filtering performance, including precision, recall, F1-score, and
+    processing statistics.
+    """
+    
+    def __init__(self, 
+                 patient_id: str,
+                 ground_truth_count: int,
+                 retrieved_count: int,
+                 predicted_eligible_count: int,
+                 true_positives: int,
+                 false_positives: int,
+                 false_negatives: int,
+                 precision: float,
+                 recall: float,
+                 f1_score: float,
+                 accuracy: float,
+                 processing_time: float,
+                 api_cost: float,
+                 error: Optional[str] = None,
+                 skipped: bool = False):
+        """
+        Initialize a PatientEvaluationResult instance.
+        
+        Args:
+            patient_id: Unique identifier for the patient
+            ground_truth_count: Number of ground truth relevant trials
+            retrieved_count: Total number of trials retrieved for evaluation
+            predicted_eligible_count: Number of trials predicted as eligible
+            true_positives: Number of true positive predictions
+            false_positives: Number of false positive predictions
+            false_negatives: Number of false negative predictions
+            precision: Precision score (0.0 to 1.0)
+            recall: Recall score (0.0 to 1.0)
+            f1_score: F1 score (0.0 to 1.0)
+            accuracy: Accuracy score (0.0 to 1.0)
+            processing_time: Time taken to process the patient (seconds)
+            api_cost: Total API cost for processing the patient
+            error: Error message if processing failed, None if successful
+            skipped: Whether the patient was skipped during processing
+        """
+        self.patient_id = patient_id
+        self.ground_truth_count = ground_truth_count
+        self.retrieved_count = retrieved_count
+        self.predicted_eligible_count = predicted_eligible_count
+        self.true_positives = true_positives
+        self.false_positives = false_positives
+        self.false_negatives = false_negatives
+        self.precision = precision
+        self.recall = recall
+        self.f1_score = f1_score
+        self.accuracy = accuracy
+        self.processing_time = processing_time
+        self.api_cost = api_cost
+        self.error = error
+        self.skipped = skipped
+    
+    @classmethod
+    def create_success_result(cls, 
+                            patient_id: str,
+                            ground_truth_trials: List[str],
+                            all_trial_ids: List[str],
+                            predicted_eligible_trials: List[str],
+                            metrics: Dict[str, Any],
+                            processing_time: float,
+                            total_api_cost: float) -> 'PatientEvaluationResult':
+        """
+        Create a successful evaluation result.
+        
+        Args:
+            patient_id: Patient identifier
+            ground_truth_trials: List of ground truth relevant trial IDs
+            all_trial_ids: List of all trial IDs retrieved for evaluation
+            predicted_eligible_trials: List of trial IDs predicted as eligible
+            metrics: Dictionary containing calculated metrics
+            processing_time: Time taken to process the patient
+            total_api_cost: Total API cost for processing
+            
+        Returns:
+            PatientEvaluationResult instance for successful evaluation
+        """
+        return cls(
+            patient_id=patient_id,
+            ground_truth_count=len(ground_truth_trials),
+            retrieved_count=len(all_trial_ids),
+            predicted_eligible_count=len(predicted_eligible_trials),
+            true_positives=metrics['true_positives'],
+            false_positives=metrics['false_positives'],
+            false_negatives=metrics['false_negatives'],
+            precision=metrics['precision'],
+            recall=metrics['recall'],
+            f1_score=metrics['f1_score'],
+            accuracy=metrics['accuracy'],
+            processing_time=processing_time,
+            api_cost=total_api_cost,
+            error=None,
+            skipped=False
+        )
+    
+    @classmethod
+    def create_error_result(cls, 
+                          patient_id: str,
+                          ground_truth_trials: List[str],
+                          error_message: str) -> 'PatientEvaluationResult':
+        """
+        Create an error evaluation result when processing fails.
+        
+        Args:
+            patient_id: Patient identifier
+            ground_truth_trials: List of ground truth relevant trial IDs
+            error_message: Error message describing what went wrong
+            
+        Returns:
+            PatientEvaluationResult instance for failed evaluation
+        """
+        return cls(
+            patient_id=patient_id,
+            ground_truth_count=len(ground_truth_trials),
+            retrieved_count=0,
+            predicted_eligible_count=0,
+            true_positives=0,
+            false_positives=0,
+            false_negatives=0,
+            precision=0.0,
+            recall=0.0,
+            f1_score=0.0,
+            accuracy=0.0,
+            processing_time=0.0,
+            api_cost=0.0,
+            error=error_message,
+            skipped=False
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the result to a dictionary representation.
+        
+        Returns:
+            Dictionary representation of the evaluation result
+        """
+        return {
+            'patient_id': self.patient_id,
+            'ground_truth_count': self.ground_truth_count,
+            'retrieved_count': self.retrieved_count,
+            'predicted_eligible_count': self.predicted_eligible_count,
+            'true_positives': self.true_positives,
+            'false_positives': self.false_positives,
+            'false_negatives': self.false_negatives,
+            'precision': self.precision,
+            'recall': self.recall,
+            'f1_score': self.f1_score,
+            'accuracy': self.accuracy,
+            'processing_time': self.processing_time,
+            'api_cost': self.api_cost,
+            'error': self.error,
+            'skipped': self.skipped
+        }
+    
+    def is_successful(self) -> bool:
+        """
+        Check if the evaluation was successful.
+        
+        Returns:
+            True if no error occurred and patient wasn't skipped
+        """
+        return self.error is None and not self.skipped
+    
+    def __str__(self) -> str:
+        """String representation of the evaluation result."""
+        if self.is_successful():
+            return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
+                   f"precision={self.precision:.3f}, recall={self.recall:.3f}, "
+                   f"f1={self.f1_score:.3f}, time={self.processing_time:.2f}s)")
+        else:
+            return f"PatientEvaluationResult(patient_id='{self.patient_id}', error='{self.error}')"
+    
+    def __repr__(self) -> str:
+        """Detailed string representation of the evaluation result."""
+        return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
+               f"ground_truth_count={self.ground_truth_count}, "
+               f"retrieved_count={self.retrieved_count}, "
+               f"predicted_eligible_count={self.predicted_eligible_count}, "
+               f"true_positives={self.true_positives}, "
+               f"false_positives={self.false_positives}, "
+               f"false_negatives={self.false_negatives}, "
+               f"precision={self.precision}, recall={self.recall}, "
+               f"f1_score={self.f1_score}, accuracy={self.accuracy}, "
+               f"processing_time={self.processing_time}, api_cost={self.api_cost}, "
+               f"error={self.error}, skipped={self.skipped})")
 
 
 class FilteringBenchmark:
@@ -721,15 +918,16 @@ class FilteringBenchmark:
             'false_negatives': false_negatives
         }
     
-    def evaluate_filtering_performance(self, patient: Patient) -> Dict[str, Any]:
+    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter) -> PatientEvaluationResult:
         """
         Evaluate filtering performance for a single patient.
         
         Args:
             patient: Patient object
+            gpt_filter: GPTTrialFilter instance for trial filtering
             
         Returns:
-            Dictionary with evaluation metrics
+            PatientEvaluationResult with evaluation metrics
         """
         patient_id = patient.patient_id
         
@@ -746,72 +944,81 @@ class FilteringBenchmark:
         ground_truth_trials = self.get_ground_truth_trials(patient_id)
         logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
         
-        # Check if there are any ground truth trials available for this patient
-        if not ground_truth_trials:
-            logger.warning(f"No ground truth trials available for patient {patient_id}, skipping evaluation")
-            return {
-                'patient_id': patient_id,
-                'ground_truth_count': 0,
-                'retrieved_count': 0,
-                'predicted_eligible_count': 0,
-                'true_positives': 0,
-                'false_positives': 0,
-                'false_negatives': 0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'f1_score': 0.0,
-                'accuracy': 0.0,
-                'processing_time': 0.0,
-                'api_cost': 0.0,
-                'error': 'No ground truth trials available',
-                'skipped': True
-            }
-        
         try:
-            # TODO: Implement filtering
-            return {
-                'patient_id': patient_id,
-                'ground_truth_count': len(ground_truth_trials),
-                'retrieved_count': 0,
-                'predicted_eligible_count': 0,
-                'true_positives': 0,
-                'false_positives': 0,
-                'false_negatives': 0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'f1_score': 0.0,
-                'accuracy': 0.0,
-                'processing_time': 0.0,
-                'api_cost': 0.0,
-                'error': None,
-                'skipped': False
-            }
+            # Call title check and regard trials that pass the title check as eligible
+            start_time = time.time()
+            
+            # Extract conditions from patient record
+            conditions = extract_conditions_from_content(patient.text, self.gpt_client)
+            logger.info(f"Extracted conditions: {conditions}")
+            
+            # Get all available trials for evaluation
+            all_trial_ids = list(self.trials.keys())
+            logger.info(f"Evaluating {len(all_trial_ids)} trials for patient {patient_id}")
+            
+            # Evaluate each trial using title check
+            predicted_eligible_trials: List[str] = []
+            total_api_cost = 0.0
+            
+            for trial_id in tqdm(all_trial_ids, desc=f"Evaluating trials for {patient_id}"):
+                try:
+                    trial = self.trials[trial_id]
+                    
+                    # Use GPTTrialFilter to evaluate the trial title
+                    suitability_probability: float
+                    reason: str
+                    cost: float
+                    suitability_probability, reason, cost = gpt_filter.evaluate_title(
+                        trial, conditions, refresh_cache=False
+                    )
+                    logger.info(f"Trial {trial_id} suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
+                    is_eligible = suitability_probability > 0.0
+                    
+                    total_api_cost += cost
+                    
+                    if is_eligible:
+                        predicted_eligible_trials.append(trial_id)
+                        logger.debug(f"Trial {trial_id} passed title check")
+                    else:
+                        logger.debug(f"Trial {trial_id} failed title check: {reason}")
+                        
+                except Exception as e:
+                    logger.warning(f"Error evaluating trial {trial_id}: {str(e)}")
+                    continue
+            
+            processing_time = time.time() - start_time
+            
+            # Calculate performance metrics
+            metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
+            
+            logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed title check out of {len(all_trial_ids)} total trials")
+            logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
+            
+            return PatientEvaluationResult.create_success_result(
+                patient_id=patient_id,
+                ground_truth_trials=ground_truth_trials,
+                all_trial_ids=all_trial_ids,
+                predicted_eligible_trials=predicted_eligible_trials,
+                metrics=metrics,
+                processing_time=processing_time,
+                total_api_cost=total_api_cost
+            )
             
         except Exception as e:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
-            return {
-                'patient_id': patient_id,
-                'ground_truth_count': len(ground_truth_trials),
-                'retrieved_count': 0,
-                'predicted_eligible_count': 0,
-                'true_positives': 0,
-                'false_positives': 0,
-                'false_negatives': 0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'f1_score': 0.0,
-                'accuracy': 0.0,
-                'error': str(e),
-                'skipped': False
-            }
+            return PatientEvaluationResult.create_error_result(
+                patient_id=patient_id,
+                ground_truth_trials=ground_truth_trials,
+                error_message=str(e)
+            )
     
-    def run_benchmark(self, max_patients: Optional[int] = None) -> Dict[str, Any]:
+    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None) -> Dict[str, Any]:
         """
         Run the complete benchmark.
         
         Args:
+            gpt_filter: GPTTrialFilter instance for trial filtering
             max_patients: Maximum number of patients to process (for testing)
-            
         Returns:
             Dictionary with overall benchmark results
         """
@@ -851,7 +1058,7 @@ class FilteringBenchmark:
             
             logger.info(f"Disease '{disease_name}' (patient {patient.patient_id}): {total_trial_count} trials")
         
-        results: List[Dict[str, Any]] = []
+        results: List[PatientEvaluationResult] = []
         total_processing_time = 0.0
         total_api_cost = 0.0
         
@@ -863,12 +1070,12 @@ class FilteringBenchmark:
                 
                 conditions = extract_conditions_from_content(patient.text, self.gpt_client)
                 logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
-                
-                result = self.evaluate_filtering_performance(patient)
+
+                result = self.evaluate_filtering_performance(patient, gpt_filter)
                 results.append(result)
                 
-                total_processing_time += result['processing_time']
-                total_api_cost += result['api_cost']
+                total_processing_time += result.processing_time
+                total_api_cost += result.api_cost
                 
                 # Update progress bar
                 pbar.update(1)
@@ -878,15 +1085,15 @@ class FilteringBenchmark:
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
         
         # Calculate aggregate metrics
-        successful_results = [r for r in results if r['error'] is None and not r.get('skipped', False)]
-        skipped_results = [r for r in results if r.get('skipped', False)]
-        failed_results = [r for r in results if r['error'] is not None and not r.get('skipped', False)]
+        successful_results = [r for r in results if r.error is None and not r.skipped]
+        skipped_results = [r for r in results if r.skipped]
+        failed_results = [r for r in results if r.error is not None and not r.skipped]
         
         if successful_results:
-            avg_precision = sum(r['precision'] for r in successful_results) / len(successful_results)
-            avg_recall = sum(r['recall'] for r in successful_results) / len(successful_results)
-            avg_f1 = sum(r['f1_score'] for r in successful_results) / len(successful_results)
-            avg_accuracy = sum(r['accuracy'] for r in successful_results) / len(successful_results)
+            avg_precision = sum(r.precision for r in successful_results) / len(successful_results)
+            avg_recall = sum(r.recall for r in successful_results) / len(successful_results)
+            avg_f1 = sum(r.f1_score for r in successful_results) / len(successful_results)
+            avg_accuracy = sum(r.accuracy for r in successful_results) / len(successful_results)
         else:
             avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
         
@@ -911,7 +1118,7 @@ class FilteringBenchmark:
                 'average_f1_score': avg_f1,
                 'average_accuracy': avg_accuracy
             },
-            'detailed_results': results
+            'detailed_results': [r.to_dict() for r in results]
         }
         
         logger.info("Benchmark completed!")
@@ -1244,7 +1451,9 @@ def main():
         logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
         logger.warning("The benchmark will continue with available trials.")
     
-    results = benchmark.run_benchmark(args.max_patients)
+    gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
+    
+    results = benchmark.run_benchmark(gpt_filter, args.max_patients)
     
     # Save results
     with open(output_path, 'w') as f:
