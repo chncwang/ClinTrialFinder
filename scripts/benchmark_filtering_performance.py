@@ -59,7 +59,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
-from base.disease_expert import extract_disease_from_record, is_oncology_disease
+from base.disease_expert import extract_disease_from_record, is_oncology_disease, extract_conditions_from_content
 from base.gpt_client import GPTClient
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -860,6 +860,9 @@ class FilteringBenchmark:
             for i, patient in enumerate(patients_to_process, 1):
                 # Update progress bar description with current patient ID
                 pbar.set_description(f"Processing {patient.patient_id}")
+                
+                conditions = extract_conditions_from_content(patient.text, self.gpt_client)
+                logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
                 
                 result = self.evaluate_filtering_performance(patient)
                 results.append(result)
