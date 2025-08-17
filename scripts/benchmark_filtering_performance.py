@@ -59,6 +59,7 @@ import json
 import os
 import sys
 import random
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -1290,11 +1291,31 @@ class FilteringBenchmark:
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
 
+        # Calculate MD5 hash of all trial IDs for consistency verification
+        all_trial_ids = sorted(list(self.trials.keys()))
+        trial_ids_concat = ''.join(all_trial_ids)
+        trial_ids_md5 = hashlib.md5(trial_ids_concat.encode('utf-8')).hexdigest()
+
+        logger.info("=" * 60)
+        logger.info("TRIAL IDS CONSISTENCY VERIFICATION")
+        logger.info("=" * 60)
+        logger.info(f"Total trials in benchmark: {len(all_trial_ids)}")
+        logger.info(f"Concatenated trial IDs MD5 hash: {trial_ids_md5}")
+        logger.info(f"First 5 trial IDs: {all_trial_ids[:5]}")
+        logger.info(f"Last 5 trial IDs: {all_trial_ids[-5:]}")
+        logger.info("=" * 60)
+
         benchmark_results = {
             'timestamp': datetime.now().isoformat(),
             'dataset_path': str(self.dataset_path),
             'evaluation_method': 'title_only' if title_only else 'full_trial_evaluation',
             'trial_coverage': coverage_stats,
+            'trial_ids_consistency': {
+                'total_trials': len(all_trial_ids),
+                'trial_ids_md5_hash': trial_ids_md5,
+                'first_5_trial_ids': all_trial_ids[:5],
+                'last_5_trial_ids': all_trial_ids[-5:]
+            },
             'total_patients': len(patients_to_process),
             'successful_patients': len(successful_results),
             'skipped_patients': len(skipped_results),
@@ -1344,6 +1365,20 @@ class FilteringBenchmark:
         logger.info(f"Trial-level recall: {trial_recall:.4f}")
         logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
         logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
+        logger.info("=" * 60)
+
+        # Log trial IDs consistency verification
+        all_trial_ids = sorted(list(self.trials.keys()))
+        trial_ids_concat = ''.join(all_trial_ids)
+        trial_ids_md5 = hashlib.md5(trial_ids_concat.encode('utf-8')).hexdigest()
+
+        logger.info("=" * 60)
+        logger.info("TRIAL IDS CONSISTENCY VERIFICATION")
+        logger.info("=" * 60)
+        logger.info(f"Total trials in benchmark: {len(all_trial_ids)}")
+        logger.info(f"Concatenated trial IDs MD5 hash: {trial_ids_md5}")
+        logger.info(f"First 5 trial IDs: {all_trial_ids[:5]}")
+        logger.info(f"Last 5 trial IDs: {all_trial_ids[-5:]}")
         logger.info("=" * 60)
 
         # Log all error cases for analysis
@@ -1929,6 +1964,19 @@ def main():
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
 
+    # Log final trial IDs consistency verification
+    all_trial_ids = sorted(list(benchmark.trials.keys()))
+    trial_ids_concat = ''.join(all_trial_ids)
+    trial_ids_md5 = hashlib.md5(trial_ids_concat.encode('utf-8')).hexdigest()
+
+    logger.info("=" * 60)
+    logger.info("FINAL TRIAL IDS CONSISTENCY VERIFICATION")
+    logger.info("=" * 60)
+    logger.info(f"Total trials in benchmark: {len(all_trial_ids)}")
+    logger.info(f"Concatenated trial IDs MD5 hash: {trial_ids_md5}")
+    logger.info(f"First 5 trial IDs: {all_trial_ids[:5]}")
+    logger.info(f"Last 5 trial IDs: {all_trial_ids[-5:]}")
+    logger.info("=" * 60)
     logger.info(f"Benchmark results saved to: {output_path}")
     logger.info(f"Log file: {log_file}")
 
