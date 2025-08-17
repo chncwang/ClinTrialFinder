@@ -19,8 +19,8 @@ Example:
         --patient-id "patient_123" \
         --api-key $OPENAI_API_KEY
         
-    # Run benchmark with limited number of trials for faster testing
-    # Note: Uses deterministic sampling (seed=42) for consistent results
+    # Run benchmark with limited total number of trials for faster testing
+    # Note: Trials are allocated proportionally across patients, uses deterministic sampling (seed=42) for consistent results
     python scripts/benchmark_filtering_performance.py \
         --max-trials 100 \
         --api-key $OPENAI_API_KEY
@@ -35,7 +35,7 @@ Example:
         --cancer-only \
         --api-key $OPENAI_API_KEY
         
-    # Run benchmark on cancer patients with limited trials
+    # Run benchmark on cancer patients with limited total trials
     python scripts/benchmark_filtering_performance.py \
         --cancer-only \
         --max-trials 100 \
@@ -468,6 +468,9 @@ class FilteringBenchmark:
         
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
+        
+        # Initialize patient-trial mapping for max-trials allocation
+        self.patient_trial_mapping: Dict[str, set[str]] = {}
         
         # Load dataset
         self._load_dataset()
@@ -952,9 +955,24 @@ class FilteringBenchmark:
             conditions = extract_conditions_from_content(patient.text, self.gpt_client)
             logger.info(f"Extracted conditions: {conditions}")
             
-            # Get all available trials for evaluation
-            all_trial_ids = list(self.trials.keys())
-            logger.info(f"Evaluating {len(all_trial_ids)} trials for patient {patient_id}")
+            # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
+            if hasattr(self, 'patient_trial_mapping') and self.patient_trial_mapping:
+                # Use allocated trials for this patient
+                all_trial_ids = list(self.patient_trial_mapping.get(patient_id, set()))
+                logger.info(f"Evaluating {len(all_trial_ids)} allocated trials for patient {patient_id}")
+            else:
+                # Use all available trials (no max-trials limit)
+                all_trial_ids = list(self.trials.keys())
+                logger.info(f"Evaluating {len(all_trial_ids)} trials for patient {patient_id}")
+            
+            # Check if patient has any trials to evaluate
+            if not all_trial_ids:
+                logger.warning(f"Patient {patient_id} has no trials to evaluate")
+                return PatientEvaluationResult.create_error_result(
+                    patient_id=patient_id,
+                    ground_truth_trials=ground_truth_trials,
+                    error_message="No trials allocated to this patient"
+                )
             
             # Evaluate each trial using title check
             predicted_eligible_trials: List[str] = []
@@ -1239,12 +1257,12 @@ def main():
     parser.add_argument(
         "--max-trials",
         type=int,
-        help="Maximum number of trials to use for the benchmark (for faster testing). Uses deterministic sampling with fixed seed for consistent results across executions and devices."
+        help="Maximum total number of trials to use for the benchmark (for faster testing). Trials are allocated proportionally across patients based on their original trial counts. Uses deterministic sampling with fixed seed for consistent results across executions and devices."
     )
     parser.add_argument(
         "--cancer-only",
         action="store_true",
-        help="Run benchmark only on cancer patients. When combined with --max-trials, samples from trials associated with cancer patients."
+        help="Run benchmark only on cancer patients. When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts."
     )
     
     args = parser.parse_args()
@@ -1261,21 +1279,22 @@ def main():
         logger.info("- Missing trials can occur due to network issues, API limits, or trial unavailability")
         logger.info("- Use --coverage-only to check status without running the full benchmark")
         logger.info("\nTRIAL SAMPLING:")
-        logger.info("- Use --max-trials to limit the number of trials for faster testing")
+        logger.info("- Use --max-trials to limit the total number of trials for faster testing")
+        logger.info("- Trials are allocated proportionally across patients based on their original trial counts")
         logger.info("- Sampling is deterministic (seed=42) for consistent results across executions and devices")
         logger.info("- This ensures reproducible benchmark results regardless of system differences")
         logger.info("\nCANCER PATIENT FILTERING:")
         logger.info("- Use --cancer-only to run benchmark only on cancer patients")
-        logger.info("- When combined with --max-trials, samples from trials associated with cancer patients")
+        logger.info("- When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts")
         logger.info("- This is useful for oncology-specific clinical trial research")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
         logger.info("4. Run benchmark on specific patient: python script.py --patient-id <patient_id>")
-        logger.info("5. Run benchmark with limited trials: python script.py --max-trials 100")
+        logger.info("5. Run benchmark with limited total trials: python script.py --max-trials 100")
         logger.info("6. Run benchmark only on cancer patients: python script.py --cancer-only")
-        logger.info("7. Run benchmark on cancer patients with limited trials: python script.py --cancer-only --max-trials 100")
+        logger.info("7. Run benchmark on cancer patients with limited total trials: python script.py --cancer-only --max-trials 100")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -1395,16 +1414,21 @@ def main():
         benchmark.patients = cancer_patients
         logger.info(f"Found {len(cancer_patients)} cancer patients out of {len(benchmark.patients) + len([p for p in benchmark.patients if p not in cancer_patients])} total patients")
         
-        # If max_trials is specified, we need to sample from cancer-related trials
-        # This ensures that when limiting trials, we only sample from trials relevant to cancer patients
+        # If max_trials is specified, we need to allocate trials proportionally across cancer patients
+        # This ensures that when limiting trials, we allocate based on original trial counts for each cancer patient
         if args.max_trials is not None:
-            logger.info(f"Will sample {args.max_trials} trials from {len(cancer_trial_ids)} cancer-related trials")
+            logger.info(f"Will allocate {args.max_trials} trials proportionally across cancer patients based on their original trial counts")
     
     # Determine the number of trials to use for the benchmark
     num_trials_to_use = args.max_trials if args.max_trials is not None else len(benchmark.trials)
     
+    logger.debug(f"args.max_trials = {args.max_trials}")
+    logger.debug(f"num_trials_to_use = {num_trials_to_use}")
+    logger.debug(f"len(benchmark.trials) = {len(benchmark.trials)}")
+    
     # Sample trials deterministically if max_trials is specified
     if args.max_trials is not None:
+        logger.debug("Entering max-trials logic")
         # Set a fixed seed for deterministic sampling across different executions and devices
         # This ensures that the same trials are selected regardless of:
         # - When the script is run
@@ -1412,29 +1436,89 @@ def main():
         # - The order of trials in the original dataset
         random.seed(42)  # Fixed seed for reproducibility
         
-        # Determine which trials to sample from
-        if args.cancer_only:
-            # When cancer-only is specified, sample from cancer-related trials
-            available_trial_ids = list(cancer_trial_ids)
-            logger.info(f"Sampling from {len(available_trial_ids)} cancer-related trials")
-        else:
-            # Sample from all available trials
-            available_trial_ids = list(benchmark.trials.keys())
-            logger.info(f"Sampling from {len(available_trial_ids)} total trials")
+        # Calculate trial allocation per patient based on original trial counts
+        patient_trial_counts: Dict[str, int] = {}
+        for patient in benchmark.patients:
+            patient_trial_ids: set[str] = set()
+            for judgment in benchmark.relevance_judgments:
+                if judgment.patient_id == patient.patient_id:
+                    patient_trial_ids.add(judgment.trial_id)
+            patient_trial_counts[patient.patient_id] = len(patient_trial_ids)
         
-        # Sort trial IDs to ensure consistent sampling order across different systems
-        # This is crucial because different systems might load trials in different orders
-        sorted_trial_ids = sorted(available_trial_ids)
+        total_original_trials = sum(patient_trial_counts.values())
+        logger.info(f"Original trial distribution across patients:")
+        for patient_id, count in patient_trial_counts.items():
+            logger.info(f"  {patient_id}: {count} trials")
+        logger.info(f"Total original trials: {total_original_trials}")
         
-        # Sample trials deterministically using the sorted list
-        sampled_trial_ids = random.sample(sorted_trial_ids, min(num_trials_to_use, len(sorted_trial_ids)))
+        # Allocate max_trials proportionally across patients
+        patient_trial_allocations: Dict[str, int] = {}
+        remaining_trials = num_trials_to_use
+        
+        for patient_id, original_count in patient_trial_counts.items():
+            if total_original_trials > 0:
+                # Calculate proportional allocation (rounded down)
+                proportional_allocation = int((original_count / total_original_trials) * num_trials_to_use)
+                patient_trial_allocations[patient_id] = proportional_allocation
+                remaining_trials -= proportional_allocation
+            else:
+                patient_trial_allocations[patient_id] = 0
+        
+        # Distribute remaining trials to patients with highest original counts
+        if remaining_trials > 0:
+            sorted_patients = sorted(patient_trial_counts.items(), key=lambda x: x[1], reverse=True)
+            for patient_id, _ in sorted_patients:
+                if remaining_trials > 0:
+                    patient_trial_allocations[patient_id] += 1
+                    remaining_trials -= 1
+                else:
+                    break
+        
+        logger.info(f"Trial allocation with max_trials={num_trials_to_use}:")
+        for patient_id, allocation in patient_trial_allocations.items():
+            logger.info(f"  {patient_id}: {allocation} trials (originally had {patient_trial_counts[patient_id]})")
+        
+        # Sample trials for each patient based on their allocation
+        sampled_trial_ids: set[str] = set()
+        patient_trial_mapping: Dict[str, set[str]] = {}  # Map patient_id to their allocated trials
+        
+        for patient_id, allocation in patient_trial_allocations.items():
+            if allocation > 0:
+                # Get trials for this patient
+                patient_trial_ids: set[str] = set()
+                for judgment in benchmark.relevance_judgments:
+                    if judgment.patient_id == patient_id:
+                        patient_trial_ids.add(judgment.trial_id)
+                
+                # Filter to available trials (those that exist in benchmark.trials)
+                available_patient_trials = patient_trial_ids.intersection(set(benchmark.trials.keys()))
+                
+                if args.cancer_only:
+                    # When cancer-only is specified, only use cancer-related trials for this patient
+                    available_patient_trials = available_patient_trials.intersection(cancer_trial_ids)
+                
+                # Sample from available trials for this patient
+                if len(available_patient_trials) > 0:
+                    sorted_patient_trials = sorted(list(available_patient_trials))
+                    num_to_sample = min(allocation, len(sorted_patient_trials))
+                    sampled_patient_trials = random.sample(sorted_patient_trials, num_to_sample)
+                    sampled_trial_ids.update(sampled_patient_trials)
+                    patient_trial_mapping[patient_id] = set(sampled_patient_trials)
+                    
+                    logger.info(f"  Sampled {num_to_sample} trials for patient {patient_id}")
+                else:
+                    logger.warning(f"  No available trials for patient {patient_id} after filtering")
+                    patient_trial_mapping[patient_id] = set()
+        
+        # Store the patient-trial mapping in the benchmark object for use during evaluation
+        benchmark.patient_trial_mapping = patient_trial_mapping
         
         # Filter trials to only include sampled ones
         benchmark.trials = {k: v for k, v in benchmark.trials.items() if k in sampled_trial_ids}
         
         logger.info(f"Sampled {len(sampled_trial_ids)} trials deterministically for benchmark (seed=42).")
-        logger.info(f"First 5 sampled trial IDs: {sampled_trial_ids[:5]}")
-        logger.info(f"Last 5 sampled trial IDs: {sampled_trial_ids[-5:]}")
+        logger.info(f"First 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[:5]}")
+        logger.info(f"Last 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[-5:]}")
         
         # Re-check coverage after sampling to show updated statistics
         logger.info("Re-checking trial coverage after sampling...")
