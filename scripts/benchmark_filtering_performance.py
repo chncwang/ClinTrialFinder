@@ -108,14 +108,14 @@ class Patient:
         Create a Patient instance from a dictionary.
 
         Args:
-            data: Dictionary containing patient data with keys '_id' and 'medical_record'
+            data: Dictionary containing patient data with keys '_id' and 'text'
 
         Returns:
             Patient instance
         """
         return cls(
             patient_id=data['_id'],
-            medical_record=data['medical_record']
+            medical_record=data['text']
         )
 
     def to_dict(self) -> Dict[str, Any]:
