@@ -91,16 +91,16 @@ class Patient:
     including the patient ID and medical record text content.
     """
 
-    def __init__(self, patient_id: str, text: str):
+    def __init__(self, patient_id: str, medical_record: str):
         """
         Initialize a Patient instance.
 
         Args:
             patient_id: Unique identifier for the patient
-            text: The medical record text describing the patient case
+            medical_record: The medical record text describing the patient case
         """
         self.patient_id = patient_id
-        self.text = text
+        self.medical_record = medical_record
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Patient':
@@ -108,14 +108,14 @@ class Patient:
         Create a Patient instance from a dictionary.
 
         Args:
-            data: Dictionary containing patient data with keys '_id' and 'text'
+            data: Dictionary containing patient data with keys '_id' and 'medical_record'
 
         Returns:
             Patient instance
         """
         return cls(
             patient_id=data['_id'],
-            text=data['text']
+            medical_record=data['medical_record']
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -127,7 +127,7 @@ class Patient:
         """
         return {
             '_id': self.patient_id,
-            'text': self.text
+            'medical_record': self.medical_record
         }
 
     def get_patient_id(self) -> str:
@@ -150,24 +150,24 @@ class Patient:
         Returns:
             Truncated text summary
         """
-        if len(self.text) <= max_length:
-            return self.text
-        return self.text[:max_length] + "..."
+        if len(self.medical_record) <= max_length:
+            return self.medical_record
+        return self.medical_record[:max_length] + "..."
 
     def __str__(self) -> str:
         """String representation of the patient."""
-        return f"Patient(id={self.patient_id}, text='{self.get_text_summary(50)}')"
+        return f"Patient(id={self.patient_id}, medical_record='{self.get_text_summary(50)}')"
 
     def __repr__(self) -> str:
         """Detailed string representation of the patient."""
-        return f"Patient(patient_id='{self.patient_id}', text='{self.text}')"
+        return f"Patient(patient_id='{self.patient_id}', medical_record='{self.medical_record}')"
 
     def __eq__(self, other: Any) -> bool:
         """Check if two patients are equal."""
         if not isinstance(other, Patient):
             return False
         return (self.patient_id == other.patient_id and
-                self.text == other.text)
+                self.medical_record == other.medical_record)
 
     def __hash__(self) -> int:
         """Hash based on patient_id."""
@@ -1038,7 +1038,7 @@ class FilteringBenchmark:
         # Extract disease name if GPT client is available
         disease_name: str = "Unknown"
         if self.gpt_client:
-            disease_name, _ = extract_disease_from_record(patient.text, self.gpt_client)
+            disease_name, _ = extract_disease_from_record(patient.medical_record, self.gpt_client)
         else:
             raise ValueError("GPT client not initialized")
 
@@ -1053,7 +1053,7 @@ class FilteringBenchmark:
             start_time = time.time()
 
             # Extract conditions from patient record
-            conditions = extract_conditions_from_content(patient.text, self.gpt_client)
+            conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
             logger.info(f"Extracted conditions: {conditions}")
 
             # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
@@ -1212,7 +1212,7 @@ class FilteringBenchmark:
         # Extract disease names and record their indices
         disease_data: List[tuple[str, int]] = []
         for i, patient in enumerate(patients_to_process):
-            disease_name = extract_disease_from_record(patient.text, self.gpt_client)[0]
+            disease_name = extract_disease_from_record(patient.medical_record, self.gpt_client)[0]
             disease_data.append((disease_name, i))
 
         disease_names: List[str] = [data[0] for data in disease_data]
@@ -1252,8 +1252,8 @@ class FilteringBenchmark:
                 # Update progress bar description with current patient ID
                 pbar.set_description(f"Processing {patient.patient_id}")
 
-                conditions = extract_conditions_from_content(patient.text, self.gpt_client)
-                logger.info(f"Conditions: {conditions} for patient text: {patient.text}")
+                conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
+                logger.info(f"Conditions: {conditions} for patient medical record: {patient.medical_record}")
 
                 result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
                 results.append(result)
@@ -1443,51 +1443,30 @@ class FilteringBenchmark:
 
         # Log false positive cases
         if false_positive_cases:
-            logger.info("FALSE POSITIVE CASES:")
-            logger.info("-" * 60)
-            for i, (patient_result, trial_result) in enumerate([case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_POSITIVE]):
-                logger.info(f"Case {i+1}:")
-                logger.info(f"  Patient ID: {patient_result.patient_id}")
-                logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
-                logger.info(f"  Trial ID: {trial_result.trial_id}")
-                logger.info(f"  Trial Title: {trial_result.trial_title}")
-                logger.info(f"  Error Type: {trial_result.error_type}")
-                logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
-                logger.info(f"  Reason: {trial_result.reason}")
-                logger.info("")
+            self._log_error_cases("FALSE POSITIVE CASES",
+                                 [case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_POSITIVE])
 
         # Log false negative cases
         if false_negative_cases:
-            logger.info("FALSE NEGATIVE CASES:")
-            logger.info("-" * 60)
-            for i, (patient_result, trial_result) in enumerate([case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_NEGATIVE]):
-                logger.info(f"Case {i+1}:")
-                logger.info(f"  Patient ID: {patient_result.patient_id}")
-                logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
-                logger.info(f"  Trial ID: {trial_result.trial_id}")
-                logger.info(f"  Trial Title: {trial_result.trial_title}")
-                logger.info(f"  Error Type: {trial_result.error_type}")
-                logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
-                logger.info(f"  Reason: {trial_result.reason}")
-                logger.info("")
+            self._log_error_cases("FALSE NEGATIVE CASES",
+                                 [case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_NEGATIVE])
 
-        # Summary statistics
-        logger.info("ERROR CASE SUMMARY:")
+    def _log_error_cases(self, title: str, error_cases: List[tuple[PatientEvaluationResult, TrialEvaluationResult]]) -> None:
+        """Helper method to log error cases with consistent formatting."""
+        logger.info(title)
         logger.info("-" * 60)
-        logger.info(f"Total error cases: {len(all_error_cases)}")
-        logger.info(f"False positives: {len(false_positive_cases)}")
-        logger.info(f"False negatives: {len(false_negative_cases)}")
-
-        # Calculate average probabilities for error cases
-        if false_positive_cases:
-            avg_prob_false_pos = sum(case.suitability_probability for case in false_positive_cases) / len(false_positive_cases)
-            logger.info(f"Average suitability probability for false positives: {avg_prob_false_pos:.4f}")
-
-        if false_negative_cases:
-            avg_prob_false_neg = sum(case.suitability_probability for case in false_negative_cases) / len(false_negative_cases)
-            logger.info(f"Average suitability probability for false negatives: {avg_prob_false_neg:.4f}")
-
-        logger.info("=" * 80)
+        for i, (patient_result, trial_result) in enumerate(error_cases):
+            logger.info(f"Case {i+1}:")
+            logger.info(f"  Patient ID: {patient_result.patient_id}")
+            logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
+            logger.info(f"  Extracted Conditions: {self._get_patient_extracted_conditions(patient_result.patient_id)}")
+            logger.info(f"  Medical Record: {self._get_patient_full_medical_record(patient_result.patient_id)}")
+            logger.info(f"  Trial ID: {trial_result.trial_id}")
+            logger.info(f"  Trial Title: {trial_result.trial_title}")
+            logger.info(f"  Error Type: {trial_result.error_type}")
+            logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
+            logger.info(f"  Reason: {trial_result.reason}")
+            logger.info("")
 
     def _get_patient_disease(self, patient_id: str) -> str:
         """
@@ -1502,7 +1481,7 @@ class FilteringBenchmark:
         for patient in self.patients:
             if patient.patient_id == patient_id:
                 try:
-                    disease_name, _ = extract_disease_from_record(patient.text, self.gpt_client)
+                    disease_name, _ = extract_disease_from_record(patient.medical_record, self.gpt_client)
                     return disease_name
                 except:
                     return "Unknown"
@@ -1578,6 +1557,40 @@ class FilteringBenchmark:
             if patient.patient_id == patient_id:
                 return patient.get_text_summary(200)  # Get first 200 characters
         return "No text available"
+
+    def _get_patient_full_medical_record(self, patient_id: str) -> str:
+        """
+        Get the full medical record for a patient.
+
+        Args:
+            patient_id: Patient identifier
+
+        Returns:
+            Full medical record text or "No medical record available" if not found
+        """
+        for patient in self.patients:
+            if patient.patient_id == patient_id:
+                return patient.medical_record
+        return "No medical record available"
+
+    def _get_patient_extracted_conditions(self, patient_id: str) -> str:
+        """
+        Get the extracted conditions for a patient.
+
+        Args:
+            patient_id: Patient identifier
+
+        Returns:
+            Extracted conditions text or "No conditions available" if not found
+        """
+        for patient in self.patients:
+            if patient.patient_id == patient_id:
+                try:
+                    conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
+                    return str(conditions)
+                except Exception as e:
+                    return f"Error extracting conditions: {str(e)}"
+        return "No conditions available"
 
 
 def main():
@@ -1823,7 +1836,7 @@ def main():
 
         for patient in benchmark.patients:
             try:
-                disease_name = extract_disease_from_record(patient.text, benchmark.gpt_client)[0]
+                disease_name = extract_disease_from_record(patient.medical_record, benchmark.gpt_client)[0]
                 if is_oncology_disease(disease_name):
                     cancer_patients.append(patient)
 
