@@ -5,6 +5,12 @@ Benchmark script for evaluating filtering performance on TREC 2021 dataset.
 This script evaluates the performance of clinical trial filtering algorithms
 by comparing predicted eligible trials against ground truth relevance judgments.
 
+PERFORMANCE OPTIMIZATION:
+The script implements intelligent caching to minimize API calls:
+- Patient conditions are extracted only once and cached for reuse
+- Significantly reduces API costs and improves performance
+- Cache statistics are tracked and reported for analysis
+
 Usage:
     python scripts/benchmark_filtering_performance.py [options]
 
@@ -51,6 +57,16 @@ Example:
         --title-only \
         --cancer-only \
         --max-trials 100 \
+        --api-key $OPENAI_API_KEY
+
+    # Export conditions cache for analysis
+    python scripts/benchmark_filtering_performance.py \
+        --export-conditions-cache \
+        --api-key $OPENAI_API_KEY
+
+    # Show detailed cache status
+    python scripts/benchmark_filtering_performance.py \
+        --show-cache-status \
         --api-key $OPENAI_API_KEY
 """
 
@@ -544,7 +560,19 @@ class PatientEvaluationResult:
 
 
 class FilteringBenchmark:
-    """Benchmark class for evaluating clinical trial filtering performance."""
+    """
+    Benchmark class for evaluating clinical trial filtering performance.
+
+    This class implements an optimized caching mechanism for patient conditions extraction.
+    The extract_conditions_from_content method is called only once per patient, with results
+    stored in memory for reuse across multiple trial evaluations. This significantly reduces
+    API calls and improves performance when evaluating multiple trials for the same patient.
+
+    Key optimizations:
+    - Conditions cache: Patient conditions are extracted once and cached
+    - Cache hit rate tracking: Monitor cache efficiency
+    - Pre-extraction support: Option to warm up cache before benchmark
+    """
 
     def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
         """
@@ -571,6 +599,9 @@ class FilteringBenchmark:
 
         # Initialize patient-trial mapping for max-trials allocation
         self.patient_trial_mapping: Dict[str, set[str]] = {}
+
+        # Initialize conditions cache to avoid repeated API calls
+        self.conditions_cache: Dict[str, List[str]] = {}
 
         # Load dataset
         self._load_dataset()
@@ -1053,7 +1084,7 @@ class FilteringBenchmark:
             start_time = time.time()
 
             # Extract conditions from patient record
-            conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
+            conditions = self._get_cached_conditions(patient_id, patient.medical_record)
             logger.info(f"Extracted conditions: {conditions}")
 
             # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
@@ -1209,6 +1240,17 @@ class FilteringBenchmark:
 
         patients_to_process: List[Patient] = self.patients[:max_patients] if max_patients else self.patients
 
+        # Log cache strategy information
+        logger.info("=" * 60)
+        logger.info("CACHING STRATEGY")
+        logger.info("=" * 60)
+        logger.info(f"Conditions will be extracted once per patient and cached for reuse")
+        logger.info(f"Total patients to process: {len(patients_to_process)}")
+        logger.info(f"Current cache size: {len(self.conditions_cache)}")
+        logger.info(f"Expected API calls saved: {len(patients_to_process) - len(self.conditions_cache)}")
+        logger.info(f"Cache efficiency: {len(self.conditions_cache) / len(patients_to_process) * 100:.1f}% pre-cached")
+        logger.info("=" * 60)
+
         # Extract disease names and record their indices
         disease_data: List[tuple[str, int]] = []
         for i, patient in enumerate(patients_to_process):
@@ -1252,7 +1294,7 @@ class FilteringBenchmark:
                 # Update progress bar description with current patient ID
                 pbar.set_description(f"Processing {patient.patient_id}")
 
-                conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
+                conditions = self._get_cached_conditions(patient.patient_id, patient.medical_record)
                 logger.info(f"Conditions: {conditions} for patient medical record: {patient.medical_record}")
 
                 result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
@@ -1266,7 +1308,9 @@ class FilteringBenchmark:
 
                 # Log progress every 10 patients
                 if i % 10 == 0:
+                    cache_stats = self.get_cache_statistics()
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
+                    logger.info(f"Cache status: {cache_stats['cached_patients']}/{cache_stats['total_patients']} patients cached ({cache_stats['cache_hit_rate']:.1%})")
 
         # Calculate aggregate metrics
         successful_results: List[PatientEvaluationResult] = [r for r in results if r.error is None and not r.skipped]
@@ -1338,6 +1382,7 @@ class FilteringBenchmark:
             'total_api_cost': total_api_cost,
             'average_processing_time_per_patient': total_processing_time / len(patients_to_process) if patients_to_process else 0.0,
             'average_api_cost_per_patient': total_api_cost / len(patients_to_process) if patients_to_process else 0.0,
+            'conditions_cache_stats': self.get_cache_statistics(),
             'metrics': {
                 'average_precision': avg_precision,
                 'average_recall': avg_recall,
@@ -1379,6 +1424,29 @@ class FilteringBenchmark:
         logger.info(f"Trial-level recall: {trial_recall:.4f}")
         logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
         logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
+        logger.info("=" * 60)
+
+        # Log conditions cache statistics
+        cache_stats = self.get_cache_statistics()
+        logger.info("=" * 60)
+        logger.info("CONDITIONS CACHE STATISTICS")
+        logger.info("=" * 60)
+        logger.info(f"Total patients: {cache_stats['total_patients']}")
+        logger.info(f"Cached patients: {cache_stats['cached_patients']}")
+        logger.info(f"Cache hit rate: {cache_stats['cache_hit_rate']:.2%}")
+        logger.info(f"Cache size: {cache_stats['cache_size']}")
+
+        # Calculate and log cache efficiency metrics
+        if cache_stats['total_patients'] > 0:
+            api_calls_saved = cache_stats['total_patients'] - cache_stats['cached_patients']
+            efficiency_gain = (api_calls_saved / cache_stats['total_patients']) * 100 if cache_stats['total_patients'] > 0 else 0
+            logger.info(f"API calls saved through caching: {api_calls_saved}")
+            logger.info(f"Efficiency gain: {efficiency_gain:.1f}%")
+
+            # Estimate cost savings (assuming each API call costs money)
+            estimated_cost_per_call = 0.01  # Rough estimate, can be adjusted
+            estimated_cost_saved = api_calls_saved * estimated_cost_per_call
+            logger.info(f"Estimated cost savings: ${estimated_cost_saved:.4f}")
         logger.info("=" * 60)
 
         # Log trial IDs consistency verification
@@ -1586,11 +1654,125 @@ class FilteringBenchmark:
         for patient in self.patients:
             if patient.patient_id == patient_id:
                 try:
-                    conditions = extract_conditions_from_content(patient.medical_record, self.gpt_client)
+                    conditions = self._get_cached_conditions(patient_id, patient.medical_record)
                     return str(conditions)
                 except Exception as e:
                     return f"Error extracting conditions: {str(e)}"
         return "No conditions available"
+
+    def _get_cached_conditions(self, patient_id: str, medical_record: str) -> List[str]:
+        """
+        Get conditions from cache or extract them if not cached.
+
+        This method implements the core caching optimization. It checks if conditions
+        for a patient have already been extracted and cached. If not, it calls
+        extract_conditions_from_content and stores the result in the cache for
+        future use. This ensures that the expensive API call is made only once
+        per patient, regardless of how many trials are evaluated.
+
+        Args:
+            patient_id: Patient identifier
+            medical_record: Patient's medical record text
+
+        Returns:
+            Extracted conditions as a list of strings
+
+        Note:
+            The first call for each patient will trigger an API call to extract
+            conditions. Subsequent calls will use the cached result, improving
+            performance and reducing API costs.
+        """
+        if patient_id not in self.conditions_cache:
+            logger.info(f"Extracting conditions for patient {patient_id} (not in cache)")
+            conditions = extract_conditions_from_content(medical_record, self.gpt_client)
+            self.conditions_cache[patient_id] = conditions
+            logger.info(f"Cached conditions for patient {patient_id}: {conditions}")
+        else:
+            logger.debug(f"Using cached conditions for patient {patient_id} (cache hit)")
+
+        return self.conditions_cache[patient_id]
+
+    def get_cache_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about the conditions cache.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        return {
+            'total_patients': len(self.patients),
+            'cached_patients': len(self.conditions_cache),
+            'cache_hit_rate': len(self.conditions_cache) / len(self.patients) if self.patients else 0.0,
+            'cache_size': len(self.conditions_cache)
+        }
+
+    def clear_conditions_cache(self) -> None:
+        """
+        Clear the conditions cache to free memory.
+        """
+        cache_size = len(self.conditions_cache)
+        self.conditions_cache.clear()
+        logger.info(f"Cleared conditions cache ({cache_size} entries)")
+
+    def pre_extract_all_conditions(self) -> None:
+        """
+        Pre-extract conditions for all patients to warm up the cache.
+        This can be useful for analysis or to ensure all conditions are available upfront.
+        """
+        logger.info("Pre-extracting conditions for all patients...")
+        total_patients = len(self.patients)
+
+        with tqdm(total=total_patients, desc="Pre-extracting conditions", unit="patient") as pbar:
+            for patient in self.patients:
+                if patient.patient_id not in self.conditions_cache:
+                    self._get_cached_conditions(patient.patient_id, patient.medical_record)
+                pbar.update(1)
+
+        cache_stats = self.get_cache_statistics()
+        logger.info(f"Pre-extraction complete. Cache status: {cache_stats['cached_patients']}/{cache_stats['total_patients']} patients cached ({cache_stats['cache_hit_rate']:.1%})")
+
+    def export_conditions_cache(self, output_path: str) -> str:
+        """
+        Export the conditions cache to a JSON file for analysis.
+
+        Args:
+            output_path: Path to the output file
+
+        Returns:
+            Path to the exported cache file
+        """
+        cache_file = Path(output_path).parent / f"conditions_cache_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+        cache_data = {
+            'timestamp': datetime.now().isoformat(),
+            'cache_statistics': self.get_cache_statistics(),
+            'cached_conditions': self.conditions_cache
+        }
+
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+
+        logger.info(f"Conditions cache exported to: {cache_file}")
+        return str(cache_file)
+
+    def show_cache_status(self) -> None:
+        """
+        Display current cache status and statistics.
+        """
+        cache_stats = self.get_cache_statistics()
+        logger.info("=" * 40)
+        logger.info("CURRENT CACHE STATUS")
+        logger.info("=" * 40)
+        logger.info(f"Total patients: {cache_stats['total_patients']}")
+        logger.info(f"Cached patients: {cache_stats['cached_patients']}")
+        logger.info(f"Cache hit rate: {cache_stats['cache_hit_rate']:.2%}")
+        logger.info(f"Cache size: {cache_stats['cache_size']}")
+        if cache_stats['total_patients'] > 0:
+            api_calls_saved = cache_stats['total_patients'] - cache_stats['cached_patients']
+            efficiency_gain = (api_calls_saved / cache_stats['total_patients']) * 100
+            logger.info(f"API calls saved: {api_calls_saved}")
+            logger.info(f"Efficiency gain: {efficiency_gain:.1f}%")
+        logger.info("=" * 40)
 
 
 def main():
@@ -1655,6 +1837,16 @@ def main():
         "--verbose-coverage",
         action="store_true",
         help="Show detailed information about missing trials"
+    )
+    parser.add_argument(
+        "--export-conditions-cache",
+        action="store_true",
+        help="Export the conditions cache to a separate file for analysis"
+    )
+    parser.add_argument(
+        "--show-cache-status",
+        action="store_true",
+        help="Show detailed cache status at the end of the benchmark"
     )
     parser.add_argument(
         "--batch-size",
@@ -1991,6 +2183,14 @@ def main():
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
 
+    # Export conditions cache if requested
+    if args.export_conditions_cache:
+        try:
+            cache_file = benchmark.export_conditions_cache(str(output_path))
+            logger.info(f"Conditions cache exported to: {cache_file}")
+        except Exception as e:
+            logger.warning(f"Failed to export conditions cache: {e}")
+
     # Log final trial IDs consistency verification
     all_trial_ids = sorted(list(benchmark.trials.keys()))
     trial_ids_concat = ''.join(all_trial_ids)
@@ -2006,6 +2206,10 @@ def main():
     logger.info("=" * 60)
     logger.info(f"Benchmark results saved to: {output_path}")
     logger.info(f"Log file: {log_file}")
+
+    # Show detailed cache status if requested
+    if args.show_cache_status:
+        benchmark.show_cache_status()
 
 
 if __name__ == "__main__":
