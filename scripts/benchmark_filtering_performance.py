@@ -1085,7 +1085,9 @@ class FilteringBenchmark:
 
             # Extract conditions from patient record
             conditions = self._get_cached_conditions(patient_id, patient.medical_record)
-            logger.info(f"Extracted conditions: {conditions}")
+            logger.info(f"Extracted conditions:")
+            for condition in conditions:
+                logger.info(f"  - {condition}")
 
             # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
             if hasattr(self, 'patient_trial_mapping') and self.patient_trial_mapping:
@@ -1527,7 +1529,13 @@ class FilteringBenchmark:
             logger.info(f"Case {i+1}:")
             logger.info(f"  Patient ID: {patient_result.patient_id}")
             logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
-            logger.info(f"  Extracted Conditions: {self._get_patient_extracted_conditions(patient_result.patient_id)}")
+            conditions = self._get_patient_extracted_conditions(patient_result.patient_id)
+            if conditions:
+                logger.info(f"  Extracted Conditions:")
+                for condition in conditions:
+                    logger.info(f"    - {condition}")
+            else:
+                logger.info(f"  Extracted Conditions: No conditions available")
             logger.info(f"  Medical Record: {self._get_patient_full_medical_record(patient_result.patient_id)}")
             logger.info(f"  Trial ID: {trial_result.trial_id}")
             logger.info(f"  Trial Title: {trial_result.trial_title}")
@@ -1641,7 +1649,7 @@ class FilteringBenchmark:
                 return patient.medical_record
         return "No medical record available"
 
-    def _get_patient_extracted_conditions(self, patient_id: str) -> str:
+    def _get_patient_extracted_conditions(self, patient_id: str) -> List[str]:
         """
         Get the extracted conditions for a patient.
 
@@ -1649,16 +1657,17 @@ class FilteringBenchmark:
             patient_id: Patient identifier
 
         Returns:
-            Extracted conditions text or "No conditions available" if not found
+            List of extracted conditions or empty list if not found
         """
         for patient in self.patients:
             if patient.patient_id == patient_id:
                 try:
                     conditions = self._get_cached_conditions(patient_id, patient.medical_record)
-                    return str(conditions)
+                    return conditions
                 except Exception as e:
-                    return f"Error extracting conditions: {str(e)}"
-        return "No conditions available"
+                    logger.error(f"Error extracting conditions for patient {patient_id}: {str(e)}")
+                    return []
+        return []
 
     def _get_cached_conditions(self, patient_id: str, medical_record: str) -> List[str]:
         """
