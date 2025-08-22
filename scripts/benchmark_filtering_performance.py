@@ -376,8 +376,7 @@ class PatientEvaluationResult:
     A class to represent the results of evaluating filtering performance for a single patient.
 
     This class encapsulates all the metrics and information from evaluating a patient's
-    clinical trial filtering performance, including precision, recall, F1-score, and
-    processing statistics.
+    clinical trial filtering performance, including processing statistics.
     """
 
     def __init__(self,
@@ -388,10 +387,6 @@ class PatientEvaluationResult:
                  true_positives: int,
                  false_positives: int,
                  false_negatives: int,
-                 precision: float,
-                 recall: float,
-                 f1_score: float,
-                 accuracy: float,
                  processing_time: float,
                  api_cost: float,
                  error: Optional[str] = None,
@@ -409,10 +404,6 @@ class PatientEvaluationResult:
             true_positives: Number of true positive predictions
             false_positives: Number of false positive predictions
             false_negatives: Number of false negative predictions
-            precision: Precision score (0.0 to 1.0)
-            recall: Recall score (0.0 to 1.0)
-            f1_score: F1 score (0.0 to 1.0)
-            accuracy: Accuracy score (0.0 to 1.0)
             processing_time: Time taken to process the patient (seconds)
             api_cost: Total API cost for processing the patient
             error: Error message if processing failed, None if successful
@@ -427,10 +418,6 @@ class PatientEvaluationResult:
         self.true_positives = true_positives
         self.false_positives = false_positives
         self.false_negatives = false_negatives
-        self.precision = precision
-        self.recall = recall
-        self.f1_score = f1_score
-        self.accuracy = accuracy
         self.processing_time = processing_time
         self.api_cost = api_cost
         self.error = error
@@ -474,10 +461,6 @@ class PatientEvaluationResult:
             true_positives=metrics['true_positives'],
             false_positives=metrics['false_positives'],
             false_negatives=metrics['false_negatives'],
-            precision=metrics['precision'],
-            recall=metrics['recall'],
-            f1_score=metrics['f1_score'],
-            accuracy=metrics['accuracy'],
             processing_time=processing_time,
             api_cost=total_api_cost,
             error=None,
@@ -511,10 +494,6 @@ class PatientEvaluationResult:
             true_positives=0,
             false_positives=0,
             false_negatives=0,
-            precision=0.0,
-            recall=0.0,
-            f1_score=0.0,
-            accuracy=0.0,
             processing_time=0.0,
             api_cost=0.0,
             error=error_message,
@@ -536,10 +515,6 @@ class PatientEvaluationResult:
             'true_positives': self.true_positives,
             'false_positives': self.false_positives,
             'false_negatives': self.false_negatives,
-            'precision': self.precision,
-            'recall': self.recall,
-            'f1_score': self.f1_score,
-            'accuracy': self.accuracy,
             'processing_time': self.processing_time,
             'api_cost': self.api_cost,
             'error': self.error,
@@ -569,8 +544,7 @@ class PatientEvaluationResult:
         """String representation of the evaluation result."""
         if self.is_successful():
             return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
-                   f"precision={self.precision:.3f}, recall={self.recall:.3f}, "
-                   f"f1={self.f1_score:.3f}, time={self.processing_time:.2f}s)")
+                   f"time={self.processing_time:.2f}s)")
         else:
             return f"PatientEvaluationResult(patient_id='{self.patient_id}', error='{self.error}')"
 
@@ -583,8 +557,6 @@ class PatientEvaluationResult:
                f"true_positives={self.true_positives}, "
                f"false_positives={self.false_positives}, "
                f"false_negatives={self.false_negatives}, "
-               f"precision={self.precision}, recall={self.recall}, "
-               f"f1_score={self.f1_score}, accuracy={self.accuracy}, "
                f"processing_time={self.processing_time}, api_cost={self.api_cost}, "
                f"error={self.error}, skipped={self.skipped})")
 
@@ -1051,7 +1023,7 @@ class FilteringBenchmark:
 
     def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
         """
-        Calculate precision, recall, F1-score, and accuracy.
+        Calculate basic metrics.
 
         Args:
             predicted_eligible: List of predicted eligible trial IDs
@@ -1067,16 +1039,7 @@ class FilteringBenchmark:
         false_positives = len(predicted_set - ground_truth_set)
         false_negatives = len(ground_truth_set - predicted_set)
 
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        accuracy = true_positives / len(ground_truth_set) if ground_truth_set else 0.0
-
         return {
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'accuracy': accuracy,
             'true_positives': true_positives,
             'false_positives': false_positives,
             'false_negatives': false_negatives
@@ -1347,7 +1310,6 @@ class FilteringBenchmark:
 
             evaluation_method = "title check" if title_only else "full evaluation (title + inclusion criteria)"
             logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed {evaluation_method} out of {len(all_trial_ids)} total trials")
-            logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
 
             # Log error metrics for this patient if available
             if error_metrics:
@@ -1466,15 +1428,9 @@ class FilteringBenchmark:
             logger.warning(f"Failed result: {failed_result}")
 
         if successful_results:
-            avg_precision = sum(r.precision for r in successful_results) / len(successful_results)
-            avg_recall = sum(r.recall for r in successful_results) / len(successful_results)
-            avg_f1 = sum(r.f1_score for r in successful_results) / len(successful_results)
-            avg_accuracy = sum(r.accuracy for r in successful_results) / len(successful_results)
-
             # Calculate aggregate error metrics across all patients
             aggregate_error_metrics = self.calculate_aggregate_error_metrics(successful_results)
         else:
-            avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
             aggregate_error_metrics = {}
 
         # Calculate trial-level metrics (across all trials regardless of patients)
@@ -1484,20 +1440,9 @@ class FilteringBenchmark:
                 all_trial_results.extend(result.trial_evaluation_results)
 
         if all_trial_results:
-            # Calculate trial-level precision, recall, and F1
-            trial_true_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and trial.ground_truth_relevant)
-            trial_false_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and not trial.ground_truth_relevant)
-            trial_false_negatives = sum(1 for trial in all_trial_results if not trial.predicted_eligible and trial.ground_truth_relevant)
-
-            trial_precision = trial_true_positives / (trial_true_positives + trial_false_positives) if (trial_true_positives + trial_false_positives) > 0 else 0.0
-            trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
-            trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
-            trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
-
             # Calculate error metrics that consider relevance score severity
             error_metrics = self.calculate_error_metrics(all_trial_results)
         else:
-            trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
             error_metrics = {}
 
         # Get trial coverage statistics
@@ -1537,20 +1482,9 @@ class FilteringBenchmark:
             'average_processing_time_per_patient': total_processing_time / len(patients_to_process) if patients_to_process else 0.0,
             'average_api_cost_per_patient': total_api_cost / len(patients_to_process) if patients_to_process else 0.0,
             'conditions_cache_stats': self.get_cache_statistics(),
-            'metrics': {
-                'average_precision': avg_precision,
-                'average_recall': avg_recall,
-                'average_f1_score': avg_f1,
-                'average_accuracy': avg_accuracy
-            },
+            'metrics': {},
             'aggregate_error_metrics': aggregate_error_metrics,
-            'trial_level_metrics': {
-                'trial_precision': trial_precision,
-                'trial_recall': trial_recall,
-                'trial_f1_score': trial_f1,
-                'trial_accuracy': trial_accuracy,
-                'total_trials_evaluated': len(all_trial_results)
-            },
+
             'error_metrics': error_metrics,
             'detailed_results': [r.to_dict() for r in results]
         }
@@ -1567,9 +1501,7 @@ class FilteringBenchmark:
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
         logger.info(f"Total processing time: {total_processing_time:.2f}s")
         logger.info(f"Total API cost: ${total_api_cost:.4f}")
-        logger.info(f"Average precision: {avg_precision:.4f}")
-        logger.info(f"Average recall: {avg_recall:.4f}")
-        logger.info(f"Average F1-score: {avg_f1:.4f}")
+
 
         # Log aggregate error metrics if available
         if aggregate_error_metrics:
@@ -1580,17 +1512,6 @@ class FilteringBenchmark:
             logger.info(f"Root Mean Square Error: {aggregate_error_metrics.get('root_mean_square_error', 0.0):.4f}")
             logger.info(f"Cost-sensitive accuracy: {aggregate_error_metrics.get('cost_sensitive_accuracy', 0.0):.4f}")
             logger.info("=" * 60)
-
-        # Log trial-level metrics
-        logger.info("=" * 60)
-        logger.info("TRIAL-LEVEL METRICS (across all trials regardless of patients)")
-        logger.info("=" * 60)
-        logger.info(f"Total trials evaluated: {len(all_trial_results)}")
-        logger.info(f"Trial-level precision: {trial_precision:.4f}")
-        logger.info(f"Trial-level recall: {trial_recall:.4f}")
-        logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
-        logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
-        logger.info("=" * 60)
 
         # Log error metrics that consider relevance score severity
         if error_metrics:
