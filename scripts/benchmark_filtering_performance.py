@@ -1141,16 +1141,15 @@ class FilteringBenchmark:
                             suitability_probability: float = 1.0
                             reason: str = "Trial passed full evaluation (title + inclusion criteria)"
                         else:
+                            if failure_reason is None:
+                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
                             suitability_probability: float = 0.0
                             if not failure_reason:
                                 raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
-                            if not failure_reason.failed_condition:
-                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failed condition was recorded")
-                            if not failure_reason.failed_criterion:
-                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failed criterion was recorded")
-                            if not failure_reason.failure_details:
-                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure details were recorded")
-                            reason: str = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failure_reason.failed_condition}\n failed_criterion: {failure_reason.failed_criterion}\n failure_details: {failure_reason.failure_details} "
+                            failure_details: str = failure_reason.failure_details if failure_reason.failure_details else 'Empty'
+                            failed_condition: str = failure_reason.failed_condition if failure_reason.failed_condition else 'Empty'
+                            failed_criterion: str = failure_reason.failed_criterion if failure_reason.failed_criterion else 'Empty'
+                            reason: str = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failed_condition}\n failed_criterion: {failed_criterion}\n failure_details: {failure_details} "
                         logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
                     total_api_cost += cost
@@ -1179,6 +1178,7 @@ class FilteringBenchmark:
 
                 except Exception as e:
                     logger.warning(f"Error evaluating trial {trial_id}: {str(e)}")
+                    raise e
                     # Get trial title safely, fallback to trial_id if trial object is not available
                     trial_title = trial_id
                     try:
