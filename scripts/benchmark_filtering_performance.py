@@ -5,6 +5,10 @@ Benchmark script for evaluating filtering performance on TREC 2021 dataset.
 This script evaluates the performance of clinical trial filtering algorithms
 by comparing predicted eligible trials against ground truth relevance judgments.
 
+OUTPUT FILES:
+- JSON results file with comprehensive benchmark metrics
+- CSV file with trial-level predictions and labels (patient_id, trial_id, predicted, label)
+
 PERFORMANCE OPTIMIZATION:
 The script implements intelligent caching to minimize API calls:
 - Patient conditions are extracted only once and cached for reuse
@@ -68,6 +72,10 @@ Example:
     python scripts/benchmark_filtering_performance.py \
         --show-cache-status \
         --api-key $OPENAI_API_KEY
+
+    # Note: All benchmark runs automatically export a CSV file with trial-level predictions
+    # The CSV contains: patient_id, trial_id, predicted (0/1), label (0/1/2)
+    # CSV filename: {output_filename}_trial_predictions.csv
 """
 
 import argparse
@@ -388,7 +396,8 @@ class PatientEvaluationResult:
                  api_cost: float,
                  error: Optional[str] = None,
                  skipped: bool = False,
-                 trial_evaluation_results: Optional[List['TrialEvaluationResult']] = None):
+                 trial_evaluation_results: Optional[List['TrialEvaluationResult']] = None,
+                 weighted_metrics: Optional[Dict[str, float]] = None):
         """
         Initialize a PatientEvaluationResult instance.
 
@@ -409,6 +418,7 @@ class PatientEvaluationResult:
             error: Error message if processing failed, None if successful
             skipped: Whether the patient was skipped during processing
             trial_evaluation_results: List of individual trial evaluation results
+            weighted_metrics: Dictionary containing weighted and graded metrics
         """
         self.patient_id = patient_id
         self.ground_truth_count = ground_truth_count
@@ -426,6 +436,7 @@ class PatientEvaluationResult:
         self.error = error
         self.skipped = skipped
         self.trial_evaluation_results = trial_evaluation_results or []
+        self.weighted_metrics = weighted_metrics or {}
 
     @classmethod
     def create_success_result(cls,
@@ -436,7 +447,8 @@ class PatientEvaluationResult:
                             metrics: Dict[str, Any],
                             processing_time: float,
                             total_api_cost: float,
-                            trial_evaluation_results: List['TrialEvaluationResult']) -> 'PatientEvaluationResult':
+                            trial_evaluation_results: List['TrialEvaluationResult'],
+                            weighted_metrics: Optional[Dict[str, float]] = None) -> 'PatientEvaluationResult':
         """
         Create a successful evaluation result.
 
@@ -449,6 +461,7 @@ class PatientEvaluationResult:
             processing_time: Time taken to process the patient
             total_api_cost: Total API cost for processing
             trial_evaluation_results: List of individual trial evaluation results
+            weighted_metrics: Dictionary containing weighted and graded metrics
 
         Returns:
             PatientEvaluationResult instance for successful evaluation
@@ -468,7 +481,8 @@ class PatientEvaluationResult:
             processing_time=processing_time,
             api_cost=total_api_cost,
             error=None,
-            skipped=False
+            skipped=False,
+            weighted_metrics=weighted_metrics
         )
         result.trial_evaluation_results = trial_evaluation_results
         return result
@@ -535,6 +549,10 @@ class PatientEvaluationResult:
         # Add trial evaluation results if available
         if hasattr(self, 'trial_evaluation_results') and self.trial_evaluation_results:
             result_dict['trial_evaluation_results'] = [trial.to_dict() for trial in self.trial_evaluation_results]
+
+        # Add weighted metrics if available
+        if hasattr(self, 'weighted_metrics') and self.weighted_metrics:
+            result_dict['weighted_metrics'] = self.weighted_metrics
 
         return result_dict
 
@@ -1064,6 +1082,96 @@ class FilteringBenchmark:
             'false_negatives': false_negatives
         }
 
+    def calculate_error_metrics(self, trial_results: List[TrialEvaluationResult]) -> Dict[str, float]:
+        """
+        Calculate error metrics that consider the severity of misclassifications.
+
+        This method assigns higher penalties for misclassifying high-relevance trials (score 2)
+        compared to low-relevance trials (score 1).
+
+        Args:
+            trial_results: List of TrialEvaluationResult objects with original_relevance_score
+
+        Returns:
+            Dictionary with error metrics and cost-sensitive accuracy
+        """
+        if not trial_results:
+            return {
+                'mean_absolute_error': 0.0,
+                'root_mean_square_error': 0.0,
+                'cost_sensitive_accuracy': 0.0
+            }
+
+
+
+        # For graded metrics
+        squared_errors: List[float] = []
+        absolute_errors: List[float] = []
+
+        # For cost-sensitive metrics
+        total_cost = 0.0
+        max_possible_cost = 0.0
+
+        for result in trial_results:
+            if result.original_relevance_score is None:
+                continue
+
+            actual_score: int = result.original_relevance_score
+            predicted_score: int = 1 if result.predicted_eligible else 0
+
+            aligned_actual_score: float = 0.5 * actual_score
+            error: float = abs(predicted_score - aligned_actual_score)
+            absolute_errors.append(error)
+            squared_errors.append(error ** 2)
+
+            normalized_actual_score: float = 0.5 * actual_score
+
+            # Calculate cost using absolute difference
+            cost = abs(normalized_actual_score - predicted_score)
+
+            total_cost += cost
+            max_possible_cost += 1  # Maximum cost per trial
+
+        # Calculate graded metrics
+        mean_absolute_error = sum(absolute_errors) / len(absolute_errors) if absolute_errors else 0.0
+        root_mean_square_error = (sum(squared_errors) / len(squared_errors)) ** 0.5 if squared_errors else 0.0
+
+        # Calculate cost-sensitive accuracy
+        cost_sensitive_accuracy = 1.0 - (total_cost / max_possible_cost) if max_possible_cost > 0 else 0.0
+
+        return {
+            'mean_absolute_error': mean_absolute_error,
+            'root_mean_square_error': root_mean_square_error,
+            'cost_sensitive_accuracy': cost_sensitive_accuracy,
+            'total_cost': total_cost,
+            'max_possible_cost': max_possible_cost
+        }
+
+    def calculate_aggregate_error_metrics(self, patient_results: List[PatientEvaluationResult]) -> Dict[str, float]:
+        """
+        Calculate aggregate error metrics across all patients.
+
+        This method aggregates the error metrics from individual patient evaluations
+        to provide overall performance measures.
+
+        Args:
+            patient_results: List of successful PatientEvaluationResult objects
+
+        Returns:
+            Dictionary with aggregate error metrics
+        """
+        if not patient_results:
+            return {}
+
+        # Collect all trial results from all patients
+        all_trial_results: List[TrialEvaluationResult] = []
+        for patient_result in patient_results:
+            if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results:
+                all_trial_results.extend(patient_result.trial_evaluation_results)
+
+        # Calculate overall error metrics
+        return self.calculate_error_metrics(all_trial_results)
+
     def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> PatientEvaluationResult:
         """
         Evaluate filtering performance for a single patient.
@@ -1234,9 +1342,16 @@ class FilteringBenchmark:
             # Calculate performance metrics
             metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
 
+            # Calculate error metrics for this patient
+            error_metrics = self.calculate_error_metrics(trial_evaluation_results)
+
             evaluation_method = "title check" if title_only else "full evaluation (title + inclusion criteria)"
             logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed {evaluation_method} out of {len(all_trial_ids)} total trials")
             logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
+
+            # Log error metrics for this patient if available
+            if error_metrics:
+                logger.info(f"Error metrics: MAE={error_metrics.get('mean_absolute_error', 0.0):.3f}")
 
             return PatientEvaluationResult.create_success_result(
                 patient_id=patient_id,
@@ -1246,7 +1361,8 @@ class FilteringBenchmark:
                 metrics=metrics,
                 processing_time=processing_time,
                 total_api_cost=total_api_cost,
-                trial_evaluation_results=trial_evaluation_results
+                trial_evaluation_results=trial_evaluation_results,
+                weighted_metrics=error_metrics
             )
 
         except Exception as e:
@@ -1354,8 +1470,12 @@ class FilteringBenchmark:
             avg_recall = sum(r.recall for r in successful_results) / len(successful_results)
             avg_f1 = sum(r.f1_score for r in successful_results) / len(successful_results)
             avg_accuracy = sum(r.accuracy for r in successful_results) / len(successful_results)
+
+            # Calculate aggregate error metrics across all patients
+            aggregate_error_metrics = self.calculate_aggregate_error_metrics(successful_results)
         else:
             avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
+            aggregate_error_metrics = {}
 
         # Calculate trial-level metrics (across all trials regardless of patients)
         all_trial_results: List[TrialEvaluationResult] = []
@@ -1373,8 +1493,12 @@ class FilteringBenchmark:
             trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
             trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
             trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
+
+            # Calculate error metrics that consider relevance score severity
+            error_metrics = self.calculate_error_metrics(all_trial_results)
         else:
             trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
+            error_metrics = {}
 
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
@@ -1419,6 +1543,7 @@ class FilteringBenchmark:
                 'average_f1_score': avg_f1,
                 'average_accuracy': avg_accuracy
             },
+            'aggregate_error_metrics': aggregate_error_metrics,
             'trial_level_metrics': {
                 'trial_precision': trial_precision,
                 'trial_recall': trial_recall,
@@ -1426,6 +1551,7 @@ class FilteringBenchmark:
                 'trial_accuracy': trial_accuracy,
                 'total_trials_evaluated': len(all_trial_results)
             },
+            'error_metrics': error_metrics,
             'detailed_results': [r.to_dict() for r in results]
         }
 
@@ -1445,6 +1571,16 @@ class FilteringBenchmark:
         logger.info(f"Average recall: {avg_recall:.4f}")
         logger.info(f"Average F1-score: {avg_f1:.4f}")
 
+        # Log aggregate error metrics if available
+        if aggregate_error_metrics:
+            logger.info("=" * 60)
+            logger.info("AGGREGATE ERROR METRICS (across all patients)")
+            logger.info("=" * 60)
+            logger.info(f"Mean Absolute Error: {aggregate_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+            logger.info(f"Root Mean Square Error: {aggregate_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            logger.info(f"Cost-sensitive accuracy: {aggregate_error_metrics.get('cost_sensitive_accuracy', 0.0):.4f}")
+            logger.info("=" * 60)
+
         # Log trial-level metrics
         logger.info("=" * 60)
         logger.info("TRIAL-LEVEL METRICS (across all trials regardless of patients)")
@@ -1455,6 +1591,18 @@ class FilteringBenchmark:
         logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
         logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
         logger.info("=" * 60)
+
+        # Log error metrics that consider relevance score severity
+        if error_metrics:
+            logger.info("=" * 60)
+            logger.info("ERROR METRICS (considering relevance score severity)")
+            logger.info("=" * 60)
+            logger.info(f"Mean Absolute Error: {error_metrics.get('mean_absolute_error', 0.0):.4f}")
+            logger.info(f"Root Mean Square Error: {error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            logger.info(f"Cost-sensitive accuracy: {error_metrics.get('cost_sensitive_accuracy', 0.0):.4f}")
+            logger.info(f"Total cost: {error_metrics.get('total_cost', 0.0):.1f}")
+            logger.info(f"Maximum possible cost: {error_metrics.get('max_possible_cost', 0.0):.1f}")
+            logger.info("=" * 60)
 
         # Log conditions cache statistics
         cache_stats = self.get_cache_statistics()
@@ -1812,6 +1960,46 @@ class FilteringBenchmark:
             logger.info(f"API calls saved: {api_calls_saved}")
             logger.info(f"Efficiency gain: {efficiency_gain:.1f}%")
         logger.info("=" * 40)
+
+    def export_trial_predictions_csv(self, csv_path: str, results: List['PatientEvaluationResult']) -> None:
+        """
+        Export trial-level predictions and labels to a CSV file.
+
+        The CSV contains:
+        1. patient_id: The patient identifier
+        2. trial_id: The trial identifier
+        3. predicted: Predicted eligibility (0 or 1)
+        4. label: Ground truth relevance score (0, 1, or 2)
+
+        Args:
+            csv_path: Path to the output CSV file
+            results: List of PatientEvaluationResult objects from the benchmark
+        """
+        import csv
+        from typing import Dict, Any
+
+        # Collect all trial evaluation results from all patients
+        all_trial_results: List[Dict[str, Any]] = []
+        for result in results:
+            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
+                for trial_result in result.trial_evaluation_results:
+                    all_trial_results.append({
+                        'patient_id': result.patient_id,
+                        'trial_id': trial_result.trial_id,
+                        'predicted': 1 if trial_result.predicted_eligible else 0,
+                        'label': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'
+                    })
+
+        # Write to CSV
+        with open(csv_path, 'w', newline='') as csvfile:
+            fieldnames = ['patient_id', 'trial_id', 'predicted', 'label']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for row in all_trial_results:
+                writer.writerow(row)
+
+        logger.info(f"Exported {len(all_trial_results)} trial predictions to CSV: {csv_path}")
 
 
 def main():
@@ -2221,6 +2409,11 @@ def main():
     # Save results
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
+
+    # Export CSV with trial-level predictions and labels
+    csv_output_path = str(output_path).replace('.json', '_trial_predictions.csv')
+    benchmark.export_trial_predictions_csv(csv_output_path, results['detailed_results'])
+    logger.info(f"Trial predictions CSV exported to: {csv_output_path}")
 
     # Export conditions cache if requested
     if args.export_conditions_cache:
