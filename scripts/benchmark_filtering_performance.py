@@ -300,7 +300,8 @@ class TrialEvaluationResult:
                  ground_truth_relevant: bool,
                  suitability_probability: float,
                  reason: str,
-                 api_cost: float):
+                 api_cost: float,
+                 original_relevance_score: Optional[int] = None):
         """
         Initialize a TrialEvaluationResult instance.
 
@@ -312,6 +313,7 @@ class TrialEvaluationResult:
             suitability_probability: Probability score from GPT evaluation
             reason: Reasoning provided by GPT for the prediction
             api_cost: API cost for this trial evaluation
+            original_relevance_score: Original relevance score from dataset (0, 1, or 2)
         """
         self.trial_id = trial_id
         self.trial_title = trial_title
@@ -320,6 +322,7 @@ class TrialEvaluationResult:
         self.suitability_probability = suitability_probability
         self.reason = reason
         self.api_cost = api_cost
+        self.original_relevance_score = original_relevance_score
 
     @property
     def is_error_case(self) -> bool:
@@ -347,8 +350,17 @@ class TrialEvaluationResult:
             'reason': self.reason,
             'api_cost': self.api_cost,
             'is_error_case': self.is_error_case,
-            'error_type': self.error_type.value
+            'error_type': self.error_type.value,
+            'original_relevance_score': self.original_relevance_score if self.original_relevance_score is not None else 'N/A'
         }
+
+    def __str__(self) -> str:
+        """String representation of the trial evaluation result."""
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f})"
+
+    def __repr__(self) -> str:
+        """Detailed string representation of the trial evaluation result."""
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', trial_title='{self.trial_title}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f}, reason='{self.reason}', api_cost={self.api_cost:.4f})"
 
 
 class PatientEvaluationResult:
@@ -1157,6 +1169,13 @@ class FilteringBenchmark:
                     # Determine ground truth relevance
                     ground_truth_relevant = trial_id in ground_truth_trials
 
+                    # Get original relevance score from relevance judgments
+                    original_relevance_score = None
+                    for judgment in self.relevance_judgments:
+                        if judgment.patient_id == patient_id and judgment.trial_id == trial_id:
+                            original_relevance_score = judgment.relevance_score
+                            break
+
                     trial_result = TrialEvaluationResult(
                         trial_id=trial_id,
                         trial_title=trial.identification.brief_title or trial.identification.official_title or trial.identification.acronym or trial_id,
@@ -1164,7 +1183,8 @@ class FilteringBenchmark:
                         ground_truth_relevant=ground_truth_relevant,
                         suitability_probability=suitability_probability,
                         reason=reason,
-                        api_cost=cost
+                        api_cost=cost,
+                        original_relevance_score=original_relevance_score
                     )
                     trial_evaluation_results.append(trial_result)
 
@@ -1189,6 +1209,13 @@ class FilteringBenchmark:
                     except:
                         pass
 
+                    # Get original relevance score from relevance judgments
+                    original_relevance_score = None
+                    for judgment in self.relevance_judgments:
+                        if judgment.patient_id == patient_id and judgment.trial_id == trial_id:
+                            original_relevance_score = judgment.relevance_score
+                            break
+
                     trial_result = TrialEvaluationResult(
                         trial_id=trial_id,
                         trial_title=trial_title,
@@ -1196,7 +1223,8 @@ class FilteringBenchmark:
                         ground_truth_relevant=False,
                         suitability_probability=0.0,
                         reason=f"Evaluation failed: {e}",
-                        api_cost=0.0
+                        api_cost=0.0,
+                        original_relevance_score=original_relevance_score
                     )
                     trial_evaluation_results.append(trial_result)
                     continue
@@ -1539,6 +1567,7 @@ class FilteringBenchmark:
             logger.info(f"  Medical Record: {self._get_patient_full_medical_record(patient_result.patient_id)}")
             logger.info(f"  Trial ID: {trial_result.trial_id}")
             logger.info(f"  Trial Title: {trial_result.trial_title}")
+            logger.info(f"  Original Label: {trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'}")
             logger.info(f"  Error Type: {trial_result.error_type}")
             logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
             logger.info(f"  Reason: {trial_result.reason}")
@@ -1595,7 +1624,8 @@ class FilteringBenchmark:
                             'suitability_probability': trial_result.suitability_probability,
                             'reason': trial_result.reason,
                             'ground_truth_relevant': trial_result.ground_truth_relevant,
-                            'predicted_eligible': trial_result.predicted_eligible
+                            'predicted_eligible': trial_result.predicted_eligible,
+                            'original_relevance_score': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'
                         }
                         all_error_cases.append(error_case)
 
