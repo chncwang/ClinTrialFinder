@@ -1726,7 +1726,7 @@ class FilteringBenchmark:
         """
         if patient_id not in self.conditions_cache:
             logger.info(f"Extracting conditions for patient {patient_id} (not in cache)")
-            conditions = extract_conditions_from_content(medical_record, self.gpt_client)
+            conditions = extract_conditions_from_content(medical_record, self.gpt_client, convert_time=False)
             self.conditions_cache[patient_id] = conditions
             logger.info(f"Cached conditions for patient {patient_id}: {conditions}")
         else:
