@@ -164,7 +164,7 @@ def extract_conditions_from_record(
 
 
 def extract_conditions_from_content(
-    clinical_record: str, gpt_client: GPTClient, refresh_cache: bool = False
+    clinical_record: str, gpt_client: GPTClient, refresh_cache: bool = False, convert_time: bool = True
 ) -> List[str]:
     """
     Extract the patient's clinical history directly from clinical record content in chronological order.
@@ -173,6 +173,7 @@ def extract_conditions_from_content(
     - clinical_record (str): The clinical record content
     - gpt_client (GPTClient): Initialized GPT client for making API calls
     - refresh_cache (bool): Whether to refresh the GPT cache
+    - convert_time (bool): Whether to convert absolute time references to relative ones (default: True)
 
     Returns:
     - List[str]: List of clinical history items in chronological order
@@ -183,9 +184,17 @@ def extract_conditions_from_content(
         current_time_str = current_time.strftime("%Y-%m-%d")
 
         # Extract clinical history in chronological order
-        prompt = (
-            f"Extract at most 20 most important key conditions AND demographic features from the patient's clinical record for clinical trials filtering. "
-            f"Use relative time references based on today's date ({current_time_str}). "
+        # Common prompt parts
+        common_prompt_start = (
+            "Extract at most 20 most important key conditions AND demographic features from the patient's clinical record for clinical trials filtering. "
+        )
+
+        if convert_time:
+            time_instruction = f"Use relative time references based on today's date ({current_time_str}). "
+        else:
+            time_instruction = "Keep all time references in their original format (years, dates, etc.). "
+
+        common_prompt_middle = (
             "Present the results as a JSON array of strings. Include relevant demographic information (age, sex, etc.) as the first item.\n\n"
             "Focus on:\n"
             "- Demographic features (age, sex, etc.)\n"
@@ -209,29 +218,57 @@ def extract_conditions_from_content(
             "- Hypothyroidism, on levothyroxine 100mcg daily\n"
             "- COPD with history of 2 exacerbations in the past year, uses albuterol inhaler\n\n"
             "</original record>\n"
-            "Given the above record and the current date of 2023-12-01, the result should be:\n"
-            "[\n"
-            '  "65-year-old female",\n'
-            '  "Type 2 Diabetes Mellitus diagnosed 13 years ago, managed with Metformin",\n'
-            '  "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy",\n'
-            '  "Liver metastasis detected 6 months ago, stable on recent imaging",\n'
-            '  "Hypertension, well-controlled on Lisinopril",\n'
-            '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
-            '  "Myocardial infarction 4 years ago, treated with stent placement",\n'
-            '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
-            '  "Hypothyroidism, on levothyroxine",\n'
-            '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
-            "]\n\n"
+        )
+
+        if convert_time:
+            example_result = (
+                "Given the above record and the current date of 2023-12-01, the result should be:\n"
+                "[\n"
+                '  "65-year-old female",\n'
+                '  "Type 2 Diabetes Mellitus diagnosed 13 years ago, managed with Metformin",\n'
+                '  "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy",\n'
+                '  "Liver metastasis detected 6 months ago, stable on recent imaging",\n'
+                '  "Hypertension, well-controlled on Lisinopril",\n'
+                '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
+                '  "Myocardial infarction 4 years ago, treated with stent placement",\n'
+                '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
+                '  "Hypothyroidism, on levothyroxine",\n'
+                '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
+                "]\n\n"
+            )
+            time_guideline = "4. Use relative time references (e.g., '2 years ago' instead of '2021')\n"
+        else:
+            example_result = (
+                "Given the above record, the result should be:\n"
+                "[\n"
+                '  "65-year-old female",\n'
+                '  "Type 2 Diabetes Mellitus diagnosed in 2010, currently managed with Metformin",\n'
+                '  "Non-small cell lung cancer (Stage 3) diagnosed in April 2023, currently on chemotherapy",\n'
+                '  "Liver metastasis detected in June 2023, stable on recent imaging",\n'
+                '  "Hypertension, well-controlled on Lisinopril",\n'
+                '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
+                '  "Myocardial infarction in 2019, treated with stent placement",\n'
+                '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
+                '  "Hypothyroidism, on levothyroxine",\n'
+                '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
+                "]\n\n"
+            )
+            time_guideline = "4. Keep all time references in their original format (years, dates, etc.)\n"
+
+        common_prompt_end = (
             "Guidelines:\n"
             "1. Always include demographic information as the first item\n"
             "2. Focus on the condition and its current status\n"
             "3. Include relevant treatment information if applicable\n"
-            "4. Use relative time references (e.g., '2 years ago' instead of '2021')\n"
+            f"{time_guideline}"
             "5. Keep descriptions concise and medically relevant\n"
             "6. Include any other conditions relevant to trial eligibility\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
             "Return only the JSON array, without any additional text or explanation."
         )
+
+        # Combine all parts
+        prompt = common_prompt_start + time_instruction + common_prompt_middle + example_result + common_prompt_end
 
         logger.info(f"extract_conditions_from_content: prompt: {prompt}")
 
@@ -244,15 +281,16 @@ def extract_conditions_from_content(
         )
 
         if completion:
+            history: List[str] = []
             history, _ = parse_json_response(
                 completion, expected_type=list, gpt_client=gpt_client, cost=cost
             )
-            history: List[str] = history
 
-            # Process the history to ensure all times are relative
-            history = convert_absolute_to_relative_time(
-                history, current_time, gpt_client
-            )
+            # Process the history to ensure all times are relative only if convert_time is True
+            if convert_time:
+                history = convert_absolute_to_relative_time(
+                    history, current_time, gpt_client
+                )
 
             # Log history
             logger.info(f"Extracted {len(history)} clinical history items:")
