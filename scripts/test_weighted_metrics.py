@@ -127,10 +127,6 @@ def test_weighted_metrics():
             squared_errors: List[float] = []
             absolute_errors: List[float] = []
 
-            # For cost-sensitive metrics
-            total_cost: float = 0.0
-            max_possible_cost: float = 0.0
-
             for result in trial_results:
                 if result.original_relevance_score is None:
                     continue
@@ -156,30 +152,6 @@ def test_weighted_metrics():
                     weight = actual_score if actual_score > 0 else 1.0
                     weighted_fn += weight
 
-                # Cost-sensitive metrics
-                if actual_score == 0:
-                    if predicted_score == 0:  # Correct
-                        cost = 0
-                    else:  # False positive
-                        cost = 1
-                elif actual_score == 1:
-                    if predicted_score == 0:  # False negative on score 1
-                        cost = 1
-                    elif predicted_score == 1:  # Correct
-                        cost = 0
-                    else:  # Over-prediction
-                        cost = 1
-                else:  # actual_score == 2
-                    if predicted_score == 0:  # False negative on score 2 (most severe)
-                        cost = 2
-                    elif predicted_score == 1:  # Under-prediction
-                        cost = 1
-                    else:  # Correct
-                        cost = 0
-
-                total_cost += cost
-                max_possible_cost += 2  # Maximum cost per trial
-
             # Calculate weighted metrics
             weighted_precision = weighted_tp / (weighted_tp + weighted_fp) if (weighted_tp + weighted_fp) > 0 else 0.0
             weighted_recall = weighted_tp / (weighted_tp + weighted_fn) if (weighted_tp + weighted_fn) > 0 else 0.0
@@ -193,19 +165,13 @@ def test_weighted_metrics():
             mean_absolute_error = sum(absolute_errors) / len(absolute_errors) if absolute_errors else 0.0
             root_mean_square_error = (sum(squared_errors) / len(squared_errors)) ** 0.5 if squared_errors else 0.0
 
-            # Calculate cost-sensitive accuracy
-            cost_sensitive_accuracy = 1.0 - (total_cost / max_possible_cost) if max_possible_cost > 0 else 0.0
-
             return {
                 'weighted_precision': weighted_precision,
                 'weighted_recall': weighted_recall,
                 'weighted_f1': weighted_f1,
                 'weighted_accuracy': weighted_accuracy,
                 'mean_absolute_error': mean_absolute_error,
-                'root_mean_square_error': root_mean_square_error,
-                'cost_sensitive_accuracy': cost_sensitive_accuracy,
-                'total_cost': total_cost,
-                'max_possible_cost': max_possible_cost
+                'root_mean_square_error': root_mean_square_error
             }
 
     # Calculate weighted metrics
@@ -220,18 +186,14 @@ def test_weighted_metrics():
     print(f"Weighted Accuracy: {weighted_metrics['weighted_accuracy']:.4f}")
     print(f"Mean Absolute Error: {weighted_metrics['mean_absolute_error']:.4f}")
     print(f"Root Mean Square Error: {weighted_metrics['root_mean_square_error']:.4f}")
-    print(f"Cost-Sensitive Accuracy: {weighted_metrics['cost_sensitive_accuracy']:.4f}")
-    print(f"Total Cost: {weighted_metrics['total_cost']:.1f}")
-    print(f"Maximum Possible Cost: {weighted_metrics['max_possible_cost']:.1f}")
+
 
     print("\n" + "=" * 60)
     print("INTERPRETATION:")
     print("=" * 60)
     print("• Weighted metrics assign higher penalties for misclassifying high-relevance trials (score 2)")
-    print("• False negative on score 2 trial costs 2 points vs 1 point for score 1 trial")
     print("• Mean Absolute Error shows average prediction error magnitude")
-    print("• Cost-sensitive accuracy considers the severity of different error types")
-    print("• Lower MAE and higher cost-sensitive accuracy indicate better performance")
+    print("• Lower MAE indicates better performance")
 
 if __name__ == "__main__":
     test_weighted_metrics()

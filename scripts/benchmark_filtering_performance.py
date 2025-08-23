@@ -9,6 +9,11 @@ OUTPUT FILES:
 - JSON results file with comprehensive benchmark metrics
 - CSV file with trial-level predictions and labels (patient_id, trial_id, predicted, label)
 
+METRICS CALCULATION:
+- Patient-level metrics: Average error metrics across patients (each patient contributes equally)
+- Trial-level metrics: Average error metrics across trials (each trial contributes equally)
+- Both MAE and RMSE are calculated for both levels to provide comprehensive evaluation
+
 PERFORMANCE OPTIMIZATION:
 The script implements intelligent caching to minimize API calls:
 - Patient conditions are extracted only once and cached for reuse
@@ -1061,8 +1066,7 @@ class FilteringBenchmark:
         if not trial_results:
             return {
                 'mean_absolute_error': 0.0,
-                'root_mean_square_error': 0.0,
-                'cost_sensitive_accuracy': 0.0
+                'root_mean_square_error': 0.0
             }
 
 
@@ -1070,10 +1074,6 @@ class FilteringBenchmark:
         # For graded metrics
         squared_errors: List[float] = []
         absolute_errors: List[float] = []
-
-        # For cost-sensitive metrics
-        total_cost = 0.0
-        max_possible_cost = 0.0
 
         for result in trial_results:
             if result.original_relevance_score is None:
@@ -1087,41 +1087,69 @@ class FilteringBenchmark:
             absolute_errors.append(error)
             squared_errors.append(error ** 2)
 
-            normalized_actual_score: float = 0.5 * actual_score
-
-            # Calculate cost using absolute difference
-            cost = abs(normalized_actual_score - predicted_score)
-
-            total_cost += cost
-            max_possible_cost += 1  # Maximum cost per trial
-
         # Calculate graded metrics
         mean_absolute_error = sum(absolute_errors) / len(absolute_errors) if absolute_errors else 0.0
         root_mean_square_error = (sum(squared_errors) / len(squared_errors)) ** 0.5 if squared_errors else 0.0
 
-        # Calculate cost-sensitive accuracy
-        cost_sensitive_accuracy = 1.0 - (total_cost / max_possible_cost) if max_possible_cost > 0 else 0.0
-
         return {
             'mean_absolute_error': mean_absolute_error,
-            'root_mean_square_error': root_mean_square_error,
-            'cost_sensitive_accuracy': cost_sensitive_accuracy,
-            'total_cost': total_cost,
-            'max_possible_cost': max_possible_cost
+            'root_mean_square_error': root_mean_square_error
         }
 
     def calculate_aggregate_error_metrics(self, patient_results: List[PatientEvaluationResult]) -> Dict[str, float]:
         """
         Calculate aggregate error metrics across all patients.
 
-        This method aggregates the error metrics from individual patient evaluations
-        to provide overall performance measures.
+        This method calculates error metrics for each patient separately, then averages
+        those patient-level metrics. This gives equal weight to each patient regardless
+        of how many trials they have.
 
         Args:
             patient_results: List of successful PatientEvaluationResult objects
 
         Returns:
-            Dictionary with aggregate error metrics
+            Dictionary with aggregate error metrics averaged across patients
+        """
+        if not patient_results:
+            return {}
+
+        # Calculate error metrics for each patient separately
+        patient_maes: List[float] = []
+        patient_rmses: List[float] = []
+
+        for patient_result in patient_results:
+            if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results:
+                # Calculate metrics for this patient's trials
+                patient_metrics = self.calculate_error_metrics(patient_result.trial_evaluation_results)
+                if patient_metrics:
+                    patient_maes.append(patient_metrics.get('mean_absolute_error', 0.0))
+                    patient_rmses.append(patient_metrics.get('root_mean_square_error', 0.0))
+
+        # Average the patient-level metrics
+        if patient_maes:
+            avg_mae = sum(patient_maes) / len(patient_maes)
+            avg_rmse = sum(patient_rmses) / len(patient_rmses)
+        else:
+            avg_mae = 0.0
+            avg_rmse = 0.0
+
+        return {
+            'mean_absolute_error': avg_mae,
+            'root_mean_square_error': avg_rmse
+        }
+
+    def calculate_trial_level_error_metrics(self, patient_results: List[PatientEvaluationResult]) -> Dict[str, float]:
+        """
+        Calculate trial-level error metrics across all trials.
+
+        This method calculates error metrics treating each trial evaluation as an independent
+        prediction, regardless of which patient it belongs to.
+
+        Args:
+            patient_results: List of successful PatientEvaluationResult objects
+
+        Returns:
+            Dictionary with trial-level error metrics
         """
         if not patient_results:
             return {}
@@ -1132,7 +1160,10 @@ class FilteringBenchmark:
             if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results:
                 all_trial_results.extend(patient_result.trial_evaluation_results)
 
-        # Calculate overall error metrics
+        if not all_trial_results:
+            return {}
+
+        # Calculate trial-level error metrics
         return self.calculate_error_metrics(all_trial_results)
 
     def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> PatientEvaluationResult:
@@ -1428,10 +1459,13 @@ class FilteringBenchmark:
             logger.warning(f"Failed result: {failed_result}")
 
         if successful_results:
-            # Calculate aggregate error metrics across all patients
+            # Calculate patient-level aggregate error metrics
             aggregate_error_metrics = self.calculate_aggregate_error_metrics(successful_results)
+            # Calculate trial-level error metrics
+            trial_level_error_metrics = self.calculate_trial_level_error_metrics(successful_results)
         else:
             aggregate_error_metrics = {}
+            trial_level_error_metrics = {}
 
         # Calculate trial-level metrics (across all trials regardless of patients)
         all_trial_results: List[TrialEvaluationResult] = []
@@ -1484,7 +1518,16 @@ class FilteringBenchmark:
             'conditions_cache_stats': self.get_cache_statistics(),
             'metrics': {},
             'aggregate_error_metrics': aggregate_error_metrics,
-
+            'trial_level_error_metrics': trial_level_error_metrics,
+            'trial_level_stats': {
+                'total_trials_evaluated': len(all_trial_results),
+                'trials_with_relevance_scores': len([t for t in all_trial_results if t.original_relevance_score is not None]),
+                'average_trials_per_patient': len(all_trial_results) / len(successful_results) if successful_results else 0,
+                'patient_trial_distribution': {
+                    'min_trials_per_patient': min([len(patient_result.trial_evaluation_results) for patient_result in successful_results if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results]) if successful_results else 0,
+                    'max_trials_per_patient': max([len(patient_result.trial_evaluation_results) for patient_result in successful_results if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results]) if successful_results else 0
+                }
+            },
             'error_metrics': error_metrics,
             'detailed_results': [r.to_dict() for r in results]
         }
@@ -1496,6 +1539,19 @@ class FilteringBenchmark:
         logger.info(f"Successful patients: {len(successful_results)}")
         logger.info(f"Skipped patients: {len(skipped_results)}")
         logger.info(f"Failed patients: {len(failed_results)}")
+
+        # Final summary of key metrics
+        if successful_results and (aggregate_error_metrics or trial_level_error_metrics):
+            logger.info("=" * 60)
+            logger.info("FINAL METRICS SUMMARY")
+            logger.info("=" * 60)
+            if aggregate_error_metrics:
+                logger.info(f"Patient-level MAE: {aggregate_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+                logger.info(f"Patient-level RMSE: {aggregate_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            if trial_level_error_metrics:
+                logger.info(f"Trial-level MAE: {trial_level_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+                logger.info(f"Trial-level RMSE: {trial_level_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            logger.info("=" * 60)
         # Calculate effective available trials (excluding additional trials that aren't required)
         effective_available: set[str] = set(judgment.trial_id for judgment in self.relevance_judgments) & set(self.trials.keys())
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
@@ -1510,7 +1566,34 @@ class FilteringBenchmark:
             logger.info("=" * 60)
             logger.info(f"Mean Absolute Error: {aggregate_error_metrics.get('mean_absolute_error', 0.0):.4f}")
             logger.info(f"Root Mean Square Error: {aggregate_error_metrics.get('root_mean_square_error', 0.0):.4f}")
-            logger.info(f"Cost-sensitive accuracy: {aggregate_error_metrics.get('cost_sensitive_accuracy', 0.0):.4f}")
+            logger.info("=" * 60)
+
+            # Log individual patient-level metrics for transparency
+            logger.info("Individual patient-level metrics:")
+            for i, patient_result in enumerate(successful_results):
+                if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results:
+                    patient_metrics = self.calculate_error_metrics(patient_result.trial_evaluation_results)
+                    if patient_metrics:
+                        mae = patient_metrics.get('mean_absolute_error', 0.0)
+                        rmse = patient_metrics.get('root_mean_square_error', 0.0)
+                        trial_count = len(patient_result.trial_evaluation_results)
+
+                        # Calculate individual errors for this patient to debug
+                        errors = []
+                        for result in patient_result.trial_evaluation_results:
+                            if result.original_relevance_score is not None:
+                                actual_score = result.original_relevance_score
+                                predicted_score = 1 if result.predicted_eligible else 0
+                                aligned_actual_score = 0.5 * actual_score
+                                error = abs(predicted_score - aligned_actual_score)
+                                errors.append(error)
+
+                        # Flag suspicious cases where MAE = RMSE
+                        suspicious = ""
+                        if abs(mae - rmse) < 0.0001 and mae > 0:
+                            suspicious = " [SUSPICIOUS: MAE=RMSE]"
+
+                        logger.info(f"  Patient {patient_result.patient_id}: MAE={mae:.4f}, RMSE={rmse:.4f}, trials={trial_count}, errors={errors[:5]}{'...' if len(errors) > 5 else ''}{suspicious}")
             logger.info("=" * 60)
 
         # Log error metrics that consider relevance score severity
@@ -1520,9 +1603,52 @@ class FilteringBenchmark:
             logger.info("=" * 60)
             logger.info(f"Mean Absolute Error: {error_metrics.get('mean_absolute_error', 0.0):.4f}")
             logger.info(f"Root Mean Square Error: {error_metrics.get('root_mean_square_error', 0.0):.4f}")
-            logger.info(f"Cost-sensitive accuracy: {error_metrics.get('cost_sensitive_accuracy', 0.0):.4f}")
-            logger.info(f"Total cost: {error_metrics.get('total_cost', 0.0):.1f}")
-            logger.info(f"Maximum possible cost: {error_metrics.get('max_possible_cost', 0.0):.1f}")
+            logger.info("=" * 60)
+
+        # Log trial-level error metrics
+        if trial_level_error_metrics:
+            logger.info("=" * 60)
+            logger.info("TRIAL-LEVEL ERROR METRICS (across all trials)")
+            logger.info("=" * 60)
+            logger.info(f"Total trials evaluated: {len(all_trial_results)}")
+            trials_with_scores = len([t for t in all_trial_results if t.original_relevance_score is not None])
+            logger.info(f"Trials with relevance scores: {trials_with_scores}")
+            if successful_results:
+                avg_trials_per_patient = len(all_trial_results) / len(successful_results)
+                min_trials = min([len(patient_result.trial_evaluation_results) for patient_result in successful_results if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results])
+                max_trials = max([len(patient_result.trial_evaluation_results) for patient_result in successful_results if hasattr(patient_result, 'trial_evaluation_results') and patient_result.trial_evaluation_results])
+                logger.info(f"Average trials per patient: {avg_trials_per_patient:.1f}")
+                logger.info(f"Trial distribution: {min_trials} to {max_trials} trials per patient")
+            logger.info(f"Trial-level MAE: {trial_level_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+            logger.info(f"Trial-level RMSE: {trial_level_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            logger.info("=" * 60)
+
+                # Log comparison between patient-level and trial-level metrics
+        if aggregate_error_metrics and trial_level_error_metrics:
+            logger.info("=" * 60)
+            logger.info("METRICS COMPARISON: PATIENT-LEVEL vs TRIAL-LEVEL")
+            logger.info("=" * 60)
+            logger.info("Note: Patient-level metrics average across patients, trial-level metrics average across trials")
+            logger.info("Patient-level: Each patient contributes equally regardless of trial count")
+            logger.info("Trial-level: Each trial contributes equally regardless of patient distribution")
+            logger.info(f"Patient-level MAE: {aggregate_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+            logger.info(f"Trial-level MAE: {trial_level_error_metrics.get('mean_absolute_error', 0.0):.4f}")
+            logger.info(f"Patient-level RMSE: {aggregate_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+            logger.info(f"Trial-level RMSE: {trial_level_error_metrics.get('root_mean_square_error', 0.0):.4f}")
+
+            # Calculate the difference
+            mae_diff = trial_level_error_metrics.get('mean_absolute_error', 0.0) - aggregate_error_metrics.get('mean_absolute_error', 0.0)
+            rmse_diff = trial_level_error_metrics.get('root_mean_square_error', 0.0) - aggregate_error_metrics.get('root_mean_square_error', 0.0)
+            logger.info(f"MAE difference (Trial - Patient): {mae_diff:+.4f}")
+            logger.info(f"RMSE difference (Trial - Patient): {rmse_diff:+.4f}")
+
+            # Interpret the difference
+            if abs(mae_diff) < 0.001:
+                logger.info("MAE values are nearly identical - suggests balanced patient/trial distribution")
+            elif mae_diff > 0:
+                logger.info("Trial-level MAE is higher - suggests some patients have more trials with errors")
+            else:
+                logger.info("Patient-level MAE is higher - suggests errors are concentrated in patients with fewer trials")
             logger.info("=" * 60)
 
         # Log conditions cache statistics
