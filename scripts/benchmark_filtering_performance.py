@@ -1617,12 +1617,18 @@ class FilteringBenchmark:
                         patient_text_summary = self._get_patient_text_summary(result.patient_id)
                         disease_name = self._get_patient_disease(result.patient_id)
 
+                        # Get trial criteria from the loaded trial data
+                        trial_criteria = "No criteria available"
+                        if trial_result.trial_id in self.trials:
+                            trial_criteria = self.trials[trial_result.trial_id].eligibility.criteria
+
                         error_case = {
                             'patient_id': result.patient_id,
                             'text_summary': patient_text_summary,
                             'disease_name': disease_name,
                             'trial_id': trial_result.trial_id,
                             'trial_title': trial_result.trial_title,
+                            'trial_criteria': trial_criteria,
                             'error_type': trial_result.error_type.value,
                             'suitability_probability': trial_result.suitability_probability,
                             'reason': trial_result.reason,
