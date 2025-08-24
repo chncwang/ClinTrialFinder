@@ -17,7 +17,6 @@ class PromptCache:
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
         self.cache_data: OrderedDict[str, Any] = OrderedDict()
-        self.modified_since_save = False
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
 
@@ -59,7 +58,6 @@ class PromptCache:
 
         # Save new entry
         self.cache_data[cache_key] = cache_entry
-        self.modified_since_save = True
         self._save_cache()
 
     def get(self, original_key: str) -> str | None:
@@ -92,18 +90,16 @@ class PromptCache:
     def _cleanup_on_exit(self):
         """Cleanup function registered with atexit to save cache on program exit."""
         try:
-            if hasattr(self, 'modified_since_save') and self.modified_since_save:
-                logger.info("Saving cache on program exit...")
-                self._write_cache_to_disk()
+            logger.info("Saving cache on program exit...")
+            self._write_cache_to_disk()
         except Exception as e:
             logger.error(f"Error saving cache on exit: {e}")
 
     def __del__(self):
         """Destructor to ensure cache is saved when object is destroyed."""
         try:
-            if hasattr(self, 'modified_since_save') and self.modified_since_save:
-                logger.info("Saving cache before destruction...")
-                self._write_cache_to_disk()
+            logger.info("Saving cache before destruction...")
+            self._write_cache_to_disk()
         except Exception as e:
             # Don't raise exceptions in destructor
             logger.error(f"Error saving cache during destruction: {e}")
@@ -139,18 +135,17 @@ class PromptCache:
             logger.error(f"Failed to save cache: {str(e)}")
             return False
 
-    def _save_cache(self, force: bool = False):
+    def _save_cache(self):
         """Save the cache to disk if modified or forced."""
-        # Always save if modified or forced
-        if self.modified_since_save or force:
-            if self._write_cache_to_disk():
-                self.modified_since_save = False
+        if self._write_cache_to_disk():
+            logger.info("Cache saved successfully")
+        else:
+            logger.error("Cache save failed")
 
-    def save(self, force: bool = True):
+    def save(self):
         """Manually save the cache to disk."""
         logger.info("Manual cache save requested")
         if self._write_cache_to_disk():
-            self.modified_since_save = False
             logger.info("Manual cache save completed successfully")
         else:
             logger.error("Manual cache save failed")
