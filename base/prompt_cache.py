@@ -1,3 +1,4 @@
+import hashlib
 import json
 import time
 import atexit
@@ -15,14 +16,79 @@ class PromptCache:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
-        self.cache_data: OrderedDict[str, str] = OrderedDict()
+        self.cache_data: OrderedDict[str, Any] = OrderedDict()
         self.last_save_time = 0
         self.modified_since_save = False
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
-        
+
         # Register cleanup function to run at program exit
         atexit.register(self._cleanup_on_exit)
+
+    def set(self, original_key: str, result: Any) -> None:
+        """Cache result for a given original key."""
+        # Generate hash key internally
+        cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
+
+        logger.debug(f"Caching result for key: {cache_key[:8]}...")
+
+        # Enforce cache size limit
+        while len(self.cache_data) >= self.max_size:
+            # Remove oldest entry
+            oldest_key, _ = next(iter(self.cache_data.items()))
+            self.cache_data.popitem(last=False)
+            logger.debug(f"Removed oldest cache entry: {oldest_key[:8]}...")
+
+        # Ensure we're storing a string
+        if not isinstance(result, str):
+            try:
+                if isinstance(result, dict):
+                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
+                    result = json.dumps(result)
+                else:
+                    logger.warning(f"Converting {type(result)} to string for cache key: {cache_key[:8]}...")
+                    result = str(result)
+            except Exception as e:
+                logger.error(f"Error converting result to string: {e}")
+                return
+
+        # Store both the original key and the result for debugging
+        cache_entry = {
+            "key": original_key,
+            "value": result
+        }
+
+        # Save new entry
+        self.cache_data[cache_key] = cache_entry
+        self.modified_since_save = True
+        self._save_cache()
+
+    def get(self, original_key: str) -> str | None:
+        """Get cached result for a given original key."""
+        # Generate hash key internally
+        cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
+
+        if cache_key in self.cache_data:
+            logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
+            try:
+                # Get the value from the cache entry
+                cache_entry = self.cache_data[cache_key]
+                result = cache_entry["value"]
+
+                # Ensure we're returning a string
+                if isinstance(result, dict):
+                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
+                    result = json.dumps(result)
+                elif not isinstance(result, str):
+                    result = str(result)
+
+                logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
+                return result
+            except Exception as e:
+                logger.error(f"Error retrieving cache entry: {e}")
+                return None
+        logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
+        return None
 
     def _cleanup_on_exit(self):
         """Cleanup function registered with atexit to save cache on program exit."""
@@ -56,7 +122,7 @@ class PromptCache:
                 logger.info(f"Loaded {len(self.cache_data)} cache entries in {load_time:.2f}s")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load cache: {str(e)}")
-                self.cache_data: OrderedDict[str, str] = OrderedDict()
+                self.cache_data: OrderedDict[str, Any] = OrderedDict()
         else:
             logger.info(f"No cache file found at {cache_path}")
 
@@ -66,7 +132,7 @@ class PromptCache:
         cache_path = self.cache_dir / "prompt_cache.json"
         try:
             with open(cache_path, "w") as f:
-                json.dump(list(self.cache_data.items()), f)
+                json.dump(list(self.cache_data.items()), f, indent=2)
             save_time = time.time() - start_time
             logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
             return True
@@ -85,52 +151,9 @@ class PromptCache:
         elif self.modified_since_save:
             logger.debug(f"Skipping cache save (last save was {current_time - self.last_save_time:.1f}s ago, will save after 300s)")
 
-    def get(self, cache_key: str) -> str | None:
-        """Get cached result for a given cache key."""
-        if cache_key in self.cache_data:
-            logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
-            try:
-                # Ensure we're returning a string, not a dictionary
-                result = self.cache_data[cache_key]
-                if isinstance(result, dict):
-                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
-                    result = json.dumps(result)
-                logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
-                return result
-            except Exception as e:
-                logger.error(f"Error retrieving cache entry: {e}")
-                return None
-        logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
-        return None
 
-    def set(self, cache_key: str, result: Any):
-        """Cache result for a given cache key."""
-        logger.debug(f"Caching result for key: {cache_key[:8]}...")
 
-        # Enforce cache size limit
-        while len(self.cache_data) >= self.max_size:
-            # Remove oldest entry
-            oldest_key, _ = next(iter(self.cache_data.items()))
-            self.cache_data.popitem(last=False)
-            logger.debug(f"Removed oldest cache entry: {oldest_key[:8]}...")
 
-        # Ensure we're storing a string
-        if not isinstance(result, str):
-            try:
-                if isinstance(result, dict):
-                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
-                    result = json.dumps(result)
-                else:
-                    logger.warning(f"Converting {type(result)} to string for cache key: {cache_key[:8]}...")
-                    result = str(result)
-            except Exception as e:
-                logger.error(f"Error converting result to string: {e}")
-                return
-
-        # Save new entry
-        self.cache_data[cache_key] = result
-        self.modified_since_save = True
-        self._save_cache()
 
     def save(self, force: bool = True):
         """Manually save the cache to disk."""
@@ -141,4 +164,24 @@ class PromptCache:
             logger.info("Manual cache save completed successfully")
         else:
             logger.error("Manual cache save failed")
-        
+
+    def get_original_key(self, cache_key: str) -> str | None:
+        """Get the original key (before hashing) for a given cache key."""
+        if cache_key in self.cache_data:
+            cache_entry = self.cache_data[cache_key]
+            return cache_entry["key"]
+        return None
+
+    def list_cache_entries(self) -> list[tuple[str, str, str]]:
+        """List all cache entries with their original keys and values (first 100 chars)."""
+        entries = []
+        for cache_key, cache_entry in self.cache_data.items():
+            original_key = cache_entry["key"]
+            value = cache_entry["value"]
+
+            # Truncate value for display
+            value_preview = str(value)[:100] + "..." if len(str(value)) > 100 else str(value)
+            entries.append((cache_key, original_key, value_preview))
+
+        return entries
+

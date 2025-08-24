@@ -1,4 +1,3 @@
-import hashlib
 import json
 import threading
 import time
@@ -74,18 +73,17 @@ class GPTClient:
         cache_check_time = 0.0
         cache_set_time = 0.0
 
-        # Construct a cache key from relevant parameters
-        cache_string = f"{model}:{system_role}:{prompt}:{temp}"
-        cache_key = hashlib.sha256(cache_string.encode("utf-8")).hexdigest()
+        # Construct the cache key string
+        cache_key_string = f"{model}:{system_role}:{prompt}:{temp}"
 
         prompt_preview = prompt[:50] + "..." if len(prompt) > 50 else prompt
-        logger.debug(f"GPTClient.call_gpt: Generated cache key: {cache_key} for prompt: {prompt_preview}")
+        logger.debug(f"GPTClient.call_gpt: Using cache key: {cache_key_string[:50]}... for prompt: {prompt_preview}")
 
         # Check cache first, unless refresh_cache is True
         if not refresh_cache:
             cache_check_start = time.time()
             with self._cache_lock:  # Use lock when accessing the cache
-                cached_result = self.cache.get(cache_key)
+                cached_result = self.cache.get(cache_key_string)
                 if cached_result is not None:
                     self.cache_hits += 1
                     cache_check_time = time.time() - cache_check_start
@@ -131,7 +129,7 @@ class GPTClient:
 
             cache_set_start = time.time()
             with self._cache_lock:  # Use lock when modifying the cache
-                self.cache.set(cache_key, result)
+                self.cache.set(cache_key_string, result)
             cache_set_time = time.time() - cache_set_start
             logger.debug(f"GPTClient.call_gpt: Cache set took {cache_set_time:.3f}s")
 
