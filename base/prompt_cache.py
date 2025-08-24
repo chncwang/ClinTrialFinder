@@ -58,7 +58,7 @@ class PromptCache:
 
         # Save new entry
         self.cache_data[cache_key] = cache_entry
-        self._save_cache()
+        self._write_cache_to_disk()
 
     def get(self, original_key: str) -> str | None:
         """Get cached result for a given original key."""
@@ -134,21 +134,6 @@ class PromptCache:
         except IOError as e:
             logger.error(f"Failed to save cache: {str(e)}")
             return False
-
-    def _save_cache(self):
-        """Save the cache to disk if modified or forced."""
-        if self._write_cache_to_disk():
-            logger.info("Cache saved successfully")
-        else:
-            logger.error("Cache save failed")
-
-    def save(self):
-        """Manually save the cache to disk."""
-        logger.info("Manual cache save requested")
-        if self._write_cache_to_disk():
-            logger.info("Manual cache save completed successfully")
-        else:
-            logger.error("Manual cache save failed")
 
     def get_original_key(self, cache_key: str) -> str | None:
         """Get the original key (before hashing) for a given cache key."""
