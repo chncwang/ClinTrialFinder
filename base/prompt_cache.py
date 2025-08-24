@@ -58,6 +58,7 @@ class PromptCache:
 
         # Save new entry
         self.cache_data[cache_key] = cache_entry
+        logger.debug(f"After adding, cache_data[{cache_key}] = {cache_entry}")
         self._write_cache_to_disk()
 
     def get(self, original_key: str) -> str | None:
@@ -127,7 +128,9 @@ class PromptCache:
         cache_path = self.cache_dir / "prompt_cache.json"
         try:
             with open(cache_path, "w") as f:
-                json.dump(list(self.cache_data.items()), f, indent=2)
+                to_dump_list: list[tuple[str, dict[str, Any]]] = list(self.cache_data.items())
+                logger.debug(f"to_dump_list: {to_dump_list}")
+                json.dump(to_dump_list, f, indent=2)
             save_time = time.time() - start_time
             logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
             return True
