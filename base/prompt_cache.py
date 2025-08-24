@@ -17,7 +17,6 @@ class PromptCache:
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
         self.cache_data: OrderedDict[str, Any] = OrderedDict()
-        self.last_save_time = 0
         self.modified_since_save = False
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
@@ -142,24 +141,15 @@ class PromptCache:
 
     def _save_cache(self, force: bool = False):
         """Save the cache to disk if modified or forced."""
-        current_time = time.time()
-        # Only save if it's been modified and either forced or it's been > 5 minutes
-        if (self.modified_since_save or force) and (force or current_time - self.last_save_time > 300):
+        # Always save if modified or forced
+        if self.modified_since_save or force:
             if self._write_cache_to_disk():
-                self.last_save_time = current_time
                 self.modified_since_save = False
-        elif self.modified_since_save:
-            logger.debug(f"Skipping cache save (last save was {current_time - self.last_save_time:.1f}s ago, will save after 300s)")
-
-
-
-
 
     def save(self, force: bool = True):
         """Manually save the cache to disk."""
         logger.info("Manual cache save requested")
         if self._write_cache_to_disk():
-            self.last_save_time = time.time()
             self.modified_since_save = False
             logger.info("Manual cache save completed successfully")
         else:
@@ -174,7 +164,7 @@ class PromptCache:
 
     def list_cache_entries(self) -> list[tuple[str, str, str]]:
         """List all cache entries with their original keys and values (first 100 chars)."""
-        entries = []
+        entries: list[tuple[str, str, str]] = []
         for cache_key, cache_entry in self.cache_data.items():
             original_key = cache_entry["key"]
             value = cache_entry["value"]
