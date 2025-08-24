@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class PromptCache:
-    def __init__(self, cache_dir: str = ".cache", max_size: int = 10000):
+    def __init__(self, cache_dir: str = ".cache", max_size: int = 10000, enable_validation: bool = False):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
+        self.enable_validation = enable_validation
         self.cache_data: OrderedDict[str, Any] = OrderedDict()
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
@@ -131,12 +132,35 @@ class PromptCache:
                 to_dump_list: list[tuple[str, dict[str, Any]]] = list(self.cache_data.items())
                 logger.debug(f"to_dump_list: {to_dump_list}")
                 json.dump(to_dump_list, f, indent=2)
+
+            # Validate that each first item in the tuple can be found in the text file (if enabled)
+            if self.enable_validation:
+                self._validate_cache_file(cache_path, to_dump_list)
+
             save_time = time.time() - start_time
             logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
             return True
         except IOError as e:
             logger.error(f"Failed to save cache: {str(e)}")
             return False
+
+    def _validate_cache_file(self, cache_path: Path, to_dump_list: list[tuple[str, dict[str, Any]]]) -> None:
+        """Validate that each first item in the tuple can be found in the text file."""
+        # Read the file as text to validate the dump
+        with open(cache_path, "r") as f:
+            file_content = f.read()
+
+        # Check each first item (cache key) can be found in the text file
+        missing_keys: list[str] = []
+        for cache_key, _ in to_dump_list:
+            if cache_key not in file_content:
+                missing_keys.append(cache_key)
+
+        if missing_keys:
+            logger.error(f"Validation failed: {len(missing_keys)} cache keys not found in file: {missing_keys[:5]}...")
+            logger.error(f"file_content: {file_content}")
+            logger.error(f"missing_keys: {missing_keys}")
+            raise ValueError(f"Validation failed: {len(missing_keys)} cache keys not found in file: {missing_keys[:5]}...")
 
     def get_original_key(self, cache_key: str) -> str | None:
         """Get the original key (before hashing) for a given cache key."""

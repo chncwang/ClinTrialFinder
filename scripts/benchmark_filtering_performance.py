@@ -594,7 +594,7 @@ class FilteringBenchmark:
     - Pre-extraction support: Option to warm up cache before benchmark
     """
 
-    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000, strict_cache_mode: bool = False):
+    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000, strict_cache_mode: bool = False, enable_validation: bool = False):
         """
         Initialize the benchmark.
 
@@ -603,6 +603,7 @@ class FilteringBenchmark:
             api_key: OpenAI API key for GPT filtering (required)
             cache_size: Size of GPT response cache
             strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
+            enable_validation: If True, enables cache file validation after writing
         """
         if not api_key:
             logger.error("API key is required for disease extraction")
@@ -612,9 +613,10 @@ class FilteringBenchmark:
         self.api_key = api_key
         self.cache_size = cache_size
         self.strict_cache_mode = strict_cache_mode
+        self.enable_validation = enable_validation
 
         # Initialize GPT client
-        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size, strict_cache_mode=self.strict_cache_mode)
+        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size, strict_cache_mode=self.strict_cache_mode, enable_validation=self.enable_validation)
 
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
@@ -1866,6 +1868,11 @@ def main():
         help="Enable strict cache mode - throws exception when cache is not hit (assumes all cache should hit)"
     )
     parser.add_argument(
+        "--enable-validation",
+        action="store_true",
+        help="Enable cache file validation after writing (validates that cache keys are found in saved files)"
+    )
+    parser.add_argument(
         "--max-patients",
         type=int,
         help="Maximum number of patients to process (for testing)"
@@ -1991,6 +1998,7 @@ def main():
         logger.info("- Default: Normal cache mode - makes API calls when cache misses occur")
         logger.info("- --strict-cache-mode: Throws exception when cache is not hit (assumes all cache should hit)")
         logger.info("- Strict mode is useful for testing scenarios where you want to ensure all responses come from cache")
+        logger.info("- --enable-validation: Enables cache file validation after writing (validates cache keys in saved files)")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
@@ -2040,7 +2048,7 @@ def main():
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Run benchmark
-    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size, args.strict_cache_mode)
+    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size, args.strict_cache_mode, args.enable_validation)
 
     # Show initial coverage summary
     benchmark.print_coverage_summary(args.verbose_coverage)

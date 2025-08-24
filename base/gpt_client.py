@@ -23,6 +23,7 @@ class GPTClient:
         max_retries: int = 3,
         cache_dir: str = ".cache",
         strict_cache_mode: bool = False,
+        enable_validation: bool = False,
     ):
         """
         Initialize the GPT client.
@@ -34,9 +35,10 @@ class GPTClient:
             max_retries: Maximum number of retry attempts for failed calls
             cache_dir: Directory to store cache files
             strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
+            enable_validation: If True, enables cache file validation after writing
         """
         self.client = OpenAI(api_key=api_key)
-        self.cache = PromptCache(cache_dir=cache_dir, max_size=cache_size)
+        self.cache = PromptCache(cache_dir=cache_dir, max_size=cache_size, enable_validation=enable_validation)
         self.default_temperature = temperature
         self.max_retries = max_retries
         self.strict_cache_mode = strict_cache_mode
@@ -45,7 +47,7 @@ class GPTClient:
         self.cache_misses = 0
         self.api_calls = 0
         logger.info(
-            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}"
+            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}, enable_validation={enable_validation}"
         )
 
     def call_gpt(
