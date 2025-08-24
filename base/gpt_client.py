@@ -22,6 +22,7 @@ class GPTClient:
         temperature: float = 0.1,
         max_retries: int = 3,
         cache_dir: str = ".cache",
+        strict_cache_mode: bool = False,
     ):
         """
         Initialize the GPT client.
@@ -32,17 +33,19 @@ class GPTClient:
             temperature: Default temperature for GPT calls
             max_retries: Maximum number of retry attempts for failed calls
             cache_dir: Directory to store cache files
+            strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
         """
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(cache_dir=cache_dir, max_size=cache_size)
         self.default_temperature = temperature
         self.max_retries = max_retries
+        self.strict_cache_mode = strict_cache_mode
         self._cache_lock = threading.RLock()  # Add a reentrant lock for thread safety
         self.cache_hits = 0
         self.cache_misses = 0
         self.api_calls = 0
         logger.info(
-            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}"
+            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}"
         )
 
     def call_gpt(
@@ -99,6 +102,9 @@ class GPTClient:
                     return cached_result, 0.0
                 else:
                     logger.debug(f"GPTClient.call_gpt: Cache MISS in {cache_check_time:.3f}s")
+                    # In strict cache mode, throw exception when cache is not hit
+                    if self.strict_cache_mode:
+                        raise RuntimeError(f"Cache miss in strict cache mode for key: {cache_key_string[:100]}...")
 
             self.cache_misses += 1
             cache_check_time = time.time() - cache_check_start

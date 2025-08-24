@@ -71,6 +71,11 @@ Example:
     python scripts/benchmark_filtering_performance.py \
         --show-cache-status \
         --api-key $OPENAI_API_KEY
+
+    # Run benchmark in strict cache mode (throws exception when cache is not hit)
+    python scripts/benchmark_filtering_performance.py \
+        --strict-cache-mode \
+        --api-key $OPENAI_API_KEY
 """
 
 import argparse
@@ -589,7 +594,7 @@ class FilteringBenchmark:
     - Pre-extraction support: Option to warm up cache before benchmark
     """
 
-    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000):
+    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000, strict_cache_mode: bool = False):
         """
         Initialize the benchmark.
 
@@ -597,6 +602,7 @@ class FilteringBenchmark:
             dataset_path: Path to TREC 2021 dataset directory
             api_key: OpenAI API key for GPT filtering (required)
             cache_size: Size of GPT response cache
+            strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
         """
         if not api_key:
             logger.error("API key is required for disease extraction")
@@ -605,9 +611,10 @@ class FilteringBenchmark:
         self.dataset_path = Path(dataset_path)
         self.api_key = api_key
         self.cache_size = cache_size
+        self.strict_cache_mode = strict_cache_mode
 
         # Initialize GPT client
-        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size)
+        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size, strict_cache_mode=self.strict_cache_mode)
 
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
@@ -1854,6 +1861,11 @@ def main():
         help="Size of GPT response cache"
     )
     parser.add_argument(
+        "--strict-cache-mode",
+        action="store_true",
+        help="Enable strict cache mode - throws exception when cache is not hit (assumes all cache should hit)"
+    )
+    parser.add_argument(
         "--max-patients",
         type=int,
         help="Maximum number of patients to process (for testing)"
@@ -1975,6 +1987,10 @@ def main():
         logger.info("- Default: Uses evaluate_trial() for comprehensive evaluation (title + inclusion criteria)")
         logger.info("- --title-only: Uses evaluate_title() for faster title-only evaluation")
         logger.info("- Title-only is faster but less accurate than full evaluation")
+        logger.info("\nCACHE MODES:")
+        logger.info("- Default: Normal cache mode - makes API calls when cache misses occur")
+        logger.info("- --strict-cache-mode: Throws exception when cache is not hit (assumes all cache should hit)")
+        logger.info("- Strict mode is useful for testing scenarios where you want to ensure all responses come from cache")
         logger.info("\nRECOMMENDED WORKFLOW:")
         logger.info("1. First run: python script.py --coverage-only")
         logger.info("2. Check coverage status: python script.py --coverage-only")
@@ -1985,6 +2001,7 @@ def main():
         logger.info("7. Run benchmark on cancer patients with limited total trials: python script.py --cancer-only --max-trials 100 (excludes label 1 trials)")
         logger.info("8. Run benchmark with title-only evaluation (faster): python script.py --title-only")
         logger.info("9. Run benchmark with title-only evaluation on cancer patients: python script.py --title-only --cancer-only")
+        logger.info("10. Run benchmark in strict cache mode: python script.py --strict-cache-mode")
         logger.info("\nTROUBLESHOOTING:")
         logger.info("- Check network connectivity and ClinicalTrials.gov access")
         logger.info("- Verify API rate limits and settings")
@@ -2023,7 +2040,7 @@ def main():
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Run benchmark
-    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size)
+    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size, args.strict_cache_mode)
 
     # Show initial coverage summary
     benchmark.print_coverage_summary(args.verbose_coverage)
