@@ -130,7 +130,9 @@ class PromptCache:
         try:
             with open(cache_path, "w") as f:
                 to_dump_list: list[tuple[str, dict[str, Any]]] = list(self.cache_data.items())
-                logger.debug(f"to_dump_list: {to_dump_list}")
+                logger.debug(f"to_dump_list:")
+                for item in to_dump_list:
+                    logger.debug(f"  {item}")
                 json.dump(to_dump_list, f, indent=2)
 
             # Validate that each first item in the tuple can be found in the text file (if enabled)
