@@ -101,10 +101,10 @@ def build_recommendation_prompt(
 def build_trial_info(trial: ClinicalTrial) -> str:
     """
     Build trial information string for comparison.
-    
+
     Args:
         trial: The clinical trial to build info for
-        
+
     Returns:
         Formatted trial information string
     """
@@ -117,7 +117,7 @@ def build_trial_info(trial: ClinicalTrial) -> str:
         f"Reason: {trial.analysis_reason}",
         f"Drug Analyses: {json.dumps(trial.drug_analysis, indent=2)}"
     ])
-    
+
     # Add arms information if available
     if trial.design.arms:
         arms_info: List[str] = []
@@ -137,7 +137,7 @@ def build_trial_info(trial: ClinicalTrial) -> str:
                     arm_str += f" - Interventions: {interventions}"
             arms_info.append(arm_str)
         info_lines.append(f"Arms: {'; '.join(arms_info)}")
-    
+
     return "\n".join(info_lines)
 
 
@@ -538,20 +538,14 @@ class GPTTrialFilter:
     A class for filtering clinical trials based on patient conditions and trial title.
     """
 
-    def __init__(self, api_key: str, cache_size: int = 100000):
+    def __init__(self, gpt_client: GPTClient):
         """
         Initialize the GPTTrialFilter.
 
         Args:
-            api_key (str): The API key for the GPT client
-            cache_size (int): The size of the cache for the GPT client
+            gpt_client (GPTClient): The GPT client instance to use for API calls
         """
-        self.gpt_client = GPTClient(
-            api_key=api_key,
-            cache_size=cache_size,
-            temperature=0.1,
-            max_retries=3,
-        )
+        self.gpt_client = gpt_client
 
     def _call_gpt(
         self,
@@ -1450,9 +1444,9 @@ Inclusion Criteria Text:
         Returns:
             A tuple containing:
                 - The maximum probability of any branch (float)
-                - A dictionary mapping each condition (str) to a list of CriterionEvaluation objects, where each object represents the evaluation of that condition against a specific branch. 
+                - A dictionary mapping each condition (str) to a list of CriterionEvaluation objects, where each object represents the evaluation of that condition against a specific branch.
                   For each condition, the list contains one CriterionEvaluation per branch, detailing the criterion text, the reason for the evaluation outcome, and the eligibility probability for that branch.
-                  Note: All conditions will have the same number of evaluations (one per branch processed), as validated before return. 
+                  Note: All conditions will have the same number of evaluations (one per branch processed), as validated before return.
                   Early exit may occur when a compatible branch is found (branch_max_prob > 0.0), but all conditions will have been evaluated against the same number of branches.
                 - The total cost of all branch evaluations (float)
         """
@@ -1530,7 +1524,7 @@ Inclusion Criteria Text:
                     f"Inconsistent evaluation counts in condition_evaluations_by_branch: {condition_evaluations_by_branch}. "
                     f"This indicates a bug in the branch processing logic."
                 )
-        
+
         overall_failed_conditions: Set[str] = set()
         reasons_by_branch: Dict[str, str] = {}
 
@@ -1542,17 +1536,17 @@ Inclusion Criteria Text:
             for condition in condition_evaluations_by_branch:
                 if condition_evaluations_by_branch[condition][branch_index].eligibility <= 0.0:
                     failed_conditions.add(condition)
-            
+
             if not failed_conditions:
                 raise RuntimeError(f"No conditions failed branch {branches[branch_index]}")
-            
+
             overall_failed_conditions.update(failed_conditions)
 
             reasons: Set[str] = set()
             for condition in failed_conditions:
                 reasons.add(condition_evaluations_by_branch[condition][branch_index].reason)
             reasons_by_branch[branches[branch_index]] = ", ".join(reasons)
-        
+
         # Concatenate the failed conditions and reasons
         failed_conditions_str: str = ", ".join(overall_failed_conditions)
         reasons_str: str = ", ".join([f"{branch}: {reason}" for branch, reason in reasons_by_branch.items()])
@@ -1812,7 +1806,7 @@ def process_trials_with_conditions(
                     "brief_title": trial.identification.brief_title,
                     "eligibility_criteria": trial.eligibility.criteria,
                 }
-                
+
                 # Add failure information if available
                 if failure_reason is not None:
                     excluded_info.update({

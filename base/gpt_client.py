@@ -15,6 +15,8 @@ from base.prompt_cache import PromptCache
 class GPTClient:
     """Base class for making GPT API calls with retry logic and caching."""
 
+    _instance = None  # Class variable to track singleton instance
+
     def __init__(
         self,
         api_key: str,
@@ -36,7 +38,13 @@ class GPTClient:
             cache_dir: Directory to store cache files
             strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
             enable_validation: If True, enables cache file validation after writing
+
+        Raises:
+            RuntimeError: If attempting to create a second instance of GPTClient
         """
+        if GPTClient._instance is not None:
+            raise RuntimeError("GPTClient is a singleton class. Only one instance can be created.")
+
         self.client = OpenAI(api_key=api_key)
         self.cache = PromptCache(cache_dir=cache_dir, max_size=cache_size, enable_validation=enable_validation)
         self.default_temperature = temperature
@@ -46,6 +54,10 @@ class GPTClient:
         self.cache_hits = 0
         self.cache_misses = 0
         self.api_calls = 0
+
+        # Set the singleton instance
+        GPTClient._instance = self
+
         logger.info(
             f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}, enable_validation={enable_validation}"
         )

@@ -21,6 +21,7 @@ from base.trial_expert import (
     GPTTrialFilter,
     process_trials_with_conditions,
 )
+from base.gpt_client import GPTClient
 from base.utils import load_json_list_file
 from typing import List
 
@@ -100,7 +101,13 @@ def main():
     # Initialize GPT filter only if needed
     gpt_filter = None
     if args.conditions and api_key:
-        gpt_filter = GPTTrialFilter(api_key, cache_size=args.cache_size)
+        gpt_client = GPTClient(
+            api_key=api_key,
+            cache_size=args.cache_size,
+            temperature=0.1,
+            max_retries=3,
+        )
+        gpt_filter = GPTTrialFilter(gpt_client)
 
     json_data = load_json_list_file(args.json_file)
     trials_parser = ClinicalTrialsParser(json_data)

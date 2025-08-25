@@ -2262,7 +2262,13 @@ def main():
         logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
         logger.warning("The benchmark will continue with available trials.")
 
-    gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
+    gpt_client = GPTClient(
+        api_key=api_key,
+        cache_size=args.cache_size,
+        temperature=0.1,
+        max_retries=3,
+    )
+    gpt_filter = GPTTrialFilter(gpt_client)
 
     results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only)
 

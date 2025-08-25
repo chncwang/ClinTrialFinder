@@ -96,8 +96,13 @@ def main():
     try:
         # Initialize GPT client and filter
         logger.info("Initializing GPT client and filter")
-        gpt_client = GPTClient(api_key=api_key)
-        gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=args.cache_size)
+        gpt_client = GPTClient(
+            api_key=api_key,
+            cache_size=args.cache_size,
+            temperature=0.1,
+            max_retries=3,
+        )
+        gpt_filter = GPTTrialFilter(gpt_client)
 
         # Extract conditions from clinical record
         logger.info(f"Reading clinical record from {args.clinical_record}")

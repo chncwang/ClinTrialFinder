@@ -2,7 +2,7 @@
 """
 Script to filter a specific clinical trial by NCT ID against a clinical record.
 
-This script evaluates whether a specific clinical trial (identified by NCT ID) 
+This script evaluates whether a specific clinical trial (identified by NCT ID)
 is suitable for a patient based on their clinical record. It provides detailed
 logging of the filtering process and results.
 """
@@ -38,7 +38,7 @@ def load_trials(trials_file: str) -> List[Dict[str, Any]]:
 def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
     """Fetch clinical trial data directly from ClinicalTrials.gov."""
     import tempfile
-    
+
     # Create a temporary file to store the spider output
     with tempfile.NamedTemporaryFile(
         mode="w+", suffix=".json", delete=False
@@ -95,7 +95,7 @@ def filter_specific_trial(
 ) -> Dict[str, Any]:
     """
     Filter a specific clinical trial by NCT ID against a clinical record.
-    
+
     Args:
         clinical_record: Path to the clinical record file
         nct_id: NCT ID of the trial to filter
@@ -103,22 +103,27 @@ def filter_specific_trial(
         api_key: OpenAI API key
         cache_size: Size of the GPT response cache
         refresh_cache: Whether to refresh the cache
-        
+
     Returns:
         Dictionary containing the filtering results
     """
-    
+
     logger.info("=" * 60)
     logger.info(f"filter_specific_trial: Starting filtering process for trial {nct_id}")
     logger.info("=" * 60)
-    
+
     # Initialize GPT client and filter
     logger.info("filter_specific_trial: Initializing GPT client and filter")
     if not api_key:
         raise ValueError("API key is required")
-    gpt_client = GPTClient(api_key=api_key)
-    gpt_filter = GPTTrialFilter(api_key=api_key, cache_size=cache_size)
-    
+    gpt_client = GPTClient(
+        api_key=api_key,
+        cache_size=cache_size,
+        temperature=0.1,
+        max_retries=3,
+    )
+    gpt_filter = GPTTrialFilter(gpt_client)
+
     # Extract conditions from clinical record
     logger.info(f"filter_specific_trial: Reading clinical record from {clinical_record}")
     logger.info("filter_specific_trial: Extracting conditions from clinical record")
@@ -129,7 +134,7 @@ def filter_specific_trial(
     logger.info(f"filter_specific_trial: Extracted {len(history_items)} conditions:")
     for item in history_items:
         logger.info(f"filter_specific_trial:  - {item}")
-    
+
     # Load or fetch trial data
     if trials_file and os.path.exists(trials_file):
         logger.info(f"filter_specific_trial: Loading trial from file: {trials_file}")
@@ -143,26 +148,26 @@ def filter_specific_trial(
         trials_data = fetch_trial_data(nct_id)
         if not trials_data:
             raise ValueError(f"Failed to fetch trial {nct_id} from ClinicalTrials.gov")
-        
+
         trials_parser = ClinicalTrialsParser(trials_data)
         trial = trials_parser.get_trial_by_nct_id(nct_id)
         if not trial:
             raise ValueError(f"Trial {nct_id} not found in fetched data")
-    
+
     logger.info(f"filter_specific_trial: Trial found: {trial.identification.brief_title}")
     logger.info(f"filter_specific_trial: Study type: {trial.design.study_type}")
     logger.info(f"filter_specific_trial: Phases: {trial.design.phases}")
     logger.info(f"filter_specific_trial: Recruiting: {trial.is_recruiting}")
-    
+
     # Evaluate the trial against the conditions
     logger.info("=" * 40)
     logger.info("filter_specific_trial: Evaluating trial eligibility")
     logger.info("=" * 40)
-    
+
     is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
         trial, history_items, refresh_cache
     )
-    
+
     # Prepare results
     result = {
         "nct_id": nct_id,
@@ -185,7 +190,7 @@ def filter_specific_trial(
         } if not is_eligible and failure_reason is not None else None,
         "evaluation_timestamp": datetime.datetime.now().isoformat(),
     }
-    
+
     # Log results
     logger.info("=" * 60)
     logger.info("filter_specific_trial: FILTERING RESULTS")
@@ -194,14 +199,14 @@ def filter_specific_trial(
     logger.info(f"filter_specific_trial: Trial Title: {trial.identification.brief_title}")
     logger.info(f"filter_specific_trial: Eligibility: {'ELIGIBLE' if is_eligible else 'NOT ELIGIBLE'}")
     logger.info(f"filter_specific_trial: API Cost: ${cost:.4f}")
-    
+
     if is_eligible:
         logger.info("filter_specific_trial: ✅ Trial is suitable for the patient based on clinical record")
     else:
         logger.info(f"filter_specific_trial: ❌ Trial is not suitable: {failure_reason}")
-    
+
     logger.info("=" * 60)
-    
+
     return result
 
 
