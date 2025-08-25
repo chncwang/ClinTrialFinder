@@ -11,7 +11,23 @@ logger = logging.getLogger(__name__)
 
 
 class PromptCache:
+    _instance = None  # Class variable to track singleton instance
+
     def __init__(self, cache_dir: str = ".cache", max_size: int = 10000, enable_validation: bool = False):
+        """
+        Initialize the prompt cache.
+
+        Args:
+            cache_dir: Directory to store cache files
+            max_size: Maximum number of cache entries to keep
+            enable_validation: If True, enables cache file validation after writing
+
+        Raises:
+            RuntimeError: If attempting to create a second instance of PromptCache
+        """
+        if PromptCache._instance is not None:
+            raise RuntimeError("PromptCache is a singleton class. Only one instance can be created.")
+
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
@@ -22,6 +38,9 @@ class PromptCache:
 
         # Register cleanup function to run at program exit
         atexit.register(self._cleanup_on_exit)
+
+        # Set the singleton instance
+        PromptCache._instance = self
 
     def set(self, original_key: str, result: Any) -> None:
         """Cache result for a given original key."""
