@@ -2,8 +2,10 @@ import hashlib
 import json
 import time
 import atexit
+import threading
 from pathlib import Path
 from typing import Any
+from collections import OrderedDict
 
 import logging
 
@@ -32,7 +34,10 @@ class PromptCache:
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
         self.enable_validation = enable_validation
-        self.cache_data: dict[str, Any] = {}
+        self.cache_data: OrderedDict[str, Any] = OrderedDict()
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
+        self._last_write_time = 0  # Track when we last wrote to disk
+        self._write_threshold = 300  # 5 minutes in seconds
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
 
@@ -44,72 +49,88 @@ class PromptCache:
 
     def set(self, original_key: str, result: Any) -> None:
         """Cache result for a given original key."""
-        # Generate hash key internally
-        cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
+        with self._lock:
+            # Generate hash key internally
+            cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
 
-        logger.debug(f"Caching result for key: {cache_key[:8]}...")
+            logger.debug(f"Caching result for key: {cache_key[:8]}...")
 
-        # Check if cache size limit is exceeded and clear if so
-        if len(self.cache_data) >= self.max_size:
-            logger.info(f"Cache size limit ({self.max_size}) exceeded. Clearing cache for simplicity.")
-            self.cache_data.clear()
+            # Check if cache size limit is exceeded and remove oldest entries if so
+            if len(self.cache_data) >= self.max_size:
+                # Remove oldest entries to make room for new ones
+                items_to_remove = len(self.cache_data) - self.max_size + 1
+                for _ in range(items_to_remove):
+                    self.cache_data.popitem(last=False)  # Remove from the beginning (oldest)
+                logger.info(f"Cache size limit ({self.max_size}) exceeded. Removed {items_to_remove} oldest entries.")
 
-        # Ensure we're storing a string
-        if not isinstance(result, str):
-            try:
-                if isinstance(result, dict):
-                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
-                    result = json.dumps(result)
-                else:
-                    logger.warning(f"Converting {type(result)} to string for cache key: {cache_key[:8]}...")
-                    result = str(result)
-            except Exception as e:
-                logger.error(f"Error converting result to string: {e}")
-                return
+            # Ensure we're storing a string
+            if not isinstance(result, str):
+                try:
+                    if isinstance(result, dict):
+                        logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
+                        result = json.dumps(result)
+                    else:
+                        logger.warning(f"Converting {type(result)} to string for cache key: {cache_key[:8]}...")
+                        result = str(result)
+                except Exception as e:
+                    logger.error(f"Error converting result to string: {e}")
+                    return
 
-        # Store both the original key and the result for debugging
-        cache_entry = {
-            "key": original_key,
-            "value": result
-        }
+            # Store both the original key and the result for debugging
+            cache_entry = {
+                "key": original_key,
+                "value": result
+            }
 
-        # Save new entry
-        self.cache_data[cache_key] = cache_entry
-        logger.debug(f"After adding, cache_data[{cache_key}] = {cache_entry}")
-        self._write_cache_to_disk()
+            # Save new entry (this will move it to the end, making it most recently used)
+            self.cache_data[cache_key] = cache_entry
+            logger.debug(f"After adding, cache_data[{cache_key}] = {cache_entry}")
+
+            # Only write to disk if enough time has passed since last write
+            current_time = time.time()
+            if current_time - self._last_write_time >= self._write_threshold:
+                logger.debug(f"Writing cache to disk (last write was {current_time - self._last_write_time:.1f}s ago)")
+                self._write_cache_to_disk()
+                self._last_write_time = current_time
+            else:
+                logger.debug(f"Skipping disk write (last write was {current_time - self._last_write_time:.1f}s ago, threshold: {self._write_threshold}s)")
 
     def get(self, original_key: str) -> str | None:
         """Get cached result for a given original key."""
-        # Generate hash key internally
-        cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
+        with self._lock:
+            # Generate hash key internally
+            cache_key = hashlib.sha256(original_key.encode("utf-8")).hexdigest()
 
-        if cache_key in self.cache_data:
-            logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
-            try:
-                # Get the value from the cache entry
-                cache_entry = self.cache_data[cache_key]
-                result = cache_entry["value"]
-
-                # Ensure we're returning a string
-                if isinstance(result, dict):
-                    logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
-                    result = json.dumps(result)
-                elif not isinstance(result, str):
-                    result = str(result)
-
+            if cache_key in self.cache_data:
                 logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
-                return result
-            except Exception as e:
-                logger.error(f"Error retrieving cache entry: {e}")
-                return None
-        logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
-        return None
+                try:
+                    # Get the value from the cache entry
+                    cache_entry = self.cache_data[cache_key]
+                    result = cache_entry["value"]
+
+                    # Move the accessed item to the end (most recently used)
+                    self.cache_data.move_to_end(cache_key)
+
+                    # Ensure we're returning a string
+                    if isinstance(result, dict):
+                        logger.warning(f"Converting dict to string for cache key: {cache_key[:8]}...")
+                        result = json.dumps(result)
+                    elif not isinstance(result, str):
+                        result = str(result)
+
+                    logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
+                    return result
+                except Exception as e:
+                    logger.error(f"Error retrieving cache entry: {e}")
+                    return None
+            logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
+            return None
 
     def _cleanup_on_exit(self):
         """Cleanup function registered with atexit to save cache on program exit."""
         try:
             logger.info("Saving cache on program exit...")
-            self._write_cache_to_disk()
+            self.force_write_to_disk()
         except Exception as e:
             logger.error(f"Error saving cache on exit: {e}")
 
@@ -117,50 +138,100 @@ class PromptCache:
         """Destructor to ensure cache is saved when object is destroyed."""
         try:
             logger.info("Saving cache before destruction...")
-            self._write_cache_to_disk()
+            self.force_write_to_disk()
         except Exception as e:
             # Don't raise exceptions in destructor
             logger.error(f"Error saving cache during destruction: {e}")
 
     def _load_cache(self):
         """Load the cache from disk."""
-        cache_path = self.cache_dir / "prompt_cache.json"
-        if cache_path.exists():
-            try:
-                start_time = time.time()
-                with open(cache_path, "r") as f:
-                    data = json.load(f)
-                    self.cache_data = dict(data)
-                load_time = time.time() - start_time
-                logger.info(f"Loaded {len(self.cache_data)} cache entries in {load_time:.2f}s")
-            except (json.JSONDecodeError, IOError) as e:
-                logger.error(f"Failed to load cache: {str(e)}")
-                self.cache_data: dict[str, Any] = {}
-        else:
-            logger.info(f"No cache file found at {cache_path}")
+        with self._lock:
+            cache_path = self.cache_dir / "prompt_cache.json"
+            if cache_path.exists():
+                try:
+                    start_time = time.time()
+                    with open(cache_path, "r") as f:
+                        data = json.load(f)
+                        self.cache_data = OrderedDict(data)
+                    load_time = time.time() - start_time
+                    logger.info(f"Loaded {len(self.cache_data)} cache entries in {load_time:.2f}s")
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.error(f"Failed to load cache: {str(e)}")
+                    self.cache_data: OrderedDict[str, Any] = OrderedDict()
+            else:
+                logger.info(f"No cache file found at {cache_path}")
 
     def _write_cache_to_disk(self):
         """Write the cache data to disk."""
-        start_time = time.time()
-        cache_path = self.cache_dir / "prompt_cache.json"
-        try:
-            with open(cache_path, "w") as f:
-                to_dump_list: list[tuple[str, dict[str, Any]]] = list(self.cache_data.items())
-                logger.debug(f"to_dump_list:")
-                for item in to_dump_list:
-                    logger.debug(f"  {item}")
-                json.dump(to_dump_list, f, indent=2)
+        with self._lock:
+            start_time = time.time()
+            cache_path = self.cache_dir / "prompt_cache.json"
+            try:
+                with open(cache_path, "w") as f:
+                    to_dump_list: list[tuple[str, dict[str, Any]]] = list(self.cache_data.items())
+                    logger.debug(f"to_dump_list:")
+                    for item in to_dump_list:
+                        logger.debug(f"  {item}")
+                    json.dump(to_dump_list, f, indent=2)
 
-            # Validate that each first item in the tuple can be found in the text file (if enabled)
-            if self.enable_validation:
-                self._validate_cache_file(cache_path, to_dump_list)
+                # Validate that each first item in the tuple can be found in the text file (if enabled)
+                if self.enable_validation:
+                    self._validate_cache_file(cache_path, to_dump_list)
 
-            save_time = time.time() - start_time
-            logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
-            return True
-        except IOError as e:
-            logger.error(f"Failed to save cache: {str(e)}")
-            return False
+                save_time = time.time() - start_time
+                logger.info(f"Saved {len(self.cache_data)} cache entries in {save_time:.2f}s")
+
+                # Update the last write time
+                self._last_write_time = time.time()
+                return True
+            except IOError as e:
+                logger.error(f"Failed to save cache: {str(e)}")
+                return False
+
+    def force_write_to_disk(self):
+        """Force writing the cache to disk regardless of the time threshold."""
+        with self._lock:
+            logger.info("Forcing cache write to disk...")
+            self._write_cache_to_disk()
+
+    def get_cache_status(self) -> dict[str, Any]:
+        """Get information about the current cache status."""
+        with self._lock:
+            current_time = time.time()
+            time_since_last_write = current_time - self._last_write_time
+            time_until_next_write = max(0, self._write_threshold - time_since_last_write)
+
+            return {
+                "cache_size": len(self.cache_data),
+                "max_size": self.max_size,
+                "last_write_time": self._last_write_time,
+                "write_threshold": self._write_threshold,
+                "time_since_last_write": time_since_last_write,
+                "time_until_next_write": time_until_next_write,
+                "will_write_on_next_set": time_since_last_write >= self._write_threshold
+            }
+
+    def set_write_threshold(self, threshold_seconds: int) -> None:
+        """Set the write threshold in seconds."""
+        if threshold_seconds < 0:
+            raise ValueError("Write threshold must be non-negative")
+
+        with self._lock:
+            old_threshold = self._write_threshold
+            self._write_threshold = threshold_seconds
+            logger.info(f"Write threshold changed from {old_threshold}s to {threshold_seconds}s")
+
+    def trigger_write_if_needed(self) -> bool:
+        """Trigger a write to disk if the threshold has been reached."""
+        with self._lock:
+            current_time = time.time()
+            if current_time - self._last_write_time >= self._write_threshold:
+                logger.debug(f"Threshold reached, writing cache to disk")
+                self._write_cache_to_disk()
+                return True
+            else:
+                logger.debug(f"Threshold not reached yet, skipping disk write")
+                return False
 
     def _validate_cache_file(self, cache_path: Path, to_dump_list: list[tuple[str, dict[str, Any]]]) -> None:
         """Validate that each first item in the tuple can be found in the text file."""
