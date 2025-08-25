@@ -4,25 +4,67 @@ Error Cases Analysis Script
 
 This script reads and analyzes error case JSON files from clinical trial filtering experiments.
 It provides comprehensive analysis including statistics, patterns, and detailed examination of error cases.
+It also uses GPT-5 (or GPT-4o as fallback) to categorize false positive errors into specific error types.
 
 Usage:
     python -m scripts.analyze_error_cases <json_file_path> [options]
+
+    Options:
+        --gpt-api-key KEY    OpenAI API key for GPT categorization
+        --categorize-gpt     Use GPT to categorize false positive errors
+        --export-csv         Export error cases to CSV format
+        --output PATH        Output file path
+        --log-level LEVEL    Set logging level (DEBUG, INFO, WARNING, ERROR)
 """
 
 import argparse
 import sys
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from collections import Counter, defaultdict
 import pandas as pd
 from datetime import datetime
+from enum import Enum
 
 # Import our custom error case classes
-from base.error_case import ErrorCase, ErrorCaseCollection
+from base.error_case import ErrorCaseCollection
+from base.gpt_client import GPTClient
 
 # Global logger
 logger = logging.getLogger(__name__)
+
+
+class ErrorCategory(Enum):
+    """Enum representing the three categories of clinical trial filtering errors."""
+
+    EXCLUSION_CRITERIA_VIOLATION = "exclusion_criteria_violation"
+    INCLUSION_CRITERIA_VIOLATION = "inclusion_criteria_violation"
+    DATA_LABEL_ERROR = "data_label_error"
+
+    @classmethod
+    def get_all_values(cls) -> List[str]:
+        """Get all possible category values as a list of strings."""
+        return [category.value for category in cls]
+
+    @classmethod
+    def is_valid_category(cls, category_str: str) -> bool:
+        """Check if a string represents a valid error category."""
+        return category_str in cls.get_all_values()
+
+    @classmethod
+    def from_value(cls, value: str) -> Optional['ErrorCategory']:
+        """Get an ErrorCategory enum from its string value."""
+        for category in cls:
+            if category.value == value:
+                return category
+        return None
+
+    @classmethod
+    def get_categories_dict(cls) -> Dict[str, str]:
+        """Get a dictionary mapping category values to their descriptions."""
+        return {category.value: cls.get_description(category) for category in cls}
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -39,10 +81,23 @@ def setup_logging(level: str = "INFO") -> None:
 class ErrorCaseAnalyzer:
     """Analyzer for clinical trial error case data."""
 
-    def __init__(self, json_file_path: str):
-        """Initialize the analyzer with a JSON file path."""
+    def __init__(self, json_file_path: str, gpt_api_key: str):
+        """Initialize the analyzer with a JSON file path and optional GPT API key."""
         self.json_file_path = Path(json_file_path)
         self.collection: Optional[ErrorCaseCollection] = None
+        self.gpt_client: Optional[GPTClient] = None
+        self.total_cost = 0.0  # Track total API costs
+        self.case_costs: Dict[str, float] = {}    # Track costs per case
+
+        if gpt_api_key:
+            try:
+                self.gpt_client = GPTClient(api_key=gpt_api_key)
+                logger.info("GPT client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize GPT client: {e}")
+                raise e
+        else:
+            raise ValueError("GPT API key is required for categorization")
 
     def load_data(self) -> None:
         """Load and validate the JSON data."""
@@ -53,12 +108,299 @@ class ErrorCaseAnalyzer:
         self.collection = ErrorCaseCollection.from_file(str(self.json_file_path))
         logger.info(f"Successfully loaded {len(self.collection)} error cases from {self.json_file_path}")
 
+    def categorize_false_positives_with_gpt(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Use GPT to categorize false positive error cases into specific error types."""
+        if not self.gpt_client:
+            logger.error("GPT client not available. Skipping categorization.")
+            raise ValueError("GPT client not available. Skipping categorization.")
+
+        if not self.collection:
+            logger.warning("No data loaded. Use load_data() first.")
+            return {}
+
+        # Filter for false positive cases only
+        false_positive_cases = [case for case in self.collection if case.is_false_positive]
+        logger.info(f"Found {len(false_positive_cases)} false positive cases to categorize")
+
+        if not false_positive_cases:
+            logger.info("No false positive cases found for categorization")
+            return {}
+
+        # Initialize categorized cases using the enum
+        categorized_cases: Dict[str, List[Dict[str, Any]]] = {
+            category.value: [] for category in ErrorCategory
+        }
+
+        # Use GPT-5 for categorization
+        model = "gpt-5"
+
+        try:
+            logger.info(f"Attempting categorization with {model}...")
+            for i, case in enumerate(false_positive_cases):
+                logger.info(f"Processing case {i+1}/{len(false_positive_cases)}: {case.trial_id}")
+
+                try:
+                    categorization, reasoning, cost = self._categorize_single_case(case, model)
+                    # Track costs
+                    self.total_cost += cost
+                    self.case_costs[case.trial_id] = cost
+
+                    categorized_cases[categorization.value].append({
+                        'case': case,
+                        'gpt_categorization': categorization.value,
+                        'gpt_reasoning': reasoning,
+                        'model_used': model,
+                        'cost': cost
+                    })
+                except Exception as case_error:
+                    logger.error(f"Failed to categorize case {case.trial_id}: {case_error}")
+                    # Continue with next case instead of failing the entire process
+                    raise case_error
+
+                # Add a small delay to avoid rate limiting
+                import time
+                time.sleep(0.1)
+
+            logger.info(f"Successfully processed all cases using {model}")
+
+        except Exception as e:
+            logger.error(f"Failed to categorize with {model}: {e}")
+            raise e
+
+        # Log summary of categorization
+        logger.info("-"*80)
+        logger.info("GPT CATEGORIZATION RESULTS")
+        logger.info("-"*80)
+        logger.info(f"Model used: {model}")
+        # Log summary for each category
+        for category in ErrorCategory:
+            count = len(categorized_cases[category.value])
+            description = category.value.replace('_', ' ').title()
+            logger.info(f"{description}: {count}")
+
+        return categorized_cases
+
+    def _categorize_single_case(self, case: Any, model: str) -> tuple[ErrorCategory, str, float]:
+        """Categorize a single false positive case using GPT.
+
+        Returns:
+            tuple: (ErrorCategory, str, float) - The error category, reasoning, and API cost
+        """
+        if not self.gpt_client:
+            raise RuntimeError("GPT client not available")
+
+        system_prompt = """You are a clinical trial domain expert.
+You specialize in interpreting patient records and clinical trial eligibility criteria.
+Your role is to analyze trial matching errors with deep knowledge of inclusion and exclusion logic.
+You must be precise, concise, and output only structured JSON — no extra text, no markdown, no explanations."""
+
+        user_prompt = f"""Categorize the following false positive error case into one of:
+- "exclusion_criteria_violation": patient meets ≥1 exclusion criterion.
+- "inclusion_criteria_violation": patient fails to meet ≥1 inclusion criterion.
+- "data_label_error": benchmark label or data is likely incorrect.
+
+Return JSON only, in this schema:
+{{
+  "reasoning": "≤60 words explaining your choice",
+  "category": "exclusion_criteria_violation" | "inclusion_criteria_violation" | "data_label_error",
+}}
+
+Case details:
+
+Clinical Record:
+{case.text_summary}
+
+Trial Title:
+{case.trial_title}
+
+Trial Criteria:
+{case.trial_criteria}
+"""
+
+        try:
+            response, cost = self.gpt_client.call_gpt(
+                prompt=user_prompt,
+                system_role=system_prompt,
+                model=model,
+            )
+
+            # Log the cost for this categorization
+            logger.info(f"GPT API cost for case {case.trial_id}: ${cost:.6f}")
+
+            # Clean and validate the response
+            response = response.strip()
+
+            # Try to parse as JSON
+            import json
+            try:
+                parsed_response = json.loads(response)
+                category_str = parsed_response.get("category", "").lower()
+                reasoning = parsed_response.get("reasoning", "No reasoning provided")
+                logger.info(f"Categorization: {category_str}, Reasoning: {reasoning}")
+
+                # Check if the response contains any valid category
+                for category in ErrorCategory:
+                    if category.value in category_str:
+                        return category, reasoning, cost
+
+                # If no valid category found, log and raise error
+                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {ErrorCategory.get_all_values()}"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
+
+            except json.JSONDecodeError:
+                # Fallback: try to extract category from plain text response
+                response_lower = response.lower()
+                for category in ErrorCategory:
+                    if category.value in response_lower:
+                        return category, "Category extracted from text response (JSON parsing failed)", cost
+
+                # If no valid category found, log and raise error
+                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {ErrorCategory.get_all_values()}"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
+
+        except Exception as e:
+            error_msg = f"Failed to categorize case {case.trial_id} with {model}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
     def get_summary_stats(self) -> Dict[str, Any]:
         """Get summary statistics for the error cases."""
         if not self.collection:
             return {}
 
         return self.collection.get_statistics()
+
+    def get_category_statistics(self, categorized_cases: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+        """Get statistics for each error category."""
+        if not categorized_cases:
+            return {}
+
+        stats: Dict[str, Dict[str, Any]] = {}
+        for category in ErrorCategory:
+            category_cases = categorized_cases.get(category.value, [])
+            stats[category.value] = {
+                'count': len(category_cases),
+                'percentage': len(category_cases) / sum(len(cases) for cases in categorized_cases.values()) * 100 if any(categorized_cases.values()) else 0,
+            }
+
+        return stats
+
+    def print_category_statistics(self, categorized_cases: Dict[str, List[Dict[str, Any]]]) -> None:
+        """Print category statistics in a formatted way."""
+        stats = self.get_category_statistics(categorized_cases)
+        if not stats:
+            logger.info("No category statistics available")
+            return
+
+        logger.info("-" * 80)
+        logger.info("ERROR CATEGORY STATISTICS")
+        logger.info("-" * 80)
+
+        for category_value, category_stats in stats.items():
+            count = category_stats['count']
+            percentage = category_stats['percentage']
+
+            logger.info(f"{category_value.replace('_', ' ').title()}:")
+            logger.info(f"  Count: {count}")
+            logger.info(f"  Percentage: {percentage:.1f}%")
+            logger.info("")
+
+    def get_category_examples(self, categorized_cases: Dict[str, List[Dict[str, Any]]], max_examples: int = 3) -> Dict[str, List[Dict[str, Any]]]:
+        """Get example cases from each category for analysis."""
+        examples: Dict[str, List[Dict[str, Any]]] = {}
+
+        for category in ErrorCategory:
+            category_cases = categorized_cases.get(category.value, [])
+            if category_cases:
+                # Take up to max_examples cases from this category
+                examples[category.value] = category_cases[:max_examples]
+            else:
+                examples[category.value] = []
+
+        return examples
+
+    def print_category_examples(self, categorized_cases: Dict[str, List[Dict[str, Any]]], max_examples: int = 3) -> None:
+        """Print example cases from each category."""
+        examples = self.get_category_examples(categorized_cases, max_examples)
+
+        logger.info("-" * 80)
+        logger.info(f"CATEGORY EXAMPLES (max {max_examples} per category)")
+        logger.info("-" * 80)
+
+        for category in ErrorCategory:
+            category_examples = examples[category.value]
+            logger.info(f"\n{category.value.replace('_', ' ').title()}:")
+
+            if not category_examples:
+                logger.info("  No examples available")
+                continue
+
+            for i, case_info in enumerate(category_examples, 1):
+                case = case_info['case']
+                logger.info(f"  Example {i}:")
+                logger.info(f"    Trial ID: {case.trial_id}")
+                logger.info(f"    Patient ID: {case.patient_id}")
+                logger.info(f"    Disease: {case.disease_name}")
+                logger.info(f"    Suitability Probability: {case.suitability_probability:.3f}")
+                logger.info(f"    Reason: {case.reason[:100]}...")
+                if 'gpt_reasoning' in case_info:
+                    logger.info(f"    GPT Reasoning: {case_info['gpt_reasoning']}")
+
+    def validate_categorization(self, categorization: str) -> bool:
+        """Validate if a categorization string is a valid error category."""
+        return ErrorCategory.is_valid_category(categorization)
+
+    def get_category_enum(self, categorization: str) -> Optional[ErrorCategory]:
+        """Get the ErrorCategory enum from a categorization string."""
+        return ErrorCategory.from_value(categorization)
+
+    def print_available_categories(self) -> None:
+        """Print all available error categories with their descriptions."""
+        logger.info("-" * 80)
+        logger.info("AVAILABLE ERROR CATEGORIES")
+        logger.info("-" * 80)
+
+    def print_cost_statistics(self) -> None:
+        """Print cost statistics for GPT API usage."""
+        if self.total_cost == 0.0:
+            logger.info("No GPT API costs recorded")
+            return
+
+        logger.info("-" * 80)
+        logger.info("GPT API COST STATISTICS")
+        logger.info("-" * 80)
+        logger.info(f"Total cost: ${self.total_cost:.6f}")
+        logger.info(f"Number of cases processed: {len(self.case_costs)}")
+        if self.case_costs:
+            avg_cost = self.total_cost / len(self.case_costs)
+            min_cost = min(self.case_costs.values())
+            max_cost = max(self.case_costs.values())
+            logger.info(f"Average cost per case: ${avg_cost:.6f}")
+            logger.info(f"Minimum cost per case: ${min_cost:.6f}")
+            logger.info(f"Maximum cost per case: ${max_cost:.6f}")
+        logger.info("-" * 80)
+
+    def get_cost_summary(self) -> Dict[str, Any]:
+        """Get cost summary statistics as a dictionary."""
+        if self.total_cost == 0.0:
+            return {
+                'total_cost': 0.0,
+                'cases_processed': 0,
+                'average_cost_per_case': 0.0,
+                'min_cost_per_case': 0.0,
+                'max_cost_per_case': 0.0
+            }
+
+        return {
+            'total_cost': self.total_cost,
+            'cases_processed': len(self.case_costs),
+            'average_cost_per_case': self.total_cost / len(self.case_costs),
+            'min_cost_per_case': min(self.case_costs.values()),
+            'max_cost_per_case': max(self.case_costs.values()),
+            'case_costs': self.case_costs
+        }
 
     def export_to_csv(self, output_path: str) -> bool:
         """Export error cases to CSV format."""
@@ -75,6 +417,42 @@ class ErrorCaseAnalyzer:
             return True
         except Exception as e:
             logger.error(f"Error exporting to CSV: {e}")
+            return False
+
+    def export_categorized_results(self, categorized_cases: Dict[str, List[Dict[str, Any]]], output_path: str) -> bool:
+        """Export the GPT-categorized results to CSV."""
+        try:
+            if not categorized_cases:
+                logger.warning("No categorized cases to export")
+                return False
+
+            # Flatten the categorized results
+            export_data: List[Dict[str, Any]] = []
+            for category_name, cases in categorized_cases.items():
+                for case_info in cases:
+                    case = case_info['case']
+                    export_data.append({
+                        'patient_id': case.patient_id,
+                        'disease_name': case.disease_name,
+                        'trial_id': case.trial_id,
+                        'trial_title': case.trial_title,
+                        'trial_criteria': case.trial_criteria,
+                        'suitability_probability': case.suitability_probability,
+                        'reason': case.reason,
+                        'text_summary': case.text_summary,
+                        'gpt_categorization': category_name,
+                        'gpt_reasoning': case_info.get('gpt_reasoning', ''),
+                        'model_used': case_info['model_used'],
+                        'api_cost': case_info.get('cost', 0.0)
+                    })
+
+            df = pd.DataFrame(export_data)
+            df.to_csv(output_path, index=False)
+            logger.info(f"Exported {len(df)} categorized cases to {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error exporting categorized results to CSV: {e}")
             return False
 
     def log_summary(self):
@@ -155,12 +533,13 @@ class ErrorCaseAnalyzer:
 def main():
     """Main function to run the error case analyzer."""
     parser = argparse.ArgumentParser(
-        description="Analyze clinical trial error case JSON files",
+        description="Analyze clinical trial error case JSON files with GPT categorization",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json
     python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --export-csv
+    python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --gpt-api-key sk-...
         """
     )
 
@@ -171,14 +550,21 @@ Examples:
     parser.add_argument('--output', help='Output CSV file path (default: error_cases_analysis.csv)')
     parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                        help='Set the logging level (default: INFO)')
+    parser.add_argument('--gpt-api-key', help='OpenAI API key for GPT categorization (overrides OPENAI_API_KEY env var)')
 
     args = parser.parse_args()
 
     # Setup logging
     setup_logging(args.log_level)
 
+    # Get GPT API key for categorization
+    gpt_api_key = args.gpt_api_key or os.getenv('OPENAI_API_KEY')
+    if not gpt_api_key:
+        logger.error("GPT API key not provided. Use --gpt-api-key or set OPENAI_API_KEY environment variable.")
+        sys.exit(1)
+
     # Initialize analyzer
-    analyzer = ErrorCaseAnalyzer(args.json_file)
+    analyzer = ErrorCaseAnalyzer(args.json_file, gpt_api_key)
 
     # Load data
     try:
@@ -190,6 +576,27 @@ Examples:
     # Log summary
     analyzer.log_summary()
 
+    # Perform GPT categorization
+    logger.info("Starting GPT categorization of false positive cases...")
+    categorized_cases = analyzer.categorize_false_positives_with_gpt()
+
+    if categorized_cases:
+        # Export categorized results
+        output_path = args.output or f"categorized_error_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        if analyzer.export_categorized_results(categorized_cases, output_path):
+            logger.info("Categorized results export completed successfully")
+        else:
+            logger.error("Categorized results export failed")
+
+        # Demonstrate enum usage
+        logger.info("Demonstrating ErrorCategory enum usage...")
+        analyzer.print_available_categories()
+        analyzer.print_category_statistics(categorized_cases)
+        analyzer.print_category_examples(categorized_cases, max_examples=2)
+
+        # Display cost statistics
+        analyzer.print_cost_statistics()
+
     # Export to CSV if requested
     if args.export_csv:
         output_path = args.output or f"error_cases_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -197,6 +604,16 @@ Examples:
             logger.info("CSV export completed successfully")
         else:
             logger.error("CSV export failed")
+
+    # Final cost summary
+    if analyzer.total_cost > 0:
+        logger.info("=" * 80)
+        logger.info("FINAL COST SUMMARY")
+        logger.info("=" * 80)
+        cost_summary = analyzer.get_cost_summary()
+        logger.info(f"Total GPT API cost: ${cost_summary['total_cost']:.6f}")
+        logger.info(f"Cost per case: ${cost_summary['average_cost_per_case']:.6f}")
+        logger.info("=" * 80)
 
 
 if __name__ == "__main__":

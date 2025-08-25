@@ -83,6 +83,10 @@ class GPTClient:
         Returns:
             Tuple of (response_content, cost)
         """
+        # Validate that temperature is not set when model is gpt-5
+        if model.startswith("gpt-5") and temperature is not None:
+            raise ValueError("Temperature is not supported for gpt-5 models")
+
         start_time = time.time()
         temp = temperature if temperature is not None else self.default_temperature
         cache_check_time = 0.0
@@ -132,8 +136,10 @@ class GPTClient:
             completion_kwargs: Dict[str, Any] = {
                 "model": model,
                 "messages": messages,
-                "temperature": temp,
             }
+            if not model.startswith("gpt-5"):
+                completion_kwargs["temperature"] = temp
+
             if response_format:
                 completion_kwargs["response_format"] = response_format
 
