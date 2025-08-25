@@ -2252,12 +2252,9 @@ def main():
         logger.warning(f"{coverage_stats['total_missing']} trials are missing from the dataset.")
         logger.warning("The benchmark will continue with available trials.")
 
-    gpt_client = GPTClient(
-        api_key=api_key,
-        cache_size=args.cache_size,
-        temperature=0.1,
-        max_retries=3,
-    )
+    # Reuse the existing GPTClient instance from the benchmark object
+    # This prevents the singleton error that would occur if we tried to create a new GPTClient instance
+    gpt_client = benchmark.gpt_client
     gpt_filter = GPTTrialFilter(gpt_client)
 
     results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only)
