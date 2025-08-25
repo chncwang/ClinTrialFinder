@@ -2,7 +2,6 @@ import hashlib
 import json
 import time
 import atexit
-from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +16,7 @@ class PromptCache:
         self.cache_dir.mkdir(exist_ok=True)
         self.max_size = max_size
         self.enable_validation = enable_validation
-        self.cache_data: OrderedDict[str, Any] = OrderedDict()
+        self.cache_data: dict[str, Any] = {}
         self._load_cache()
         logger.info(f"Initialized prompt cache with {len(self.cache_data)} entries")
 
@@ -31,12 +30,10 @@ class PromptCache:
 
         logger.debug(f"Caching result for key: {cache_key[:8]}...")
 
-        # Enforce cache size limit
-        while len(self.cache_data) >= self.max_size:
-            # Remove oldest entry
-            oldest_key, _ = next(iter(self.cache_data.items()))
-            self.cache_data.popitem(last=False)
-            logger.debug(f"Removed oldest cache entry: {oldest_key[:8]}...")
+        # Check if cache size limit is exceeded and clear if so
+        if len(self.cache_data) >= self.max_size:
+            logger.info(f"Cache size limit ({self.max_size}) exceeded. Clearing cache for simplicity.")
+            self.cache_data.clear()
 
         # Ensure we're storing a string
         if not isinstance(result, str):
@@ -114,12 +111,12 @@ class PromptCache:
                 start_time = time.time()
                 with open(cache_path, "r") as f:
                     data = json.load(f)
-                    self.cache_data = OrderedDict(data)
+                    self.cache_data = dict(data)
                 load_time = time.time() - start_time
                 logger.info(f"Loaded {len(self.cache_data)} cache entries in {load_time:.2f}s")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load cache: {str(e)}")
-                self.cache_data: OrderedDict[str, Any] = OrderedDict()
+                self.cache_data: dict[str, Any] = {}
         else:
             logger.info(f"No cache file found at {cache_path}")
 
