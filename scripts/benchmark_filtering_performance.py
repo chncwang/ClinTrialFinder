@@ -594,29 +594,16 @@ class FilteringBenchmark:
     - Pre-extraction support: Option to warm up cache before benchmark
     """
 
-    def __init__(self, dataset_path: str, api_key: str, cache_size: int = 100000, strict_cache_mode: bool = False, enable_validation: bool = False):
+    def __init__(self, dataset_path: str, gpt_client: GPTClient):
         """
         Initialize the benchmark.
 
         Args:
             dataset_path: Path to TREC 2021 dataset directory
-            api_key: OpenAI API key for GPT filtering (required)
-            cache_size: Size of GPT response cache
-            strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
-            enable_validation: If True, enables cache file validation after writing
+            gpt_client: GPTClient instance for disease extraction and trial filtering
         """
-        if not api_key:
-            logger.error("API key is required for disease extraction")
-            sys.exit(1)
-
         self.dataset_path = Path(dataset_path)
-        self.api_key = api_key
-        self.cache_size = cache_size
-        self.strict_cache_mode = strict_cache_mode
-        self.enable_validation = enable_validation
-
-        # Initialize GPT client
-        self.gpt_client = GPTClient(api_key=self.api_key, cache_size=self.cache_size, strict_cache_mode=self.strict_cache_mode, enable_validation=self.enable_validation)
+        self.gpt_client = gpt_client
 
         # Initialize trials attribute
         self.trials: Dict[str, ClinicalTrial] = {}
@@ -2047,8 +2034,11 @@ def main():
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Create GPT client
+    gpt_client = GPTClient(api_key=api_key, cache_size=args.cache_size, strict_cache_mode=args.strict_cache_mode)
+
     # Run benchmark
-    benchmark = FilteringBenchmark(args.dataset_path, api_key, args.cache_size, args.strict_cache_mode, args.enable_validation)
+    benchmark = FilteringBenchmark(args.dataset_path, gpt_client)
 
     # Show initial coverage summary
     benchmark.print_coverage_summary(args.verbose_coverage)
