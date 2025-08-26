@@ -20,7 +20,7 @@ import sys
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from collections import Counter, defaultdict
 import pandas as pd
 from datetime import datetime
@@ -112,6 +112,13 @@ class CategorizedErrorCases:
             cost=cost
         )
         self._categories[category.value].append(categorized_case)
+
+    def add_cases(self, other_categorized_cases: 'CategorizedErrorCases') -> None:
+        """Add all cases from another CategorizedErrorCases instance."""
+        for category in ErrorCategory:
+            other_cases = other_categorized_cases.get_cases_for_category(category)
+            for other_case in other_cases:
+                self._categories[category.value].append(other_case)
 
     def get_cases_for_category(self, category: ErrorCategory) -> List[CategorizedErrorCase]:
         """Get all cases for a specific category."""
@@ -267,6 +274,12 @@ def setup_logging(level: str = "INFO") -> None:
 class ErrorCaseAnalyzer:
     """Analyzer for clinical trial error case data."""
 
+    # System prompt for GPT categorization
+    GPT_CATEGORIZATION_SYSTEM_PROMPT = """You are a clinical trial domain expert.
+You specialize in interpreting patient records and clinical trial eligibility criteria.
+Your role is to analyze trial matching errors with deep knowledge of inclusion and exclusion logic.
+You must be precise, concise, and output only structured JSON — no extra text, no markdown, no explanations."""
+
     def __init__(self, json_file_path: str, gpt_api_key: str):
         """Initialize the analyzer with a JSON file path and optional GPT API key."""
         self.json_file_path = Path(json_file_path)
@@ -294,23 +307,20 @@ class ErrorCaseAnalyzer:
         self.collection = ErrorCaseCollection.from_file(str(self.json_file_path))
         logger.info(f"Successfully loaded {len(self.collection)} error cases from {self.json_file_path}")
 
-    def categorize_false_positives_with_gpt(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Use GPT to categorize false positive error cases into specific error types."""
+    def _categorize_cases_base(self, cases: List[ErrorCase], case_type: str,
+                               categorization_method: Callable[[ErrorCase, str], tuple[ErrorCategory, str, float]]) -> CategorizedErrorCases:
+        """Base method for categorizing error cases using GPT."""
         if not self.gpt_client:
             logger.error("GPT client not available. Skipping categorization.")
             raise ValueError("GPT client not available. Skipping categorization.")
 
         if not self.collection:
             logger.warning("No data loaded. Use load_data() first.")
-            return {}
+            return CategorizedErrorCases()
 
-        # Filter for false positive cases only
-        false_positive_cases: List[ErrorCase] = [case for case in self.collection if case.is_false_positive]
-        logger.info(f"Found {len(false_positive_cases)} false positive cases to categorize")
-
-        if not false_positive_cases:
-            logger.info("No false positive cases found for categorization")
-            return {}
+        if not cases:
+            logger.info(f"No {case_type} cases found for categorization")
+            return CategorizedErrorCases()
 
         # Initialize categorized cases using the new class
         categorized_cases = CategorizedErrorCases()
@@ -320,11 +330,11 @@ class ErrorCaseAnalyzer:
 
         try:
             logger.info(f"Attempting categorization with {model}...")
-            for i, case in enumerate(false_positive_cases):
-                logger.info(f"Processing case {i+1}/{len(false_positive_cases)}: {case.trial_id}")
+            for i, case in enumerate(cases):
+                logger.info(f"Processing case {i+1}/{len(cases)}: {case.trial_id}")
 
                 try:
-                    categorization, reasoning, cost = self._categorize_single_case(case, model)
+                    categorization, reasoning, cost = categorization_method(case, model)
                     # Track costs
                     self.total_cost += cost
                     self.case_costs[case.trial_id] = cost
@@ -346,86 +356,15 @@ class ErrorCaseAnalyzer:
                 import time
                 time.sleep(0.1)
 
-            logger.info(f"Successfully processed all cases using {model}")
+            logger.info(f"Successfully processed all {case_type} cases using {model}")
 
         except Exception as e:
-            logger.error(f"Failed to categorize with {model}: {e}")
+            logger.error(f"Failed to categorize {case_type} cases with {model}: {e}")
             raise e
 
         # Log summary of categorization
         logger.info("-"*80)
-        logger.info("GPT CATEGORIZATION RESULTS")
-        logger.info("-"*80)
-        logger.info(f"Model used: {model}")
-        # Log summary for each category
-        for category in ErrorCategory:
-            count = categorized_cases.get_category_count(category)
-            description = category.value.replace('_', ' ').title()
-            logger.info(f"{description}: {count}")
-
-        return categorized_cases.get_categories_dict()
-
-    def categorize_false_positives_with_gpt_class(self) -> 'CategorizedErrorCases':
-        """Use GPT to categorize false positive error cases and return the class directly."""
-        if not self.gpt_client:
-            logger.error("GPT client not available. Skipping categorization.")
-            raise ValueError("GPT client not available. Skipping categorization.")
-
-        if not self.collection:
-            logger.warning("No data loaded. Use load_data() first.")
-            return CategorizedErrorCases()
-
-        # Filter for false positive cases only
-        false_positive_cases: List[ErrorCase] = [case for case in self.collection if case.is_false_positive]
-        logger.info(f"Found {len(false_positive_cases)} false positive cases to categorize")
-
-        if not false_positive_cases:
-            logger.info("No false positive cases found for categorization")
-            return CategorizedErrorCases()
-
-        # Initialize categorized cases using the new class
-        categorized_cases = CategorizedErrorCases()
-
-        # Use GPT-5 for categorization
-        model = "gpt-5"
-
-        try:
-            logger.info(f"Attempting categorization with {model}...")
-            for i, case in enumerate(false_positive_cases):
-                logger.info(f"Processing case {i+1}/{len(false_positive_cases)}: {case.trial_id}")
-
-                try:
-                    categorization, reasoning, cost = self._categorize_single_case(case, model)
-                    # Track costs
-                    self.total_cost += cost
-                    self.case_costs[case.trial_id] = cost
-
-                    categorized_cases.add_case(
-                        category=categorization,
-                        case=case,
-                        gpt_categorization=categorization.value,
-                        gpt_reasoning=reasoning,
-                        model_used=model,
-                        cost=cost
-                    )
-                except Exception as case_error:
-                    logger.error(f"Failed to categorize case {case.trial_id}: {case_error}")
-                    # Continue with next case instead of failing the entire process
-                    raise case_error
-
-                # Add a small delay to avoid rate limiting
-                import time
-                time.sleep(0.1)
-
-            logger.info(f"Successfully processed all cases using {model}")
-
-        except Exception as e:
-            logger.error(f"Failed to categorize with {model}: {e}")
-            raise e
-
-        # Log summary of categorization
-        logger.info("-"*80)
-        logger.info("GPT CATEGORIZATION RESULTS")
+        logger.info(f"GPT CATEGORIZATION RESULTS - {case_type.upper()}")
         logger.info("-"*80)
         logger.info(f"Model used: {model}")
         # Log summary for each category
@@ -436,7 +375,148 @@ class ErrorCaseAnalyzer:
 
         return categorized_cases
 
-    def _categorize_single_case(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
+    def categorize_false_positives_with_gpt(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Use GPT to categorize false positive error cases into specific error types."""
+        if not self.collection:
+            logger.warning("No data loaded. Use load_data() first.")
+            return {}
+
+        # Filter for false positive cases only
+        false_positive_cases: List[ErrorCase] = [case for case in self.collection if case.is_false_positive]
+        logger.info(f"Found {len(false_positive_cases)} false positive cases to categorize")
+
+        categorized_cases = self._categorize_cases_base(
+            false_positive_cases,
+            "false positive",
+            self._categorize_single_case_false_positive
+        )
+
+        return categorized_cases.get_categories_dict()
+
+    def categorize_false_positives_with_gpt_class(self) -> 'CategorizedErrorCases':
+        """Use GPT to categorize false positive error cases and return the class directly."""
+        if not self.collection:
+            logger.warning("No data loaded. Use load_data() first.")
+            return CategorizedErrorCases()
+
+        # Filter for false positive cases only
+        false_positive_cases: List[ErrorCase] = [case for case in self.collection if case.is_false_positive]
+        logger.info(f"Found {len(false_positive_cases)} false positive cases to categorize")
+
+        return self._categorize_cases_base(
+            false_positive_cases,
+            "false positive",
+            self._categorize_single_case_false_positive
+        )
+
+    def categorize_all_error_cases_with_gpt(self) -> Dict[str, 'CategorizedErrorCases']:
+        """Use GPT to categorize both false positive and false negative error cases."""
+        if not self.gpt_client:
+            logger.error("GPT client not available. Skipping categorization.")
+            raise ValueError("GPT client not available. Skipping categorization.")
+
+        if not self.collection:
+            logger.warning("No data loaded. Use load_data() first.")
+            return {}
+
+        results: Dict[str, 'CategorizedErrorCases'] = {}
+
+        # Categorize false positives
+        logger.info("="*80)
+        logger.info("CATEGORIZING FALSE POSITIVE CASES")
+        logger.info("="*80)
+        try:
+            false_positive_cases = self.categorize_false_positives_with_gpt_class()
+            results['false_positives'] = false_positive_cases
+        except Exception as e:
+            logger.error(f"Failed to categorize false positive cases: {e}")
+            results['false_positives'] = CategorizedErrorCases()
+
+        # Categorize false negatives
+        logger.info("="*80)
+        logger.info("CATEGORIZING FALSE NEGATIVE CASES")
+        logger.info("="*80)
+        try:
+            false_negative_cases = self.categorize_false_negatives_with_gpt()
+            results['false_negatives'] = false_negative_cases
+        except Exception as e:
+            logger.error(f"Failed to categorize false negative cases: {e}")
+            results['false_negatives'] = CategorizedErrorCases()
+
+        return results
+
+    def categorize_false_negatives_with_gpt(self) -> 'CategorizedErrorCases':
+        """Use GPT to categorize false negative error cases."""
+        if not self.gpt_client:
+            logger.error("GPT client not available. Skipping categorization.")
+            raise ValueError("GPT client not available. Skipping categorization.")
+
+        if not self.collection:
+            logger.warning("No data loaded. Use load_data() first.")
+            return CategorizedErrorCases()
+
+        # Filter for false negative cases only
+        false_negative_cases: List[ErrorCase] = [case for case in self.collection if case.is_false_negative]
+        logger.info(f"Found {len(false_negative_cases)} false negative cases to categorize")
+
+        if not false_negative_cases:
+            logger.info("No false negative cases found for categorization")
+            return CategorizedErrorCases()
+
+        # Initialize categorized cases using the new class
+        categorized_cases = CategorizedErrorCases()
+
+        # Use GPT-5 for categorization
+        model = "gpt-5"
+
+        try:
+            logger.info(f"Attempting categorization with {model}...")
+            for i, case in enumerate(false_negative_cases):
+                logger.info(f"Processing case {i+1}/{len(false_negative_cases)}: {case.trial_id}")
+
+                try:
+                    categorization, reasoning, cost = self._categorize_single_case_false_negative(case, model)
+                    # Track costs
+                    self.total_cost += cost
+                    self.case_costs[case.trial_id] = cost
+
+                    categorized_cases.add_case(
+                        category=categorization,
+                        case=case,
+                        gpt_categorization=categorization.value,
+                        gpt_reasoning=reasoning,
+                        model_used=model,
+                        cost=cost
+                    )
+                except Exception as case_error:
+                    logger.error(f"Failed to categorize case {case.trial_id}: {case_error}")
+                    # Continue with next case instead of failing the entire process
+                    raise case_error
+
+                # Add a small delay to avoid rate limiting
+                import time
+                time.sleep(0.1)
+
+            logger.info(f"Successfully processed all false negative cases using {model}")
+
+        except Exception as e:
+            logger.error(f"Failed to categorize false negative cases with {model}: {e}")
+            raise e
+
+        # Log summary of categorization
+        logger.info("-"*80)
+        logger.info("GPT CATEGORIZATION RESULTS - FALSE NEGATIVES")
+        logger.info("-"*80)
+        logger.info(f"Model used: {model}")
+        # Log summary for each category
+        for category in ErrorCategory:
+            count = categorized_cases.get_category_count(category)
+            description = category.value.replace('_', ' ').title()
+            logger.info(f"{description}: {count}")
+
+        return categorized_cases
+
+    def _categorize_single_case_false_positive(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
         """Categorize a single false positive case using GPT.
 
         Returns:
@@ -445,15 +525,96 @@ class ErrorCaseAnalyzer:
         if not self.gpt_client:
             raise RuntimeError("GPT client not available")
 
-        system_prompt = """You are a clinical trial domain expert.
-You specialize in interpreting patient records and clinical trial eligibility criteria.
-Your role is to analyze trial matching errors with deep knowledge of inclusion and exclusion logic.
-You must be precise, concise, and output only structured JSON — no extra text, no markdown, no explanations."""
+        system_prompt = self.GPT_CATEGORIZATION_SYSTEM_PROMPT
 
         user_prompt = f"""Categorize the following false positive error case into one of:
 - "exclusion_criteria_violation": patient meets ≥1 exclusion criterion.
 - "inclusion_criteria_violation": patient violates ≥1 inclusion criterion.
 - "data_label_error": benchmark label or data is likely incorrect.
+
+Return JSON only, in this schema:
+{{
+  "reasoning": "≤60 words explaining your choice",
+  "category": "exclusion_criteria_violation" | "inclusion_criteria_violation" | "data_label_error",
+}}
+
+Case details:
+
+Clinical Record:
+{case.full_medical_record}
+
+Trial Title:
+{case.trial_title}
+
+Trial Criteria:
+{case.trial_criteria}
+"""
+
+        try:
+            response, cost = self.gpt_client.call_gpt(
+                prompt=user_prompt,
+                system_role=system_prompt,
+                model=model,
+            )
+
+            # Log the cost for this categorization
+            logger.info(f"GPT API cost for case {case.trial_id}: ${cost:.6f}")
+
+            # Clean and validate the response
+            response = response.strip()
+
+            # Try to parse as JSON
+            import json
+            try:
+                parsed_response = json.loads(response)
+                category_str = parsed_response.get("category", "").lower()
+                reasoning = parsed_response.get("reasoning", "No reasoning provided")
+                logger.info(f"Categorization: {category_str}, Reasoning: {reasoning}")
+
+                # Check if the response contains any valid category
+                for category in ErrorCategory:
+                    if category.value in category_str:
+                        return category, reasoning, cost
+
+                # If no valid category found, log and raise error
+                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {ErrorCategory.get_all_values()}"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
+
+            except json.JSONDecodeError:
+                # Fallback: try to extract category from plain text response
+                response_lower = response.lower()
+                for category in ErrorCategory:
+                    if category.value in response_lower:
+                        return category, "Category extracted from text response (JSON parsing failed)", cost
+
+                # If no valid category found, log and raise error
+                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {ErrorCategory.get_all_values()}"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
+
+        except Exception as e:
+            error_msg = f"Failed to categorize case {case.trial_id} with {model}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
+    def _categorize_single_case_false_negative(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
+        """Categorize a single false negative case using GPT.
+
+        Returns:
+            tuple: (ErrorCategory, str, float) - The error category, reasoning, and API cost
+        """
+        if not self.gpt_client:
+            raise RuntimeError("GPT client not available")
+
+        system_prompt = self.GPT_CATEGORIZATION_SYSTEM_PROMPT
+
+        user_prompt = f"""Categorize the following false negative error case into one of:
+- "exclusion_criteria_violation": patient meets ≥1 exclusion criterion that should have disqualified them.
+- "inclusion_criteria_violation": patient actually meets all inclusion criteria and should have been included.
+- "data_label_error": benchmark label or data is likely incorrect - patient should not have been included.
+
+A false negative means the model incorrectly excluded a patient who should have been included in the trial.
 
 Return JSON only, in this schema:
 {{
@@ -848,22 +1009,46 @@ Examples:
     analyzer.log_summary()
 
     # Perform GPT categorization
-    logger.info("Starting GPT categorization of false positive cases...")
-    categorized_cases = analyzer.categorize_false_positives_with_gpt()
+    logger.info("Starting GPT categorization of false positive and false negative cases...")
+    categorized_results = analyzer.categorize_all_error_cases_with_gpt()
 
-    if categorized_cases:
+    if categorized_results:
         # Export categorized results
         output_path = args.output or f"categorized_error_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        if analyzer.export_categorized_results(categorized_cases, output_path):
-            logger.info("Categorized results export completed successfully")
-        else:
-            logger.error("Categorized results export failed")
 
-        # Demonstrate enum usage
-        logger.info("Demonstrating ErrorCategory enum usage...")
-        analyzer.print_available_categories()
-        analyzer.print_category_statistics(categorized_cases)
-        analyzer.print_category_examples(categorized_cases, max_examples=2)
+        # Process false positives
+        if 'false_positives' in categorized_results and categorized_results['false_positives'].get_total_count() > 0:
+            false_pos_output = output_path.replace('.csv', '_false_positives.csv')
+            if analyzer.export_categorized_results_from_class(categorized_results['false_positives'], false_pos_output):
+                logger.info(f"False positive results exported to {false_pos_output}")
+            else:
+                logger.error("False positive results export failed")
+
+        # Process false negatives
+        if 'false_negatives' in categorized_results and categorized_results['false_negatives'].get_total_count() > 0:
+            false_neg_output = output_path.replace('.csv', '_false_negatives.csv')
+            if analyzer.export_categorized_results_from_class(categorized_results['false_negatives'], false_neg_output):
+                logger.info(f"False negative results exported to {false_neg_output}")
+            else:
+                logger.error("False negative results export failed")
+
+        # Demonstrate enum usage for false positives
+        if 'false_positives' in categorized_results and categorized_results['false_positives'].get_total_count() > 0:
+            logger.info("="*80)
+            logger.info("FALSE POSITIVE CATEGORIZATION RESULTS")
+            logger.info("="*80)
+            analyzer.print_available_categories()
+            categorized_results['false_positives'].print_category_statistics()
+            categorized_results['false_positives'].print_category_examples(max_examples=2)
+
+        # Demonstrate enum usage for false negatives
+        if 'false_negatives' in categorized_results and categorized_results['false_negatives'].get_total_count() > 0:
+            logger.info("="*80)
+            logger.info("FALSE NEGATIVE CATEGORIZATION RESULTS")
+            logger.info("="*80)
+            analyzer.print_available_categories()
+            categorized_results['false_negatives'].print_category_statistics()
+            categorized_results['false_negatives'].print_category_examples(max_examples=2)
 
         # Display cost statistics
         analyzer.print_cost_statistics()
