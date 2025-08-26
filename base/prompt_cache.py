@@ -101,6 +101,7 @@ class PromptCache:
 
             if cache_key in self.cache_data:
                 logger.debug(f"Cache HIT for key: {cache_key[:8]}...")
+                cache_entry = None
                 try:
                     # Get the value from the cache entry
                     cache_entry = self.cache_data[cache_key]
@@ -120,7 +121,9 @@ class PromptCache:
                     return result
                 except Exception as e:
                     logger.error(f"Error retrieving cache entry: {e}")
-                    return None
+                    logger.error(f"Cache entry: {cache_entry} cache entry type: {type(cache_entry)}")
+                    logger.error(f"Cache key: {cache_key}")
+                    raise e
             logger.debug(f"Cache MISS for key: {cache_key[:8]}...")
             return None
 

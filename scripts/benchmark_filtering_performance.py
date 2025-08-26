@@ -5,6 +5,11 @@ Benchmark script for evaluating filtering performance on TREC 2021 dataset.
 This script evaluates the performance of clinical trial filtering algorithms
 by comparing predicted eligible trials against ground truth relevance judgments.
 
+RELEVANCE SCORING SYSTEM:
+- Score 0: Ineligible trials (included in benchmark)
+- Score 1: Ineligible trials (included in benchmark)
+- Score 2: Eligible trials (included in benchmark)
+
 PERFORMANCE OPTIMIZATION:
 The script implements intelligent caching to minimize API calls:
 - Patient conditions are extracted only once and cached for reuse
@@ -27,7 +32,7 @@ Example:
 
     # Run benchmark with limited total number of trials for faster testing
     # Note: Trials are allocated proportionally across patients, uses deterministic sampling (seed=42) for consistent results
-    # Trials with original label 1 are excluded to focus sampling on label 0 and 2 trials
+    # All trials are included in sampling (scores 0, 1, and 2)
     python scripts/benchmark_filtering_performance.py \
         --max-trials 100 \
         --api-key $OPENAI_API_KEY
@@ -43,7 +48,7 @@ Example:
         --api-key $OPENAI_API_KEY
 
     # Run benchmark on cancer patients with limited total trials
-    # Note: Trials with original label 1 are excluded to focus sampling on label 0 and 2 trials
+    # Note: All trials are included in sampling (scores 0, 1, and 2)
     python scripts/benchmark_filtering_performance.py \
         --cancer-only \
         --max-trials 100 \
@@ -55,7 +60,7 @@ Example:
         --api-key $OPENAI_API_KEY
 
     # Run benchmark with title-only evaluation on cancer patients with limited trials
-    # Note: Trials with original label 1 are excluded to focus sampling on label 0 and 2 trials
+    # Note: All trials are included in sampling (scores 0, 1, and 2)
     python scripts/benchmark_filtering_performance.py \
         --title-only \
         --cancer-only \
@@ -248,9 +253,9 @@ class RelevanceJudgment:
         Check if the trial is considered relevant.
 
         Returns:
-            True if relevance_score > 0, False otherwise
+            True if relevance_score == 2, False otherwise
         """
-        return self.relevance_score > 0
+        return self.relevance_score == 2
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -321,7 +326,7 @@ class TrialEvaluationResult:
             suitability_probability: Probability score from GPT evaluation
             reason: Reasoning provided by GPT for the prediction
             api_cost: API cost for this trial evaluation
-            original_relevance_score: Original relevance score from dataset (0, 1, or 2)
+            original_relevance_score: Original relevance score from dataset (0=irrelevant, 1=ineligible, 2=eligible)
         """
         self.trial_id = trial_id
         self.trial_title = trial_title
@@ -1940,12 +1945,12 @@ def main():
     parser.add_argument(
         "--max-trials",
         type=int,
-        help="Maximum total number of trials to use for the benchmark (for faster testing). Trials are allocated proportionally across patients based on their original trial counts. Trials with original label 1 are excluded to focus sampling on label 0 and 2 trials. Uses deterministic sampling with fixed seed for consistent results across executions and devices."
+        help="Maximum total number of trials to use for the benchmark (for faster testing). Trials are allocated proportionally across patients based on their original trial counts. All trials are included in sampling (scores 0, 1, and 2). Uses deterministic sampling with fixed seed for consistent results across executions and devices."
     )
     parser.add_argument(
         "--cancer-only",
         action="store_true",
-        help="Run benchmark only on cancer patients. When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts. Trials with original label 1 are excluded from sampling."
+        help="Run benchmark only on cancer patients. When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts. All trials are included in sampling (scores 0, 1, and 2)."
     )
     parser.add_argument(
         "--title-only",
@@ -1969,13 +1974,13 @@ def main():
         logger.info("\nTRIAL SAMPLING:")
         logger.info("- Use --max-trials to limit the total number of trials for faster testing")
         logger.info("- Trials are allocated proportionally across patients based on their original trial counts")
-        logger.info("- Trials with original label 1 are excluded to focus sampling on label 0 and 2 trials")
+        logger.info("- All trials are included in sampling (scores 0, 1, and 2)")
         logger.info("- Sampling is deterministic (seed=42) for consistent results across executions and devices")
         logger.info("- This ensures reproducible benchmark results regardless of system differences")
         logger.info("\nCANCER PATIENT FILTERING:")
         logger.info("- Use --cancer-only to run benchmark only on cancer patients")
         logger.info("- When combined with --max-trials, allocates trials proportionally across cancer patients based on their original trial counts")
-        logger.info("- Trials with original label 1 are excluded from sampling when using --max-trials")
+        logger.info("- All trials are included in sampling when using --max-trials")
         logger.info("- This is useful for oncology-specific clinical trial research")
         logger.info("\nEVALUATION METHODS:")
         logger.info("- Default: Uses evaluate_trial() for comprehensive evaluation (title + inclusion criteria)")
@@ -1991,9 +1996,9 @@ def main():
         logger.info("2. Check coverage status: python script.py --coverage-only")
         logger.info("3. Run benchmark: python script.py")
         logger.info("4. Run benchmark on specific patient: python script.py --patient-id <patient_id>")
-        logger.info("5. Run benchmark with limited total trials: python script.py --max-trials 100 (excludes label 1 trials)")
+        logger.info("5. Run benchmark with limited total trials: python script.py --max-trials 100 (includes all trials)")
         logger.info("6. Run benchmark only on cancer patients: python script.py --cancer-only")
-        logger.info("7. Run benchmark on cancer patients with limited total trials: python script.py --cancer-only --max-trials 100 (excludes label 1 trials)")
+        logger.info("7. Run benchmark on cancer patients with limited total trials: python script.py --cancer-only --max-trials 100 (includes all trials)")
         logger.info("8. Run benchmark with title-only evaluation (faster): python script.py --title-only")
         logger.info("9. Run benchmark with title-only evaluation on cancer patients: python script.py --title-only --cancer-only")
         logger.info("10. Run benchmark in strict cache mode: python script.py --strict-cache-mode")
@@ -2099,9 +2104,9 @@ def main():
 
                     # Collect trial IDs associated with this cancer patient
                     # These trials will be used for sampling when --max-trials is specified
-                    # Exclude trials with original label 1
+                    # Include all trials (scores 0, 1, and 2)
                     for judgment in benchmark.relevance_judgments:
-                        if judgment.patient_id == patient.patient_id and judgment.relevance_score != 1:
+                        if judgment.patient_id == patient.patient_id:
                             cancer_trial_ids.add(judgment.trial_id)
 
                     logger.info(f"Cancer patient {patient.patient_id}: {disease_name}")
@@ -2122,9 +2127,9 @@ def main():
 
         # If max_trials is specified, we need to allocate trials proportionally across cancer patients
         # This ensures that when limiting trials, we allocate based on original trial counts for each cancer patient
-        # Trials with original label 1 are excluded from the allocation
+        # All trials are included in the allocation (scores 0, 1, and 2)
         if args.max_trials is not None:
-            logger.info(f"Will allocate {args.max_trials} trials proportionally across cancer patients based on their original trial counts (excluding label 1 trials)")
+            logger.info(f"Will allocate {args.max_trials} trials proportionally across cancer patients based on their original trial counts (including all trials)")
 
     # Determine the number of trials to use for the benchmark
     num_trials_to_use = args.max_trials if args.max_trials is not None else len(benchmark.trials)
@@ -2134,10 +2139,10 @@ def main():
     logger.debug(f"len(benchmark.trials) = {len(benchmark.trials)}")
 
     # Sample trials deterministically if max_trials is specified
-    # Note: Trials with original label 1 are excluded from sampling to focus on label 0 and 2 trials
+    # Note: All trials are included in sampling (scores 0, 1, and 2)
     if args.max_trials is not None:
         logger.debug("Entering max-trials logic")
-        logger.info("Excluding trials with original label 1 from sampling to focus on label 0 and 2 trials")
+        logger.info("Including all trials in sampling (scores 0, 1, and 2)")
 
         # Set a fixed seed for deterministic sampling across different executions and devices
         # This ensures that the same trials are selected regardless of:
@@ -2147,26 +2152,25 @@ def main():
         random.seed(42)  # Fixed seed for reproducibility
 
         # Calculate trial allocation per patient based on original trial counts
-        # Exclude trials with original label 1 from the allocation calculation
+        # Include all trials in the allocation calculation (scores 0, 1, and 2)
         patient_trial_counts: Dict[str, int] = {}
         for patient in benchmark.patients:
             patient_trial_ids: set[str] = set()
             for judgment in benchmark.relevance_judgments:
-                if judgment.patient_id == patient.patient_id and judgment.relevance_score != 1:
+                if judgment.patient_id == patient.patient_id:
                     patient_trial_ids.add(judgment.trial_id)
             patient_trial_counts[patient.patient_id] = len(patient_trial_ids)
 
         total_original_trials = sum(patient_trial_counts.values())
 
-        # Count and log how many trials were excluded
+        # All trials are included, so no exclusion
         total_trials_before_filter = sum(len([j for j in benchmark.relevance_judgments if j.patient_id == p.patient_id]) for p in benchmark.patients)
-        excluded_trials = total_trials_before_filter - total_original_trials
-        logger.info(f"Excluded {excluded_trials} trials with original label 1 from sampling")
+        logger.info(f"Including all {total_trials_before_filter} trials in sampling")
 
-        logger.info(f"Original trial distribution across patients (excluding label 1 trials):")
+        logger.info(f"Original trial distribution across patients (including all trials):")
         for patient_id, count in patient_trial_counts.items():
             logger.info(f"  {patient_id}: {count} trials")
-        logger.info(f"Total original trials (excluding label 1): {total_original_trials}")
+        logger.info(f"Total original trials (including all): {total_original_trials}")
 
         # Allocate max_trials proportionally across patients
         patient_trial_allocations: Dict[str, int] = {}
@@ -2191,9 +2195,9 @@ def main():
                 else:
                     break
 
-        logger.info(f"Trial allocation with max_trials={num_trials_to_use} (excluding label 1 trials):")
+        logger.info(f"Trial allocation with max_trials={num_trials_to_use} (including all trials):")
         for patient_id, allocation in patient_trial_allocations.items():
-            logger.info(f"  {patient_id}: {allocation} trials (originally had {patient_trial_counts[patient_id]} non-label-1 trials)")
+            logger.info(f"  {patient_id}: {allocation} trials (originally had {patient_trial_counts[patient_id]} total trials)")
 
         # Sample trials for each patient based on their allocation
         sampled_trial_ids: set[str] = set()
@@ -2201,10 +2205,10 @@ def main():
 
         for patient_id, allocation in patient_trial_allocations.items():
             if allocation > 0:
-                # Get trials for this patient, excluding those with original label 1
+                # Get all trials for this patient (scores 0, 1, and 2)
                 patient_trial_ids: set[str] = set()
                 for judgment in benchmark.relevance_judgments:
-                    if judgment.patient_id == patient_id and judgment.relevance_score != 1:
+                    if judgment.patient_id == patient_id:
                         patient_trial_ids.add(judgment.trial_id)
 
                 # Filter to available trials (those that exist in benchmark.trials)
@@ -2222,9 +2226,9 @@ def main():
                     sampled_trial_ids.update(sampled_patient_trials)
                     patient_trial_mapping[patient_id] = set(sampled_patient_trials)
 
-                    logger.info(f"  Sampled {num_to_sample} trials for patient {patient_id} (excluding original label 1)")
+                    logger.info(f"  Sampled {num_to_sample} trials for patient {patient_id} (including all trials)")
                 else:
-                    logger.warning(f"  No available trials for patient {patient_id} after filtering (excluding original label 1)")
+                    logger.warning(f"  No available trials for patient {patient_id} after filtering")
                     patient_trial_mapping[patient_id] = set()
 
         # Store the patient-trial mapping in the benchmark object for use during evaluation
@@ -2233,7 +2237,7 @@ def main():
         # Filter trials to only include sampled ones
         benchmark.trials = {k: v for k, v in benchmark.trials.items() if k in sampled_trial_ids}
 
-        logger.info(f"Sampled {len(sampled_trial_ids)} trials deterministically for benchmark (seed=42, excluding label 1 trials).")
+        logger.info(f"Sampled {len(sampled_trial_ids)} trials deterministically for benchmark (seed=42, including all trials).")
         logger.info(f"First 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[:5]}")
         logger.info(f"Last 5 sampled trial IDs: {sorted(list(sampled_trial_ids))[-5:]}")
 
@@ -2242,9 +2246,9 @@ def main():
         benchmark.print_coverage_summary(args.verbose_coverage)
     else:
         if args.cancer_only:
-            logger.info(f"Using all cancer-related trials for benchmark ({len(cancer_trial_ids)} trials, excluding label 1).")
+            logger.info(f"Using all cancer-related trials for benchmark ({len(cancer_trial_ids)} trials, including all scores).")
         else:
-            logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials, excluding label 1).")
+            logger.info(f"Using all available trials for benchmark ({len(benchmark.trials)} trials, including all scores).")
 
     # Check current trial coverage
     coverage_stats = benchmark.get_trial_coverage_stats()
