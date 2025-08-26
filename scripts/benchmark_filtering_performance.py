@@ -1614,8 +1614,8 @@ class FilteringBenchmark:
             if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
                 for trial_result in result.trial_evaluation_results:
                     if trial_result.is_error_case:
-                        # Get patient text summary and disease
-                        patient_text_summary = self._get_patient_text_summary(result.patient_id)
+                        # Get patient full medical record and disease
+                        patient_full_medical_record = self._get_patient_full_medical_record(result.patient_id)
                         disease_name = self._get_patient_disease(result.patient_id)
 
                         # Get trial criteria from the loaded trial data
@@ -1625,7 +1625,7 @@ class FilteringBenchmark:
 
                         error_case = {
                             'patient_id': result.patient_id,
-                            'text_summary': patient_text_summary,
+                            'full_medical_record': patient_full_medical_record,
                             'disease_name': disease_name,
                             'trial_id': trial_result.trial_id,
                             'trial_title': trial_result.trial_title,
