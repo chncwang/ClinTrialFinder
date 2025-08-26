@@ -452,7 +452,7 @@ You must be precise, concise, and output only structured JSON — no extra text,
 
         user_prompt = f"""Categorize the following false positive error case into one of:
 - "exclusion_criteria_violation": patient meets ≥1 exclusion criterion.
-- "inclusion_criteria_violation": patient fails to meet ≥1 inclusion criterion.
+- "inclusion_criteria_violation": patient violates ≥1 inclusion criterion.
 - "data_label_error": benchmark label or data is likely incorrect.
 
 Return JSON only, in this schema:
@@ -661,7 +661,7 @@ Trial Criteria:
 
 
     def export_categorized_results(self, categorized_cases: Dict[str, List[Dict[str, Any]]], output_path: str) -> bool:
-        """Export the GPT-categorized results to CSV and JSON."""
+        """Export the GPT-categorized results to JSON."""
         try:
             if not categorized_cases:
                 logger.warning("No categorized cases to export")
@@ -674,6 +674,8 @@ Trial Criteria:
                     case = case_info['case']
                     export_data.append({
                         'disease_name': case.disease_name,
+                        'patient_id': case.patient_id,
+                        'trial_id': case.trial_id,
                         'trial_title': case.trial_title,
                         'trial_criteria': case.trial_criteria,
                         'text_summary': case.text_summary,
@@ -681,12 +683,7 @@ Trial Criteria:
                         'gpt_reasoning': case_info.get('gpt_reasoning', '')
                     })
 
-            # Export to CSV
-            df = pd.DataFrame(export_data)  # type: ignore
-            df.to_csv(output_path, index=False)  # type: ignore
-            logger.info(f"Exported {len(df)} categorized cases to {output_path}")  # type: ignore
-
-            # Export to JSON (same fields, human readable)
+            # Export to JSON (human readable)
             json_path = output_path.replace('.csv', '.json')
             import json
             with open(json_path, 'w', encoding='utf-8') as f:
@@ -700,40 +697,36 @@ Trial Criteria:
             return False
 
     def export_categorized_results_from_class(self, categorized_cases: 'CategorizedErrorCases', output_path: str) -> bool:
-        """Export the GPT-categorized results to CSV and JSON using the CategorizedErrorCases class."""
+        """Export the GPT-categorized results to JSON using the CategorizedErrorCases class."""
         try:
             if not categorized_cases or categorized_cases.get_total_count() == 0:
                 logger.warning("No categorized cases to export")
                 return False
 
-            # Use the class's built-in export method for CSV
-            csv_success = categorized_cases.export_to_csv(output_path)
+            # Export to JSON (same fields, human readable)
+            json_path = output_path.replace('.csv', '.json')
+            import json
+            export_data: List[Dict[str, Any]] = []
+            for category_name, cases in categorized_cases.items():
+                for case_info in cases:
+                    case = case_info.case
+                    export_data.append({
+                        'disease_name': case.disease_name,
+                        'trial_title': case.trial_title,
+                        'trial_criteria': case.trial_criteria,
+                        'text_summary': case.text_summary,
+                        'gpt_categorization': category_name,
+                        'gpt_reasoning': case_info.gpt_reasoning
+                    })
 
-                                    # Also export to JSON (same fields, human readable)
-            if csv_success:
-                json_path = output_path.replace('.csv', '.json')
-                import json
-                export_data: List[Dict[str, Any]] = []
-                for category_name, cases in categorized_cases.items():
-                    for case_info in cases:
-                        case = case_info.case
-                        export_data.append({
-                            'disease_name': case.disease_name,
-                            'trial_title': case.trial_title,
-                            'trial_criteria': case.trial_criteria,
-                            'text_summary': case.text_summary,
-                            'gpt_categorization': category_name,
-                            'gpt_reasoning': case_info.gpt_reasoning
-                        })
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Exported {len(export_data)} categorized cases to {json_path}")
 
-                with open(json_path, 'w', encoding='utf-8') as f:
-                    json.dump(export_data, f, indent=2, ensure_ascii=False)
-                logger.info(f"Exported {len(export_data)} categorized cases to {json_path}")
-
-            return csv_success
+            return True
 
         except Exception as e:
-            logger.error(f"Error exporting categorized results to CSV/JSON: {e}")
+            logger.error(f"Error exporting categorized results to JSON: {e}")
             return False
 
     def log_summary(self):
