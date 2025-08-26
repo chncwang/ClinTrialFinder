@@ -73,7 +73,7 @@ class ErrorCategory(Enum):
 class CategorizedErrorCase:
     """Represents a single categorized error case with all its metadata."""
 
-    def __init__(self, case: Any, gpt_categorization: str, gpt_reasoning: str,
+    def __init__(self, case: ErrorCase, gpt_categorization: str, gpt_reasoning: str,
                  model_used: str, cost: float):
         self.case = case
         self.gpt_categorization = gpt_categorization
@@ -101,7 +101,7 @@ class CategorizedErrorCases:
             category.value: [] for category in ErrorCategory
         }
 
-    def add_case(self, category: ErrorCategory, case: Any, gpt_categorization: str,
+    def add_case(self, category: ErrorCategory, case: ErrorCase, gpt_categorization: str,
                  gpt_reasoning: str, model_used: str, cost: float) -> None:
         """Add a categorized error case to the appropriate category."""
         categorized_case = CategorizedErrorCase(
@@ -436,7 +436,7 @@ class ErrorCaseAnalyzer:
 
         return categorized_cases
 
-    def _categorize_single_case(self, case: Any, model: str) -> tuple[ErrorCategory, str, float]:
+    def _categorize_single_case(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
         """Categorize a single false positive case using GPT.
 
         Returns:
