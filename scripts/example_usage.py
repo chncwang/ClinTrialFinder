@@ -31,7 +31,7 @@ def create_sample_error_case(trial_id: str, patient_id: str, disease: str) -> Er
         disease_name=disease,
         suitability_probability=0.85,
         reason="Sample reason for demonstration",
-        text_summary="Sample clinical record text",
+        full_medical_record="Sample clinical record text",
         trial_title="Sample Clinical Trial",
         trial_criteria="Sample inclusion/exclusion criteria",
         error_type="false_positive",

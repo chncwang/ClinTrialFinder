@@ -240,7 +240,7 @@ class CategorizedErrorCases:
                         'disease_name': case.case.disease_name,
                         'trial_title': case.case.trial_title,
                         'trial_criteria': case.case.trial_criteria,
-                        'text_summary': case.case.text_summary,
+                        'full_medical_record': case.case.full_medical_record,
                         'gpt_categorization': category_name,
                         'gpt_reasoning': case.gpt_reasoning
                     })
@@ -464,7 +464,7 @@ Return JSON only, in this schema:
 Case details:
 
 Clinical Record:
-{case.text_summary}
+{case.full_medical_record}
 
 Trial Title:
 {case.trial_title}
@@ -678,7 +678,7 @@ Trial Criteria:
                         'trial_id': case.trial_id,
                         'trial_title': case.trial_title,
                         'trial_criteria': case.trial_criteria,
-                        'text_summary': case.text_summary,
+                        'full_medical_record': case.full_medical_record,
                         'gpt_categorization': category_name,
                         'gpt_reasoning': case_info.get('gpt_reasoning', '')
                     })
@@ -714,7 +714,7 @@ Trial Criteria:
                         'disease_name': case.disease_name,
                         'trial_title': case.trial_title,
                         'trial_criteria': case.trial_criteria,
-                        'text_summary': case.text_summary,
+                        'full_medical_record': case.full_medical_record,
                         'gpt_categorization': category_name,
                         'gpt_reasoning': case_info.gpt_reasoning
                     })
@@ -842,7 +842,7 @@ Examples:
         analyzer.load_data()
     except Exception as e:
         logger.error(f"Failed to load data: {e}")
-        sys.exit(1)
+        raise e
 
     # Log summary
     analyzer.log_summary()

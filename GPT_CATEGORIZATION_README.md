@@ -69,7 +69,7 @@ The categorized results CSV contains the following columns:
 - `trial_criteria`: Trial inclusion/exclusion criteria
 - `suitability_probability`: Model's suitability score
 - `reason`: Original error reason
-- `text_summary`: Case summary text
+- `full_medical_record`: Full patient medical record
 - `gpt_categorization`: GPT-assigned error category
 - `model_used`: GPT model used for categorization
 

@@ -26,7 +26,7 @@ class ErrorCase:
     ground_truth_relevant: bool
     predicted_eligible: bool
     original_relevance_score: float
-    text_summary: str = ""
+    full_medical_record: str = ""
     timestamp: Optional[str] = None
 
     def __post_init__(self):
@@ -78,7 +78,7 @@ class ErrorCase:
             'ground_truth_relevant': self.ground_truth_relevant,
             'predicted_eligible': self.predicted_eligible,
             'original_relevance_score': self.original_relevance_score,
-            'text_summary': self.text_summary,
+            'full_medical_record': self.full_medical_record,
             'timestamp': self.timestamp
         }
 

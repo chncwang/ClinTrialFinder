@@ -9,7 +9,7 @@ def test_format_string():
     # Simulate the case object
     class MockCase:
         def __init__(self):
-            self.text_summary = "Test patient summary"
+            self.full_medical_record = "Test patient summary"
             self.trial_title = "Test trial title"
             self.trial_criteria = "Test trial criteria"
 
@@ -30,7 +30,7 @@ Return JSON only, in this schema:
 Case details:
 
 Clinical Record:
-{case.text_summary}
+{case.full_medical_record}
 
 Trial Title:
 {case.trial_title}
