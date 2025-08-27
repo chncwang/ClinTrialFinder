@@ -34,8 +34,8 @@ from base.gpt_client import GPTClient
 logger = logging.getLogger(__name__)
 
 
-class ErrorCategory(Enum):
-    """Enum representing the three categories of clinical trial filtering errors."""
+class FalsePositiveCategory(Enum):
+    """Enum representing the three categories of false positive clinical trial filtering errors."""
 
     EXCLUSION_CRITERIA_VIOLATION = "exclusion_criteria_violation"
     INCLUSION_CRITERIA_VIOLATION = "inclusion_criteria_violation"
@@ -52,8 +52,8 @@ class ErrorCategory(Enum):
         return category_str in cls.get_all_values()
 
     @classmethod
-    def from_value(cls, value: str) -> Optional['ErrorCategory']:
-        """Get an ErrorCategory enum from its string value."""
+    def from_value(cls, value: str) -> Optional['FalsePositiveCategory']:
+        """Get a FalsePositiveCategory enum from its string value."""
         for category in cls:
             if category.value == value:
                 return category
@@ -66,6 +66,42 @@ class ErrorCategory(Enum):
             "exclusion_criteria_violation": "Patient meets one or more exclusion criteria",
             "inclusion_criteria_violation": "Patient fails to meet one or more inclusion criteria",
             "data_label_error": "Benchmark label or data is likely incorrect"
+        }
+        return {category.value: descriptions.get(category.value, "Unknown category") for category in cls}
+
+
+class FalseNegativeCategory(Enum):
+    """Enum representing the three categories of false negative errors."""
+
+    FALSE_TITLE_CHECK_FAILURE = "false_title_check_failure"
+    FALSE_INCLUSION_CHECK_FAILURE = "false_inclusion_check_failure"
+    DATA_LABEL_ERROR = "data_label_error"
+
+    @classmethod
+    def get_all_values(cls) -> List[str]:
+        """Get all possible category values as a list of strings."""
+        return [category.value for category in cls]
+
+    @classmethod
+    def is_valid_category(cls, category_str: str) -> bool:
+        """Check if a string represents a valid false negative category."""
+        return category_str in cls.get_all_values()
+
+    @classmethod
+    def from_value(cls, value: str) -> Optional['FalseNegativeCategory']:
+        """Get a FalseNegativeCategory enum from its string value."""
+        for category in cls:
+            if category.value == value:
+                return category
+        return None
+
+    @classmethod
+    def get_categories_dict(cls) -> Dict[str, str]:
+        """Get a dictionary mapping category values to their descriptions."""
+        descriptions = {
+            "false_title_check_failure": "Model incorrectly failed title check when patient should have been included",
+            "false_inclusion_check_failure": "Model incorrectly failed inclusion criteria check when patient should have been included",
+            "data_label_error": "Benchmark label or data is likely incorrect - patient should not have been included"
         }
         return {category.value: descriptions.get(category.value, "Unknown category") for category in cls}
 
@@ -98,10 +134,13 @@ class CategorizedErrorCases:
     def __init__(self):
         """Initialize with empty lists for each error category."""
         self._categories: Dict[str, List[CategorizedErrorCase]] = {
-            category.value: [] for category in ErrorCategory
+            category.value: [] for category in FalsePositiveCategory
         }
+        # Add false negative categories
+        for category in FalseNegativeCategory:
+            self._categories[category.value] = []
 
-    def add_case(self, category: ErrorCategory, case: ErrorCase, gpt_categorization: str,
+    def add_case(self, category: FalsePositiveCategory | FalseNegativeCategory, case: ErrorCase, gpt_categorization: str,
                  gpt_reasoning: str, model_used: str, cost: float) -> None:
         """Add a categorized error case to the appropriate category."""
         categorized_case = CategorizedErrorCase(
@@ -115,12 +154,17 @@ class CategorizedErrorCases:
 
     def add_cases(self, other_categorized_cases: 'CategorizedErrorCases') -> None:
         """Add all cases from another CategorizedErrorCases instance."""
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
+            other_cases = other_categorized_cases.get_cases_for_category(category)
+            for other_case in other_cases:
+                self._categories[category.value].append(other_case)
+        # Add false negative categories
+        for category in FalseNegativeCategory:
             other_cases = other_categorized_cases.get_cases_for_category(category)
             for other_case in other_cases:
                 self._categories[category.value].append(other_case)
 
-    def get_cases_for_category(self, category: ErrorCategory) -> List[CategorizedErrorCase]:
+    def get_cases_for_category(self, category: FalsePositiveCategory | FalseNegativeCategory) -> List[CategorizedErrorCase]:
         """Get all cases for a specific category."""
         return self._categories[category.value]
 
@@ -131,7 +175,7 @@ class CategorizedErrorCases:
             all_cases.extend(cases)
         return all_cases
 
-    def get_category_count(self, category: ErrorCategory) -> int:
+    def get_category_count(self, category: FalsePositiveCategory | FalseNegativeCategory) -> int:
         """Get the count of cases for a specific category."""
         return len(self._categories[category.value])
 
@@ -163,7 +207,15 @@ class CategorizedErrorCases:
         stats: Dict[str, Dict[str, Any]] = {}
         total_count = self.get_total_count()
 
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
+            category_count = self.get_category_count(category)
+            stats[category.value] = {
+                'count': category_count,
+                'percentage': (category_count / total_count * 100) if total_count > 0 else 0,
+            }
+
+        # Add false negative category statistics
+        for category in FalseNegativeCategory:
             category_count = self.get_category_count(category)
             stats[category.value] = {
                 'count': category_count,
@@ -176,7 +228,16 @@ class CategorizedErrorCases:
         """Get example cases from each category for analysis."""
         examples: Dict[str, List[Dict[str, Any]]] = {}
 
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
+            category_cases = self.get_cases_for_category(category)
+            if category_cases:
+                # Take up to max_examples cases from this category
+                examples[category.value] = [case.to_dict() for case in category_cases[:max_examples]]
+            else:
+                examples[category.value] = []
+
+        # Add false negative category examples
+        for category in FalseNegativeCategory:
             category_cases = self.get_cases_for_category(category)
             if category_cases:
                 # Take up to max_examples cases from this category
@@ -214,7 +275,7 @@ class CategorizedErrorCases:
         logger.info(f"CATEGORY EXAMPLES (max {max_examples} per category)")
         logger.info("-" * 80)
 
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
             category_examples = examples[category.value]
             logger.info(f"\n{category.value.replace('_', ' ').title()}:")
 
@@ -308,7 +369,7 @@ You must be precise, concise, and output only structured JSON — no extra text,
         logger.info(f"Successfully loaded {len(self.collection)} error cases from {self.json_file_path}")
 
     def _categorize_cases_base(self, cases: List[ErrorCase], case_type: str,
-                               categorization_method: Callable[[ErrorCase, str], tuple[ErrorCategory, str, float]]) -> CategorizedErrorCases:
+                               categorization_method: Callable[[ErrorCase, str], tuple[FalsePositiveCategory, str, float]]) -> CategorizedErrorCases:
         """Base method for categorizing error cases using GPT."""
         if not self.gpt_client:
             logger.error("GPT client not available. Skipping categorization.")
@@ -368,7 +429,7 @@ You must be precise, concise, and output only structured JSON — no extra text,
         logger.info("-"*80)
         logger.info(f"Model used: {model}")
         # Log summary for each category
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
             count = categorized_cases.get_category_count(category)
             description = category.value.replace('_', ' ').title()
             logger.info(f"{description}: {count}")
@@ -445,7 +506,7 @@ You must be precise, concise, and output only structured JSON — no extra text,
 
         return results
 
-    def categorize_false_negatives_with_gpt(self) -> 'CategorizedErrorCases':
+    def categorize_false_negatives_with_gpt(self) -> CategorizedErrorCases:
         """Use GPT to categorize false negative error cases."""
         if not self.gpt_client:
             logger.error("GPT client not available. Skipping categorization.")
@@ -509,18 +570,18 @@ You must be precise, concise, and output only structured JSON — no extra text,
         logger.info("-"*80)
         logger.info(f"Model used: {model}")
         # Log summary for each category
-        for category in ErrorCategory:
+        for category in FalseNegativeCategory:
             count = categorized_cases.get_category_count(category)
             description = category.value.replace('_', ' ').title()
             logger.info(f"{description}: {count}")
 
         return categorized_cases
 
-    def _categorize_single_case_false_positive(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
+    def _categorize_single_case_false_positive(self, case: ErrorCase, model: str) -> tuple[FalsePositiveCategory, str, float]:
         """Categorize a single false positive case using GPT.
 
         Returns:
-            tuple: (ErrorCategory, str, float) - The error category, reasoning, and API cost
+            tuple: (FalsePositiveCategory, str, float) - The error category, reasoning, and API cost
         """
         if not self.gpt_client:
             raise RuntimeError("GPT client not available")
@@ -572,24 +633,24 @@ Trial Criteria:
                 logger.info(f"Categorization: {category_str}, Reasoning: {reasoning}")
 
                 # Check if the response contains any valid category
-                for category in ErrorCategory:
+                for category in FalsePositiveCategory:
                     if category.value in category_str:
                         return category, reasoning, cost
 
                 # If no valid category found, log and raise error
-                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {ErrorCategory.get_all_values()}"
+                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {FalsePositiveCategory.get_all_values()}"
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
 
             except json.JSONDecodeError:
                 # Fallback: try to extract category from plain text response
                 response_lower = response.lower()
-                for category in ErrorCategory:
+                for category in FalsePositiveCategory:
                     if category.value in response_lower:
                         return category, "Category extracted from text response (JSON parsing failed)", cost
 
                 # If no valid category found, log and raise error
-                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {ErrorCategory.get_all_values()}"
+                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {FalsePositiveCategory.get_all_values()}"
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
 
@@ -598,11 +659,11 @@ Trial Criteria:
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def _categorize_single_case_false_negative(self, case: ErrorCase, model: str) -> tuple[ErrorCategory, str, float]:
+    def _categorize_single_case_false_negative(self, case: ErrorCase, model: str) -> tuple[FalseNegativeCategory, str, float]:
         """Categorize a single false negative case using GPT.
 
         Returns:
-            tuple: (ErrorCategory, str, float) - The error category, reasoning, and API cost
+            tuple: (FalseNegativeCategory, str, float) - The error category, reasoning, and API cost
         """
         if not self.gpt_client:
             raise RuntimeError("GPT client not available")
@@ -610,16 +671,18 @@ Trial Criteria:
         system_prompt = self.GPT_CATEGORIZATION_SYSTEM_PROMPT
 
         user_prompt = f"""Categorize the following false negative error case into one of:
-- "exclusion_criteria_violation": patient meets ≥1 exclusion criterion that should have disqualified them.
-- "inclusion_criteria_violation": patient actually meets all inclusion criteria and should have been included.
-- "data_label_error": benchmark label or data is likely incorrect - patient should not have been included.
+- "false_title_check_failure": model incorrectly failed title check when patient should have been included
+- "false_inclusion_check_failure": model incorrectly failed inclusion criteria check when patient should have been included
+- "data_label_error": benchmark label or data is likely incorrect - patient should not have been included
 
 A false negative means the model incorrectly excluded a patient who should have been included in the trial.
+
+IMPORTANT: Check if the provided reason makes sense. If the reason indicates the benchmark label or data is likely incorrect, categorize as "data_label_error". If the reason indicates the model made an error in title or inclusion checking, categorize accordingly.
 
 Return JSON only, in this schema:
 {{
   "reasoning": "≤60 words explaining your choice",
-  "category": "exclusion_criteria_violation" | "inclusion_criteria_violation" | "data_label_error",
+  "category": "false_title_check_failure" | "false_inclusion_check_failure" | "data_label_error",
 }}
 
 Case details:
@@ -632,9 +695,13 @@ Trial Title:
 
 Trial Criteria:
 {case.trial_criteria}
+
+Provided Reason:
+{case.reason}
 """
 
         try:
+            logger.info(f"user prompt: {user_prompt}")
             response, cost = self.gpt_client.call_gpt(
                 prompt=user_prompt,
                 system_role=system_prompt,
@@ -656,24 +723,24 @@ Trial Criteria:
                 logger.info(f"Categorization: {category_str}, Reasoning: {reasoning}")
 
                 # Check if the response contains any valid category
-                for category in ErrorCategory:
+                for category in FalseNegativeCategory:
                     if category.value in category_str:
                         return category, reasoning, cost
 
                 # If no valid category found, log and raise error
-                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {ErrorCategory.get_all_values()}"
+                error_msg = f"Unexpected GPT response category for case {case.trial_id}: {category_str}. Expected one of: {FalseNegativeCategory.get_all_values()}"
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
 
             except json.JSONDecodeError:
                 # Fallback: try to extract category from plain text response
                 response_lower = response.lower()
-                for category in ErrorCategory:
+                for category in FalseNegativeCategory:
                     if category.value in response_lower:
                         return category, "Category extracted from text response (JSON parsing failed)", cost
 
                 # If no valid category found, log and raise error
-                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {ErrorCategory.get_all_values()}"
+                error_msg = f"Unexpected GPT response for case {case.trial_id}: {response}. Expected JSON with category and reasoning. Expected categories: {FalseNegativeCategory.get_all_values()}"
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
 
@@ -695,7 +762,7 @@ Trial Criteria:
             return {}
 
         stats: Dict[str, Dict[str, Any]] = {}
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
             category_cases = categorized_cases.get(category.value, [])
             stats[category.value] = {
                 'count': len(category_cases),
@@ -728,7 +795,7 @@ Trial Criteria:
         """Get example cases from each category for analysis."""
         examples: Dict[str, List[Dict[str, Any]]] = {}
 
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
             category_cases = categorized_cases.get(category.value, [])
             if category_cases:
                 # Take up to max_examples cases from this category
@@ -746,7 +813,7 @@ Trial Criteria:
         logger.info(f"CATEGORY EXAMPLES (max {max_examples} per category)")
         logger.info("-" * 80)
 
-        for category in ErrorCategory:
+        for category in FalsePositiveCategory:
             category_examples = examples[category.value]
             logger.info(f"\n{category.value.replace('_', ' ').title()}:")
 
@@ -767,11 +834,11 @@ Trial Criteria:
 
     def validate_categorization(self, categorization: str) -> bool:
         """Validate if a categorization string is a valid error category."""
-        return ErrorCategory.is_valid_category(categorization)
+        return FalsePositiveCategory.is_valid_category(categorization)
 
-    def get_category_enum(self, categorization: str) -> Optional[ErrorCategory]:
-        """Get the ErrorCategory enum from a categorization string."""
-        return ErrorCategory.from_value(categorization)
+    def get_category_enum(self, categorization: str) -> Optional[FalsePositiveCategory]:
+        """Get the FalsePositiveCategory enum from a categorization string."""
+        return FalsePositiveCategory.from_value(categorization)
 
     def print_available_categories(self) -> None:
         """Print all available error categories with their descriptions."""

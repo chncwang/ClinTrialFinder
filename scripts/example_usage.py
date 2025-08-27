@@ -12,7 +12,7 @@ from pathlib import Path
 # Add the parent directory to the path so we can import our modules
 sys.path.append(str(Path(__file__).parent.parent))
 
-from scripts.analyze_error_cases import CategorizedErrorCases, ErrorCategory
+from scripts.analyze_error_cases import CategorizedErrorCases, FalsePositiveCategory, FalseNegativeCategory
 from base.error_case import ErrorCase
 from typing import Dict, List, Any
 import logging
@@ -60,11 +60,11 @@ def demonstrate_class_usage():
 
     # Add cases to different categories
     categories = [
-        ErrorCategory.EXCLUSION_CRITERIA_VIOLATION,
-        ErrorCategory.INCLUSION_CRITERIA_VIOLATION,
-        ErrorCategory.DATA_LABEL_ERROR,
-        ErrorCategory.EXCLUSION_CRITERIA_VIOLATION,
-        ErrorCategory.INCLUSION_CRITERIA_VIOLATION,
+        FalsePositiveCategory.EXCLUSION_CRITERIA_VIOLATION,
+        FalsePositiveCategory.INCLUSION_CRITERIA_VIOLATION,
+        FalsePositiveCategory.DATA_LABEL_ERROR,
+        FalsePositiveCategory.EXCLUSION_CRITERIA_VIOLATION,
+        FalsePositiveCategory.INCLUSION_CRITERIA_VIOLATION,
     ]
 
     for i, (trial_id, patient_id, disease) in enumerate(sample_cases):
@@ -92,7 +92,7 @@ def demonstrate_class_usage():
 
     # Demonstrate getting cases for specific categories
     logger.info("\n=== Cases by Category ===")
-    for category in ErrorCategory:
+    for category in FalsePositiveCategory:
         cases = categorized_cases.get_cases_for_category(category)
         logger.info(f"{category.value}: {len(cases)} cases")
         for case in cases:
@@ -105,7 +105,7 @@ def demonstrate_class_usage():
 
     # Demonstrate the get() method for backward compatibility
     logger.info("\n=== Using get() method (backward compatibility) ===")
-    for category in ErrorCategory:
+    for category in FalsePositiveCategory:
         cases = categorized_cases.get(category.value, [])
         if cases:
             logger.info(f"{category.value}: {len(cases)} cases")
@@ -137,6 +137,50 @@ def demonstrate_class_usage():
     logger.info("\n=== Demonstration Complete ===")
 
 
+def demonstrate_false_negative_categories():
+    """Demonstrate the usage of FalseNegativeCategory enum."""
+    logger.info("\n=== Demonstrating FalseNegativeCategory Usage ===\n")
+
+    # Create a new instance
+    categorized_cases = CategorizedErrorCases()
+
+    # Create a sample false negative case
+    false_negative_case = ErrorCase(
+        trial_id="TRIAL_FN_001",
+        patient_id="PATIENT_FN_001",
+        disease_name="Cancer",
+        suitability_probability=0.75,
+        reason="Patient was incorrectly excluded due to model error in title matching",
+        full_medical_record="Patient has stage II cancer, meets all inclusion criteria",
+        trial_title="Novel Cancer Treatment Trial",
+        trial_criteria="Stage II cancer, age 18-75, no prior treatment",
+        error_type="false_negative",
+        ground_truth_relevant=True,
+        predicted_eligible=False,
+        original_relevance_score=0.25
+    )
+
+    # Add the case to a false negative category
+    categorized_cases.add_case(
+        category=FalseNegativeCategory.FALSE_TITLE_CHECK_FAILURE,
+        case=false_negative_case,
+        gpt_categorization="false_title_check_failure",
+        gpt_reasoning="Model incorrectly failed title check when patient should have been included",
+        model_used="gpt-5",
+        cost=0.001
+    )
+
+    logger.info(f"Added false negative case {false_negative_case.trial_id} to category: false_title_check_failure")
+
+    # Demonstrate getting false negative category statistics
+    logger.info("\n=== False Negative Category Statistics ===")
+    for category in FalseNegativeCategory:
+        cases = categorized_cases.get_cases_for_category(category)
+        logger.info(f"{category.value}: {len(cases)} cases")
+
+    logger.info("\n=== False Negative Demonstration Complete ===")
+
+
 def demonstrate_vs_dictionary_approach():
     """Demonstrate the difference between the class approach and dictionary approach."""
     logger.info("\n=== Class vs Dictionary Approach Comparison ===\n")
@@ -148,7 +192,7 @@ def demonstrate_vs_dictionary_approach():
     # Add a case
     case = create_sample_error_case("TRIAL_001", "PATIENT_001", "Diabetes")
     categorized_cases.add_case(
-        category=ErrorCategory.EXCLUSION_CRITERIA_VIOLATION,
+        category=FalsePositiveCategory.EXCLUSION_CRITERIA_VIOLATION,
         case=case,
         gpt_categorization="exclusion_criteria_violation",
         gpt_reasoning="Patient meets exclusion criteria",
@@ -163,7 +207,7 @@ def demonstrate_vs_dictionary_approach():
     # Dictionary approach (old way)
     logger.info("\nDictionary Approach (old way):")
     categorized_dict: Dict[str, List[Dict[str, Any]]] = {
-        category.value: [] for category in ErrorCategory
+        category.value: [] for category in FalsePositiveCategory
     }
 
     # Add a case
@@ -178,7 +222,7 @@ def demonstrate_vs_dictionary_approach():
     # Get statistics (manual calculation)
     total_cases = sum(len(cases) for cases in categorized_dict.values())
     stats_dict: Dict[str, Dict[str, Any]] = {}
-    for category in ErrorCategory:
+    for category in FalsePositiveCategory:
         category_cases = categorized_dict.get(category.value, [])
         if category_cases:
             stats_dict[category.value] = {
@@ -203,6 +247,7 @@ def demonstrate_vs_dictionary_approach():
 if __name__ == "__main__":
     try:
         demonstrate_class_usage()
+        demonstrate_false_negative_categories()
         demonstrate_vs_dictionary_approach()
     except Exception as e:
         logger.error(f"Error during demonstration: {e}")
