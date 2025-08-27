@@ -121,11 +121,9 @@ def demonstrate_class_usage():
 
     # Demonstrate export functionality
     logger.info("\n=== Export Functionality ===")
-    output_path = "sample_categorized_cases.csv"
-    if categorized_cases.export_to_csv(output_path):
-        logger.info(f"Successfully exported to {output_path}")
-    else:
-        logger.error("Failed to export")
+    output_path = "sample_categorized_cases.json"
+    # Note: CSV export has been removed, only JSON export is available
+    logger.info(f"JSON export path would be: {output_path}")
 
     # Demonstrate conversion to dictionary format
     logger.info("\n=== Converting to Dictionary Format ===")

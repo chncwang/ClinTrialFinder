@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Callable
 from collections import Counter, defaultdict
-import pandas as pd
+
 from datetime import datetime
 from enum import Enum
 
@@ -294,32 +294,7 @@ class CategorizedErrorCases:
                 if 'gpt_reasoning' in case_info:
                     logger.info(f"    GPT Reasoning: {case_info['gpt_reasoning']}")
 
-    def export_to_csv(self, output_path: str) -> bool:
-        """Export the categorized results to CSV."""
-        try:
-            if self.get_total_count() == 0:
-                return False
 
-            # Flatten the categorized results
-            export_data: List[Dict[str, Any]] = []
-            for category_name, cases in self._categories.items():
-                for case in cases:
-                    export_data.append({
-                        'disease_name': case.case.disease_name,
-                        'trial_title': case.case.trial_title,
-                        'trial_criteria': case.case.trial_criteria,
-                        'full_medical_record': case.case.full_medical_record,
-                        'gpt_categorization': category_name,
-                        'gpt_reasoning': case.gpt_reasoning
-                    })
-
-            df = pd.DataFrame(export_data)  # type: ignore
-            df.to_csv(output_path, index=False)  # type: ignore
-            return True
-
-        except Exception as e:
-            logger.error(f"Error exporting to CSV: {e}")
-            return False
 
 def setup_logging(level: str = "INFO") -> None:
     """Setup logging configuration."""
@@ -926,7 +901,7 @@ Provided Reason:
                     })
 
             # Export to JSON (human readable)
-            json_path = output_path.replace('.csv', '.json')
+            json_path = output_path
             import json
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
@@ -935,7 +910,7 @@ Provided Reason:
             return True
 
         except Exception as e:
-            logger.error(f"Error exporting categorized results to CSV/JSON: {e}")
+            logger.error(f"Error exporting categorized results to JSON: {e}")
             return False
 
     def export_categorized_results_from_class(self, categorized_cases: 'CategorizedErrorCases', output_path: str) -> bool:
@@ -946,19 +921,22 @@ Provided Reason:
                 return False
 
             # Export to JSON (same fields, human readable)
-            json_path = output_path.replace('.csv', '.json')
+            json_path = output_path
             import json
             export_data: List[Dict[str, Any]] = []
             for category_name, cases in categorized_cases.items():
                 for case_info in cases:
                     case = case_info.case
                     export_data.append({
+                        'patient_id': case.patient_id,
+                        'trial_id': case.trial_id,
                         'disease_name': case.disease_name,
                         'trial_title': case.trial_title,
                         'trial_criteria': case.trial_criteria,
                         'full_medical_record': case.full_medical_record,
                         'gpt_categorization': category_name,
-                        'gpt_reasoning': case_info.gpt_reasoning
+                        'gpt_reasoning': case_info.gpt_reasoning,
+                        'reason': case.reason
                     })
 
             with open(json_path, 'w', encoding='utf-8') as f:
@@ -1063,7 +1041,7 @@ Examples:
     parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                        help='Set the logging level (default: INFO)')
     parser.add_argument('--gpt-api-key', help='OpenAI API key for GPT categorization (overrides OPENAI_API_KEY env var)')
-    parser.add_argument('--output', help='Output CSV file path for categorized results (default: auto-generated filename)')
+    parser.add_argument('--output', help='Output JSON file path for categorized results (default: auto-generated filename)')
 
     args = parser.parse_args()
 
@@ -1095,11 +1073,11 @@ Examples:
 
     if categorized_results:
         # Export categorized results
-        output_path = args.output or f"categorized_error_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        output_path = args.output or f"categorized_error_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
         # Process false positives
         if 'false_positives' in categorized_results and categorized_results['false_positives'].get_total_count() > 0:
-            false_pos_output = output_path.replace('.csv', '_false_positives.csv')
+            false_pos_output = output_path.replace('.json', '_false_positives.json')
             if analyzer.export_categorized_results_from_class(categorized_results['false_positives'], false_pos_output):
                 logger.info(f"False positive results exported to {false_pos_output}")
             else:
@@ -1107,7 +1085,7 @@ Examples:
 
         # Process false negatives
         if 'false_negatives' in categorized_results and categorized_results['false_negatives'].get_total_count() > 0:
-            false_neg_output = output_path.replace('.csv', '_false_negatives.csv')
+            false_neg_output = output_path.replace('.json', '_false_negatives.json')
             if analyzer.export_categorized_results_from_class(categorized_results['false_negatives'], false_neg_output):
                 logger.info(f"False negative results exported to {false_neg_output}")
             else:

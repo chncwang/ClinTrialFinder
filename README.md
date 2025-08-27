@@ -59,7 +59,7 @@ ClinTrialFinder includes comprehensive cost tracking for all GPT API operations.
 - **Automatic Cost Calculation**: Every GPT API call automatically calculates costs based on input/output token usage
 - **Real-time Tracking**: Costs are tracked per operation and accumulated across sessions
 - **Detailed Reporting**: Get cost breakdowns by case, operation type, and model used
-- **Export Capabilities**: Cost data is included in CSV exports for further analysis
+- **Export Capabilities**: Cost data is included in JSON exports for further analysis
 
 ### Supported Models and Pricing
 

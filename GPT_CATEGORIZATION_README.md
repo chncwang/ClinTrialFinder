@@ -14,7 +14,7 @@ The enhanced error case analyzer can now automatically categorize false positive
 
 - **GPT-5 Integration**: Primary model for categorization with automatic fallback to GPT-4o
 - **Automatic Categorization**: Processes all false positive cases in the dataset
-- **CSV Export**: Exports categorized results with detailed case information
+- **JSON Export**: Exports categorized results with detailed case information
 - **Comprehensive Logging**: Detailed progress tracking and error reporting
 - **Rate Limiting Protection**: Built-in delays to avoid API rate limits
 
@@ -38,16 +38,16 @@ python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json
 python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --categorize-gpt
 ```
 
-### Export Results to CSV
+### Export Results to JSON
 
 ```bash
-python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --categorize-gpt --export-csv
+python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --categorize-gpt
 ```
 
 ### Custom Output File
 
 ```bash
-python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --categorize-gpt --output my_categorized_results.csv
+python -m scripts.analyze_error_cases results/error_cases_20250825_063056.json --categorize-gpt --output my_categorized_results.json
 ```
 
 ## Test Script
@@ -60,7 +60,7 @@ python -m scripts.test_gpt_categorization results/error_cases_20250825_063056.js
 
 ## Output Format
 
-The categorized results CSV contains the following columns:
+The categorized results JSON contains the following fields:
 
 - `patient_id`: Patient identifier
 - `disease_name`: Disease/condition name
