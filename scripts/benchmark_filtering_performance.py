@@ -306,6 +306,16 @@ class TrialEvaluationResult:
     ground truth, and evaluation metadata for error analysis.
     """
 
+    # Type annotations for instance attributes
+    trial_id: str
+    trial_title: str
+    predicted_eligible: bool
+    ground_truth_relevant: bool
+    suitability_probability: float
+    reason: str
+    api_cost: float
+    original_relevance_score: Optional[int]
+
     def __init__(self,
                  trial_id: str,
                  trial_title: str,
@@ -385,6 +395,24 @@ class PatientEvaluationResult:
     processing statistics.
     """
 
+    # Type annotations for instance attributes
+    patient_id: str
+    ground_truth_count: int
+    retrieved_count: int
+    predicted_eligible_count: int
+    true_positives: int
+    false_positives: int
+    false_negatives: int
+    precision: float
+    recall: float
+    f1_score: float
+    accuracy: float
+    processing_time: float
+    api_cost: float
+    error: Optional[str]
+    skipped: bool
+    trial_evaluation_results: List[TrialEvaluationResult]
+
     def __init__(self,
                  patient_id: str,
                  ground_truth_count: int,
@@ -401,7 +429,7 @@ class PatientEvaluationResult:
                  api_cost: float,
                  error: Optional[str] = None,
                  skipped: bool = False,
-                 trial_evaluation_results: Optional[List['TrialEvaluationResult']] = None):
+                 trial_evaluation_results: Optional[List[TrialEvaluationResult]] = None):
         """
         Initialize a PatientEvaluationResult instance.
 
@@ -1160,8 +1188,6 @@ class FilteringBenchmark:
                             if failure_reason is None:
                                 raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
                             suitability_probability: float = 0.0
-                            if not failure_reason:
-                                raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
                             failure_details: str = failure_reason.failure_details if failure_reason.failure_details else 'Empty'
                             failed_condition: str = failure_reason.failed_condition if failure_reason.failed_condition else 'Empty'
                             failed_criterion: str = failure_reason.failed_criterion if failure_reason.failed_criterion else 'Empty'
