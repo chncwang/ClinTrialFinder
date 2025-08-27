@@ -112,6 +112,71 @@ logger: logging.Logger = logging.getLogger(__name__)
 log_file: str = ""
 
 
+def calculate_metrics(y_true: List[int], y_pred: List[int]) -> Dict[str, float]:
+    """
+    Calculate simple binary classification metrics including negative class metrics.
+
+    Args:
+        y_true: List of true labels (0 or 1)
+        y_pred: List of predicted labels (0 or 1)
+
+    Returns:
+        Dictionary with precision, recall, f1, accuracy, balanced accuracy,
+        negative_precision, negative_recall, and negative_f1
+    """
+    if len(y_true) != len(y_pred):
+        raise ValueError("y_true and y_pred must have the same length")
+
+    if not y_true:
+        return {
+            'precision': 0.0,
+            'recall': 0.0,
+            'f1': 0.0,
+            'accuracy': 0.0,
+            'balanced_accuracy': 0.0,
+            'negative_precision': 0.0,
+            'negative_recall': 0.0,
+            'negative_f1': 0.0
+        }
+
+    # Convert to binary if needed
+    y_true = [1 if label > 0 else 0 for label in y_true]
+    y_pred = [1 if label > 0 else 0 for label in y_pred]
+
+    # Calculate confusion matrix components
+    tp = sum(1 for true, pred in zip(y_true, y_pred) if true == 1 and pred == 1)
+    tn = sum(1 for true, pred in zip(y_true, y_pred) if true == 0 and pred == 0)
+    fp = sum(1 for true, pred in zip(y_true, y_pred) if true == 0 and pred == 1)
+    fn = sum(1 for true, pred in zip(y_true, y_pred) if true == 1 and pred == 0)
+
+    # Calculate metrics
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+    accuracy = (tp + tn) / len(y_true)
+
+    # Balanced accuracy (average of sensitivity and specificity)
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    balanced_accuracy = (sensitivity + specificity) / 2
+
+    # Calculate negative class metrics
+    negative_precision = tn / (tn + fn) if (tn + fn) > 0 else 0.0
+    negative_recall = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    negative_f1 = 2 * (negative_precision * negative_recall) / (negative_precision + negative_recall) if (negative_precision + negative_recall) > 0 else 0.0
+
+    return {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'accuracy': accuracy,
+        'balanced_accuracy': balanced_accuracy,
+        'negative_precision': negative_precision,
+        'negative_recall': negative_recall,
+        'negative_f1': negative_f1
+    }
+
+
 class Patient:
     """
     A class to represent a patient case for clinical trial matching.
@@ -898,39 +963,6 @@ class FilteringBenchmark:
 
         return relevant_trials
 
-    def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
-        """
-        Calculate precision, recall, F1-score, and accuracy.
-
-        Args:
-            predicted_eligible: List of predicted eligible trial IDs
-            ground_truth: List of ground truth relevant trial IDs
-
-        Returns:
-            Dictionary with metrics
-        """
-        predicted_set = set(predicted_eligible)
-        ground_truth_set = set(ground_truth)
-
-        true_positives = len(predicted_set & ground_truth_set)
-        false_positives = len(predicted_set - ground_truth_set)
-        false_negatives = len(ground_truth_set - predicted_set)
-
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        accuracy = true_positives / len(ground_truth_set) if ground_truth_set else 0.0
-
-        return {
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'accuracy': accuracy,
-            'true_positives': true_positives,
-            'false_positives': false_positives,
-            'false_negatives': false_negatives
-        }
-
     def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> List[TrialEvaluationResult]:
         """
         Evaluate filtering performance for a single patient.
@@ -1153,32 +1185,43 @@ class FilteringBenchmark:
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
                     logger.info(f"Cache status: {cache_stats['cached_patients']}/{cache_stats['total_patients']} patients cached ({cache_stats['cache_hit_rate']:.1%})")
 
-        # Calculate trial-level metrics directly from all trial results
+                # Calculate trial-level metrics directly from all trial results
         if all_trial_results:
-            # Calculate trial-level precision, recall, and F1
-            trial_true_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and trial.ground_truth_relevant)
-            trial_false_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and not trial.ground_truth_relevant)
-            trial_false_negatives = sum(1 for trial in all_trial_results if not trial.predicted_eligible and trial.ground_truth_relevant)
+            # Prepare data for metrics calculation
+            y_true = [1 if trial.ground_truth_relevant else 0 for trial in all_trial_results]
+            y_pred = [1 if trial.predicted_eligible else 0 for trial in all_trial_results]
 
-            trial_precision = trial_true_positives / (trial_true_positives + trial_false_positives) if (trial_true_positives + trial_false_positives) > 0 else 0.0
-            trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
-            trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
-            trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
+            # Calculate all metrics at once using the simplified function
+            metrics = calculate_metrics(y_true, y_pred)
+
+            # Extract primary metrics
+            trial_precision = metrics['precision']
+            trial_recall = metrics['recall']
+            trial_f1 = metrics['f1']
+            trial_accuracy = metrics['accuracy']
+            balanced_accuracy = metrics['balanced_accuracy']
+
+            # For backward compatibility and extended metrics
+            positive_precision = trial_precision
+            positive_recall = trial_recall
+            positive_f1 = trial_f1
+
+                        # Get negative class metrics directly from calculate_metrics
+            negative_precision = metrics['negative_precision']
+            negative_recall = metrics['negative_recall']
+            negative_f1 = metrics['negative_f1']
+
+            # Macro metrics (average of positive and negative)
+            macro_precision = (positive_precision + negative_precision) / 2
+            macro_recall = (positive_recall + negative_recall) / 2
+            macro_f1 = (positive_f1 + negative_f1) / 2
         else:
-            trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
-
-        if all_trial_results:
-            # Calculate trial-level precision, recall, and F1
-            trial_true_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and trial.ground_truth_relevant)
-            trial_false_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and not trial.ground_truth_relevant)
-            trial_false_negatives = sum(1 for trial in all_trial_results if not trial.predicted_eligible and trial.ground_truth_relevant)
-
-            trial_precision = trial_true_positives / (trial_true_positives + trial_false_positives) if (trial_true_positives + trial_false_positives) > 0 else 0.0
-            trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
-            trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
-            trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
-        else:
-            trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
+            # Initialize all metrics to 0.0 when no results
+            positive_precision = positive_recall = positive_f1 = 0.0
+            negative_precision = negative_recall = negative_f1 = 0.0
+            macro_precision = macro_recall = macro_f1 = 0.0
+            trial_accuracy = balanced_accuracy = 0.0
+            trial_precision = trial_recall = trial_f1 = 0.0
 
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
@@ -1221,6 +1264,25 @@ class FilteringBenchmark:
                 'trial_accuracy': trial_accuracy,
                 'total_trials_evaluated': len(all_trial_results)
             },
+            'extended_metrics': {
+                'per_class_metrics': {
+                    'positive_precision': positive_precision,
+                    'positive_recall_sensitivity': positive_recall,
+                    'positive_f1': positive_f1,
+                    'negative_precision': negative_precision,
+                    'negative_recall_specificity': negative_recall,
+                    'negative_f1': negative_f1
+                },
+                'macro_metrics': {
+                    'macro_precision': macro_precision,
+                    'macro_recall': macro_recall,
+                    'macro_f1': macro_f1
+                },
+                'overall_metrics': {
+                    'accuracy': trial_accuracy,
+                    'balanced_accuracy': balanced_accuracy
+                }
+            },
             'detailed_results': [trial.to_dict() for trial in all_trial_results]
         }
 
@@ -1243,6 +1305,24 @@ class FilteringBenchmark:
         logger.info(f"Trial-level recall: {trial_recall:.4f}")
         logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
         logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
+        logger.info("=" * 60)
+
+        # Log extended metrics in the requested format
+        logger.info("=" * 60)
+        logger.info("PER-CLASS METRICS")
+        logger.info("=" * 60)
+        logger.info(f"Positive precision: {positive_precision:.4f}")
+        logger.info(f"Positive recall (sensitivity): {positive_recall:.4f}")
+        logger.info(f"Positive F1: {positive_f1:.4f}")
+        logger.info(f"Negative precision: {negative_precision:.4f}")
+        logger.info(f"Negative recall (specificity): {negative_recall:.4f}")
+        logger.info(f"Negative F1: {negative_f1:.4f}")
+        logger.info("-" * 60)
+        logger.info(f"Macro precision: {macro_precision:.4f}")
+        logger.info(f"Macro recall: {macro_recall:.4f}")
+        logger.info(f"Macro F1: {macro_f1:.4f}")
+        logger.info(f"Accuracy: {trial_accuracy:.4f}")
+        logger.info(f"Balanced accuracy: {balanced_accuracy:.4f}")
         logger.info("=" * 60)
 
         # Log conditions cache statistics
