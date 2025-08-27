@@ -650,6 +650,48 @@ class FilteringBenchmark:
         # Load dataset
         self._load_dataset()
 
+    def _load_corrected_labels(self) -> Dict[tuple[str, str], int]:
+        """Load corrected data labels from the corrected_data_label_errors.tsv file."""
+        corrected_labels: Dict[tuple[str, str], int] = {}
+        corrected_file = self.dataset_path / "corrected_data_label_errors.tsv"
+
+        if not corrected_file.exists():
+            logger.warning(f"Corrected labels file not found: {corrected_file}")
+            return corrected_labels
+
+        try:
+            with open(corrected_file, 'r') as f:
+                # Skip header line
+                next(f)
+                for line_num, line in enumerate(f, 2):
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        parts = line.split('\t')
+                        if len(parts) != 3:
+                            logger.warning(f"Skipping malformed line {line_num}: {line}")
+                            continue
+
+                        query_id, corpus_id, score = parts
+                        score = int(score)
+
+                        # Create a key tuple of (query_id, corpus_id) for easy lookup
+                        key = (query_id, corpus_id)
+                        corrected_labels[key] = score
+
+                    except ValueError as e:
+                        logger.warning(f"Skipping line {line_num} due to invalid score: {line}, error: {e}")
+                        continue
+
+            logger.info(f"Loaded {len(corrected_labels)} corrected labels")
+            return corrected_labels
+
+        except Exception as e:
+            logger.error(f"Error loading corrected labels: {e}")
+            return corrected_labels
+
     def _load_dataset(self):
         """Load TREC 2021 dataset components."""
         logger.info("Loading TREC 2021 dataset...")
@@ -668,6 +710,9 @@ class FilteringBenchmark:
         for i, patient in enumerate(self.patients[:10], 1):
             logger.info(f"  {i}. {patient.patient_id}: {patient.get_text_summary(100)}")
 
+        # Load corrected labels first
+        corrected_labels: Dict[tuple[str, str], int] = self._load_corrected_labels()
+
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
         self.relevance_judgments: List[RelevanceJudgment] = []
@@ -675,7 +720,20 @@ class FilteringBenchmark:
             for line in f:
                 judgment = RelevanceJudgment.from_tsv_line(line)
                 if judgment is not None:
-                    self.relevance_judgments.append(judgment)
+                    # Check if there's a corrected label for this judgment
+                    key = (judgment.patient_id, judgment.trial_id)
+                    if key in corrected_labels:
+                        corrected_score = corrected_labels[key]
+                        logger.info(f"Applying corrected label: {judgment.patient_id} -> {judgment.trial_id}: {judgment.relevance_score} -> {corrected_score}")
+                        # Create new judgment with corrected score
+                        corrected_judgment = RelevanceJudgment(
+                            patient_id=judgment.patient_id,
+                            trial_id=judgment.trial_id,
+                            relevance_score=corrected_score
+                        )
+                        self.relevance_judgments.append(corrected_judgment)
+                    else:
+                        self.relevance_judgments.append(judgment)
 
         # Validate that the set of patient_ids in relevance_judgments is the same as the set of patient_ids in patients
         relevance_patient_ids = set(judgment.patient_id for judgment in self.relevance_judgments)
