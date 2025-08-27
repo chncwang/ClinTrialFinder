@@ -50,64 +50,6 @@ graph TD
     G -->|gpt-4.1| H
 ```
 
-## Cost Calculation and Tracking
-
-ClinTrialFinder includes comprehensive cost tracking for all GPT API operations. This helps you monitor and budget your API usage costs.
-
-### How It Works
-
-- **Automatic Cost Calculation**: Every GPT API call automatically calculates costs based on input/output token usage
-- **Real-time Tracking**: Costs are tracked per operation and accumulated across sessions
-- **Detailed Reporting**: Get cost breakdowns by case, operation type, and model used
-- **Export Capabilities**: Cost data is included in JSON exports for further analysis
-
-### Supported Models and Pricing
-
-The system supports all major GPT models with current pricing:
-
-| Model | Input Cost (per 1K tokens) | Output Cost (per 1K tokens) |
-|-------|---------------------------|----------------------------|
-| GPT-5 | $0.00125 | $0.01000 |
-| GPT-4o | $0.00250 | $0.01000 |
-| GPT-4o-mini | $0.00015 | $0.00060 |
-| GPT-4.1 | $0.00200 | $0.00800 |
-| GPT-4.1-mini | $0.00040 | $0.00160 |
-
-### Cost Tracking Features
-
-- **Per-case Cost Tracking**: Individual costs for each clinical trial analysis
-- **Session Totals**: Accumulated costs across multiple operations
-- **Cost Statistics**: Average, minimum, and maximum costs per operation
-- **Model-specific Tracking**: Separate cost tracking for different GPT models
-- **Cache-aware Costing**: Only charges for actual API calls, not cached responses
-
-### Example Cost Output
-
-```
-GPT API COST STATISTICS
---------------------------------------------------------------------------------
-Total cost: $0.023400
-Number of cases processed: 15
-Average cost per case: $0.001560
-Minimum cost per case: $0.000800
-Maximum cost per case: $0.003200
---------------------------------------------------------------------------------
-```
-
-### Testing Cost Calculation
-
-You can test the cost calculation functionality using the provided test script:
-
-```bash
-python -m scripts.test_cost_calculation
-```
-
-This script will:
-- Test cost calculations with different prompt lengths
-- Verify cost accuracy across different models
-- Show detailed cost breakdowns
-- Demonstrate the pricing utility functions
-
 ## Installation
 
 1. Clone the repository:
