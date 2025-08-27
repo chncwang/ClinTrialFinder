@@ -374,6 +374,7 @@ class TrialEvaluationResult:
     # Type annotations for instance attributes
     trial_id: str
     trial_title: str
+    patient_id: str
     predicted_eligible: bool
     ground_truth_relevant: bool
     suitability_probability: float
@@ -384,6 +385,7 @@ class TrialEvaluationResult:
     def __init__(self,
                  trial_id: str,
                  trial_title: str,
+                 patient_id: str,
                  predicted_eligible: bool,
                  ground_truth_relevant: bool,
                  suitability_probability: float,
@@ -405,6 +407,7 @@ class TrialEvaluationResult:
         """
         self.trial_id = trial_id
         self.trial_title = trial_title
+        self.patient_id = patient_id
         self.predicted_eligible = predicted_eligible
         self.ground_truth_relevant = ground_truth_relevant
         self.suitability_probability = suitability_probability
@@ -432,6 +435,7 @@ class TrialEvaluationResult:
         return {
             'trial_id': self.trial_id,
             'trial_title': self.trial_title,
+            'patient_id': self.patient_id,
             'predicted_eligible': self.predicted_eligible,
             'ground_truth_relevant': self.ground_truth_relevant,
             'suitability_probability': self.suitability_probability,
@@ -444,11 +448,11 @@ class TrialEvaluationResult:
 
     def __str__(self) -> str:
         """String representation of the trial evaluation result."""
-        return f"TrialEvaluationResult(trial_id='{self.trial_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f})"
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', patient_id='{self.patient_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f})"
 
     def __repr__(self) -> str:
         """Detailed string representation of the trial evaluation result."""
-        return f"TrialEvaluationResult(trial_id='{self.trial_id}', trial_title='{self.trial_title}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f}, reason='{self.reason}', api_cost={self.api_cost:.4f})"
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', trial_title='{self.trial_title}', patient_id='{self.patient_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f}, reason='{self.reason}', api_cost={self.api_cost:.4f})"
 
 
 
@@ -1065,6 +1069,7 @@ class FilteringBenchmark:
                     trial_result = TrialEvaluationResult(
                         trial_id=trial_id,
                         trial_title=trial.identification.brief_title or trial.identification.official_title or trial.identification.acronym or trial_id,
+                        patient_id=patient_id,
                         predicted_eligible=is_eligible,
                         ground_truth_relevant=ground_truth_relevant,
                         suitability_probability=suitability_probability,
@@ -1418,6 +1423,8 @@ class FilteringBenchmark:
             logger.info(f"Case {i+1}:")
             logger.info(f"  Trial ID: {trial_result.trial_id}")
             logger.info(f"  Trial Title: {trial_result.trial_title}")
+            logger.info(f"  Patient ID: {trial_result.patient_id}")
+            logger.info(f"  Disease: {self._get_patient_disease(trial_result.patient_id)}")
             logger.info(f"  Original Label: {trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'}")
             logger.info(f"  Error Type: {trial_result.error_type}")
             logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
@@ -1467,6 +1474,8 @@ class FilteringBenchmark:
                 error_case = {
                     'trial_id': trial_result.trial_id,
                     'trial_title': trial_result.trial_title,
+                    'patient_id': trial_result.patient_id,
+                    'disease_name': self._get_patient_disease(trial_result.patient_id),
                     'trial_criteria': trial_criteria,
                     'error_type': trial_result.error_type.value,
                     'suitability_probability': trial_result.suitability_probability,
