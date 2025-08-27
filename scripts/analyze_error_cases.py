@@ -949,6 +949,59 @@ Provided Reason:
             logger.error(f"Error exporting categorized results to JSON: {e}")
             return False
 
+    def export_combined_error_cases(self, categorized_results: Dict[str, 'CategorizedErrorCases'], output_path: str) -> bool:
+        """Export both false positives and false negatives to the same file with a case_type field."""
+        try:
+            if not categorized_results:
+                logger.warning("No categorized results to export")
+                return False
+
+            # Collect all cases with their type
+            export_data: List[Dict[str, Any]] = []
+
+            # Helper function to process error cases
+            def process_error_cases(case_type: str, categorized_cases: CategorizedErrorCases) -> None:
+                if categorized_cases and categorized_cases.get_total_count() > 0:
+                    for category_name, cases in categorized_cases.items():
+                        for case_info in cases:
+                            case = case_info.case
+                            export_data.append({
+                                'case_type': case_type,
+                                'patient_id': case.patient_id,
+                                'trial_id': case.trial_id,
+                                'disease_name': case.disease_name,
+                                'trial_title': case.trial_title,
+                                'trial_criteria': case.trial_criteria,
+                                'full_medical_record': case.full_medical_record,
+                                'gpt_categorization': category_name,
+                                'gpt_reasoning': case_info.gpt_reasoning,
+                                'reason': case.reason
+                            })
+
+            # Process false positives
+            if 'false_positives' in categorized_results:
+                process_error_cases('false_positive', categorized_results['false_positives'])
+
+            # Process false negatives
+            if 'false_negatives' in categorized_results:
+                process_error_cases('false_negative', categorized_results['false_negatives'])
+
+            if not export_data:
+                logger.warning("No cases to export")
+                return False
+
+            # Export to JSON
+            import json
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"Exported {len(export_data)} combined error cases to {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error exporting combined error cases to JSON: {e}")
+            return False
+
     def log_summary(self):
         """Log a comprehensive summary of the error cases."""
         if not self.collection:
@@ -1072,24 +1125,13 @@ Examples:
     categorized_results = analyzer.categorize_all_error_cases_with_gpt()
 
     if categorized_results:
-        # Export categorized results
+        # Export categorized results to a single combined file
         output_path = args.output or f"categorized_error_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
-        # Process false positives
-        if 'false_positives' in categorized_results and categorized_results['false_positives'].get_total_count() > 0:
-            false_pos_output = output_path.replace('.json', '_false_positives.json')
-            if analyzer.export_categorized_results_from_class(categorized_results['false_positives'], false_pos_output):
-                logger.info(f"False positive results exported to {false_pos_output}")
-            else:
-                logger.error("False positive results export failed")
-
-        # Process false negatives
-        if 'false_negatives' in categorized_results and categorized_results['false_negatives'].get_total_count() > 0:
-            false_neg_output = output_path.replace('.json', '_false_negatives.json')
-            if analyzer.export_categorized_results_from_class(categorized_results['false_negatives'], false_neg_output):
-                logger.info(f"False negative results exported to {false_neg_output}")
-            else:
-                logger.error("False negative results export failed")
+        if analyzer.export_combined_error_cases(categorized_results, output_path):
+            logger.info(f"Combined error cases exported to {output_path}")
+        else:
+            logger.error("Combined error cases export failed")
 
         # Demonstrate enum usage for false positives
         if 'false_positives' in categorized_results and categorized_results['false_positives'].get_total_count() > 0:
