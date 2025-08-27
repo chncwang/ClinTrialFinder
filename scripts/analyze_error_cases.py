@@ -602,13 +602,19 @@ Return JSON only, in this schema:
 Case details:
 
 Clinical Record:
+<clinical_record>
 {case.full_medical_record}
+</clinical_record>
 
 Trial Title:
+<trial_title>
 {case.trial_title}
+</trial_title>
 
 Trial Criteria:
+<trial_criteria>
 {case.trial_criteria}
+</trial_criteria>
 """
 
         try:
@@ -688,16 +694,24 @@ Return JSON only, in this schema:
 Case details:
 
 Clinical Record:
+<clinical_record>
 {case.full_medical_record}
+</clinical_record>
 
 Trial Title:
+<trial_title>
 {case.trial_title}
+</trial_title>
 
 Trial Criteria:
+<trial_criteria>
 {case.trial_criteria}
+</trial_criteria>
 
 Provided Reason:
+<reason>
 {case.reason}
+</reason>
 """
 
         try:
