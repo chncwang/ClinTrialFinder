@@ -98,15 +98,15 @@ def process_data_label_errors(cases: List[ErrorCase]) -> List[CorrectedRecord]:
 
         if case_type == 'false_negative':
             # Label was true but should be false (true negative)
-            # Since this is a data label error, the correct label should be 0
-            corrected_record.score = 0
-            logger.info(f"False negative data label error: {patient_id} -> {trial_id} (corrected to 0)")
+            # Since this is a data label error, the correct label should be 1
+            corrected_record.score = 1
+            logger.info(f"False negative data label error: {patient_id} -> {trial_id} (corrected to 1)")
 
         elif case_type == 'false_positive':
             # Label was false but should be true (true positive)
-            # Since this is a data label error, the correct label should be 1
-            corrected_record.score = 1
-            logger.info(f"False positive data label error: {patient_id} -> {trial_id} (corrected to 1)")
+            # Since this is a data label error, the correct label should be 2
+            corrected_record.score = 2
+            logger.info(f"False positive data label error: {patient_id} -> {trial_id} (corrected to 2)")
 
         else:
             logger.warning(f"Unknown case type '{case_type}' for {patient_id} -> {trial_id}")
@@ -192,13 +192,13 @@ def main():
         save_to_tsv(corrected_records, output_file)
 
         # Print summary
-        false_negatives = sum(1 for r in corrected_records if r.score == 0)
-        false_positives = sum(1 for r in corrected_records if r.score == 1)
+        false_negatives = sum(1 for r in corrected_records if r.score == 1)
+        false_positives = sum(1 for r in corrected_records if r.score == 2)
 
         logger.info(f"Summary:")
         logger.info(f"Total data label error cases processed: {len(corrected_records)}")
-        logger.info(f"False negatives corrected to true negatives (score=0): {false_negatives}")
-        logger.info(f"False positives corrected to true positives (score=1): {false_positives}")
+        logger.info(f"False negatives corrected to true negatives (score=1): {false_negatives}")
+        logger.info(f"False positives corrected to true positives (score=2): {false_positives}")
         logger.info(f"Output saved to: {output_file}")
     else:
         logger.info("No corrected records generated.")
