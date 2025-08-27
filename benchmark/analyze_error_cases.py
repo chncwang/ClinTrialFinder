@@ -913,42 +913,6 @@ Provided Reason:
             logger.error(f"Error exporting categorized results to JSON: {e}")
             return False
 
-    def export_categorized_results_from_class(self, categorized_cases: 'CategorizedErrorCases', output_path: str) -> bool:
-        """Export the GPT-categorized results to JSON using the CategorizedErrorCases class."""
-        try:
-            if not categorized_cases or categorized_cases.get_total_count() == 0:
-                logger.warning("No categorized cases to export")
-                return False
-
-            # Export to JSON (same fields, human readable)
-            json_path = output_path
-            import json
-            export_data: List[Dict[str, Any]] = []
-            for category_name, cases in categorized_cases.items():
-                for case_info in cases:
-                    case = case_info.case
-                    export_data.append({
-                        'patient_id': case.patient_id,
-                        'trial_id': case.trial_id,
-                        'disease_name': case.disease_name,
-                        'trial_title': case.trial_title,
-                        'trial_criteria': case.trial_criteria,
-                        'full_medical_record': case.full_medical_record,
-                        'gpt_categorization': category_name,
-                        'gpt_reasoning': case_info.gpt_reasoning,
-                        'reason': case.reason
-                    })
-
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
-            logger.info(f"Exported {len(export_data)} categorized cases to {json_path}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error exporting categorized results to JSON: {e}")
-            return False
-
     def export_combined_error_cases(self, categorized_results: Dict[str, 'CategorizedErrorCases'], output_path: str) -> bool:
         """Export both false positives and false negatives to the same file with a case_type field."""
         try:
