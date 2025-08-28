@@ -1805,6 +1805,12 @@ def main():
         action="store_true",
         help="Use title-only evaluation (evaluate_title) instead of full trial evaluation (evaluate_trial). Title-only is faster but less accurate."
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=8,
+        help="Maximum number of retry attempts for GPT API calls (default: 8)"
+    )
 
     args = parser.parse_args()
 
@@ -1887,8 +1893,8 @@ def main():
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create GPT client
-    gpt_client = GPTClient(api_key=api_key, cache_size=args.cache_size, strict_cache_mode=args.strict_cache_mode)
+    # Create GPT client with increased retry count for better reliability
+    gpt_client = GPTClient(api_key=api_key, cache_size=args.cache_size, strict_cache_mode=args.strict_cache_mode, max_retries=args.max_retries)
 
     # Run benchmark
     benchmark = FilteringBenchmark(args.dataset_path, gpt_client)

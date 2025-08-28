@@ -22,7 +22,7 @@ class GPTClient:
         api_key: str,
         cache_size: int = 100000,
         temperature: float = 0.1,
-        max_retries: int = 3,
+        max_retries: int = 5,
         cache_dir: str = ".cache",
         strict_cache_mode: bool = False,
     ):
@@ -239,10 +239,20 @@ class GPTClient:
                         f"GPTClient.call_with_retry: Failed after {self.max_retries} attempts: {str(e)}"
                     )
                     raise
-                backoff_time = 2**attempt
-                logger.info(
-                    f"GPTClient.call_with_retry: Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(e)}"
-                )
+
+                # Special handling for 404 errors (API endpoint temporarily unavailable)
+                if "404" in str(e) or "Not Found" in str(e):
+                    # Use longer backoff for 404 errors as they might indicate temporary API issues
+                    backoff_time = min(2**(attempt + 2), 60)  # Start with 4s, max 60s
+                    logger.warning(
+                        f"GPTClient.call_with_retry: 404/Not Found error on attempt {attempt+1}, using extended backoff: {backoff_time}s"
+                    )
+                else:
+                    backoff_time = 2**attempt
+                    logger.info(
+                        f"GPTClient.call_with_retry: Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(e)}"
+                    )
+
                 time.sleep(backoff_time)  # Exponential backoff
 
         total_time = time.time() - start_time

@@ -3,7 +3,7 @@ import argparse
 import json
 import random
 from datetime import datetime
-from typing import List, Any
+from typing import List, Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def setup_logging():
     """Set up logging configuration with timestamp in filename."""
     import sys
     from pathlib import Path
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
@@ -247,13 +247,11 @@ def main():
             f"main: Successfully loaded clinical record from {args.clinical_record_file}"
         )
 
-        # Initialize GPT client
-        gpt_client = GPTClient(api_key=args.openai_api_key)
+        # Initialize GPT client with increased retry count for better reliability
+        gpt_client = GPTClient(api_key=args.openai_api_key, max_retries=8)
 
         # Extract disease from clinical record
         disease, _ = extract_disease_from_record(clinical_record, gpt_client)
-        if disease is None:
-            disease = "Unknown disease"
         logger.info(f"main: Disease: {disease}")
 
         # Rank trials with specified seed
@@ -274,11 +272,13 @@ def main():
         logger.info(f"\nmain: Ranked trials saved to: {output_file}")
 
         # Generate CSV output if requested
-        csv_output_file = None
+        csv_output_file: Optional[str] = None
+        csv_generated = False
         if args.csv_output:
             try:
                 from scripts.json_to_csv_converter import convert_json_to_csv
                 csv_output_file = convert_json_to_csv(output_file)
+                csv_generated = True
                 logger.info(f"main: CSV output saved to: {csv_output_file}")
             except ImportError:
                 logger.warning("main: CSV conversion module not available. Skipping CSV output.")
@@ -291,7 +291,7 @@ def main():
         logger.info(f"main: Total number of trials ranked: {len(ranked_trials)}")
         logger.info(f"main: Total cost of ranking: ${total_cost:.6f}")
         logger.info(f"main: Output file: {output_file}")
-        if args.csv_output and csv_output_file:
+        if csv_generated and csv_output_file:
             logger.info(f"main: CSV output: {csv_output_file}")
         logger.info("main: " + "=" * 80)
 

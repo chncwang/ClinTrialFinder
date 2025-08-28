@@ -326,7 +326,7 @@ You must be precise, concise, and output only structured JSON — no extra text,
 
         if gpt_api_key:
             try:
-                self.gpt_client = GPTClient(api_key=gpt_api_key)
+                self.gpt_client = GPTClient(api_key=gpt_api_key, max_retries=8)
                 logger.info("GPT client initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize GPT client: {e}")

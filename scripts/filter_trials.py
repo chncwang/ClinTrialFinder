@@ -85,6 +85,12 @@ def main():
         default="INFO",
         help="Set the logging level (default: INFO)",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=8,
+        help="Maximum number of retry attempts for GPT API calls (default: 8)",
+    )
 
     args = parser.parse_args()
 
@@ -105,7 +111,7 @@ def main():
             api_key=api_key,
             cache_size=args.cache_size,
             temperature=0.1,
-            max_retries=3,
+            max_retries=args.max_retries,
         )
         gpt_filter = GPTTrialFilter(gpt_client)
 
