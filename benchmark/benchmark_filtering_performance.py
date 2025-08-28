@@ -112,6 +112,71 @@ logger: logging.Logger = logging.getLogger(__name__)
 log_file: str = ""
 
 
+def calculate_metrics(y_true: List[int], y_pred: List[int]) -> Dict[str, float]:
+    """
+    Calculate simple binary classification metrics including negative class metrics.
+
+    Args:
+        y_true: List of true labels (0 or 1)
+        y_pred: List of predicted labels (0 or 1)
+
+    Returns:
+        Dictionary with precision, recall, f1, accuracy, balanced accuracy,
+        negative_precision, negative_recall, and negative_f1
+    """
+    if len(y_true) != len(y_pred):
+        raise ValueError("y_true and y_pred must have the same length")
+
+    if not y_true:
+        return {
+            'precision': 0.0,
+            'recall': 0.0,
+            'f1': 0.0,
+            'accuracy': 0.0,
+            'balanced_accuracy': 0.0,
+            'negative_precision': 0.0,
+            'negative_recall': 0.0,
+            'negative_f1': 0.0
+        }
+
+    # Convert to binary if needed
+    y_true = [1 if label > 0 else 0 for label in y_true]
+    y_pred = [1 if label > 0 else 0 for label in y_pred]
+
+    # Calculate confusion matrix components
+    tp = sum(1 for true, pred in zip(y_true, y_pred) if true == 1 and pred == 1)
+    tn = sum(1 for true, pred in zip(y_true, y_pred) if true == 0 and pred == 0)
+    fp = sum(1 for true, pred in zip(y_true, y_pred) if true == 0 and pred == 1)
+    fn = sum(1 for true, pred in zip(y_true, y_pred) if true == 1 and pred == 0)
+
+    # Calculate metrics
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+    accuracy = (tp + tn) / len(y_true)
+
+    # Balanced accuracy (average of sensitivity and specificity)
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    balanced_accuracy = (sensitivity + specificity) / 2
+
+    # Calculate negative class metrics
+    negative_precision = tn / (tn + fn) if (tn + fn) > 0 else 0.0
+    negative_recall = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    negative_f1 = 2 * (negative_precision * negative_recall) / (negative_precision + negative_recall) if (negative_precision + negative_recall) > 0 else 0.0
+
+    return {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'accuracy': accuracy,
+        'balanced_accuracy': balanced_accuracy,
+        'negative_precision': negative_precision,
+        'negative_recall': negative_recall,
+        'negative_f1': negative_f1
+    }
+
+
 class Patient:
     """
     A class to represent a patient case for clinical trial matching.
@@ -309,6 +374,7 @@ class TrialEvaluationResult:
     # Type annotations for instance attributes
     trial_id: str
     trial_title: str
+    patient_id: str
     predicted_eligible: bool
     ground_truth_relevant: bool
     suitability_probability: float
@@ -319,6 +385,7 @@ class TrialEvaluationResult:
     def __init__(self,
                  trial_id: str,
                  trial_title: str,
+                 patient_id: str,
                  predicted_eligible: bool,
                  ground_truth_relevant: bool,
                  suitability_probability: float,
@@ -340,6 +407,7 @@ class TrialEvaluationResult:
         """
         self.trial_id = trial_id
         self.trial_title = trial_title
+        self.patient_id = patient_id
         self.predicted_eligible = predicted_eligible
         self.ground_truth_relevant = ground_truth_relevant
         self.suitability_probability = suitability_probability
@@ -367,6 +435,7 @@ class TrialEvaluationResult:
         return {
             'trial_id': self.trial_id,
             'trial_title': self.trial_title,
+            'patient_id': self.patient_id,
             'predicted_eligible': self.predicted_eligible,
             'ground_truth_relevant': self.ground_truth_relevant,
             'suitability_probability': self.suitability_probability,
@@ -379,237 +448,14 @@ class TrialEvaluationResult:
 
     def __str__(self) -> str:
         """String representation of the trial evaluation result."""
-        return f"TrialEvaluationResult(trial_id='{self.trial_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f})"
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', patient_id='{self.patient_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f})"
 
     def __repr__(self) -> str:
         """Detailed string representation of the trial evaluation result."""
-        return f"TrialEvaluationResult(trial_id='{self.trial_id}', trial_title='{self.trial_title}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f}, reason='{self.reason}', api_cost={self.api_cost:.4f})"
+        return f"TrialEvaluationResult(trial_id='{self.trial_id}', trial_title='{self.trial_title}', patient_id='{self.patient_id}', predicted_eligible={self.predicted_eligible}, ground_truth_relevant={self.ground_truth_relevant}, original_relevance_score={self.original_relevance_score if self.original_relevance_score is not None else 'N/A'}, suitability_probability={self.suitability_probability:.3f}, reason='{self.reason}', api_cost={self.api_cost:.4f})"
 
 
-class PatientEvaluationResult:
-    """
-    A class to represent the results of evaluating filtering performance for a single patient.
 
-    This class encapsulates all the metrics and information from evaluating a patient's
-    clinical trial filtering performance, including precision, recall, F1-score, and
-    processing statistics.
-    """
-
-    # Type annotations for instance attributes
-    patient_id: str
-    ground_truth_count: int
-    retrieved_count: int
-    predicted_eligible_count: int
-    true_positives: int
-    false_positives: int
-    false_negatives: int
-    precision: float
-    recall: float
-    f1_score: float
-    accuracy: float
-    processing_time: float
-    api_cost: float
-    error: Optional[str]
-    skipped: bool
-    trial_evaluation_results: List[TrialEvaluationResult]
-
-    def __init__(self,
-                 patient_id: str,
-                 ground_truth_count: int,
-                 retrieved_count: int,
-                 predicted_eligible_count: int,
-                 true_positives: int,
-                 false_positives: int,
-                 false_negatives: int,
-                 precision: float,
-                 recall: float,
-                 f1_score: float,
-                 accuracy: float,
-                 processing_time: float,
-                 api_cost: float,
-                 error: Optional[str] = None,
-                 skipped: bool = False,
-                 trial_evaluation_results: Optional[List[TrialEvaluationResult]] = None):
-        """
-        Initialize a PatientEvaluationResult instance.
-
-        Args:
-            patient_id: Unique identifier for the patient
-            ground_truth_count: Number of ground truth relevant trials
-            retrieved_count: Total number of trials retrieved for evaluation
-            predicted_eligible_count: Number of trials predicted as eligible
-            true_positives: Number of true positive predictions
-            false_positives: Number of false positive predictions
-            false_negatives: Number of false negative predictions
-            precision: Precision score (0.0 to 1.0)
-            recall: Recall score (0.0 to 1.0)
-            f1_score: F1 score (0.0 to 1.0)
-            accuracy: Accuracy score (0.0 to 1.0)
-            processing_time: Time taken to process the patient (seconds)
-            api_cost: Total API cost for processing the patient
-            error: Error message if processing failed, None if successful
-            skipped: Whether the patient was skipped during processing
-            trial_evaluation_results: List of individual trial evaluation results
-        """
-        self.patient_id = patient_id
-        self.ground_truth_count = ground_truth_count
-        self.retrieved_count = retrieved_count
-        self.predicted_eligible_count = predicted_eligible_count
-        self.true_positives = true_positives
-        self.false_positives = false_positives
-        self.false_negatives = false_negatives
-        self.precision = precision
-        self.recall = recall
-        self.f1_score = f1_score
-        self.accuracy = accuracy
-        self.processing_time = processing_time
-        self.api_cost = api_cost
-        self.error = error
-        self.skipped = skipped
-        self.trial_evaluation_results = trial_evaluation_results or []
-
-    @classmethod
-    def create_success_result(cls,
-                            patient_id: str,
-                            ground_truth_trials: List[str],
-                            all_trial_ids: List[str],
-                            predicted_eligible_trials: List[str],
-                            metrics: Dict[str, Any],
-                            processing_time: float,
-                            total_api_cost: float,
-                            trial_evaluation_results: List['TrialEvaluationResult']) -> 'PatientEvaluationResult':
-        """
-        Create a successful evaluation result.
-
-        Args:
-            patient_id: Patient identifier
-            ground_truth_trials: List of ground truth relevant trial IDs
-            all_trial_ids: List of all trial IDs retrieved for evaluation
-            predicted_eligible_trials: List of trial IDs predicted as eligible
-            metrics: Dictionary containing calculated metrics
-            processing_time: Time taken to process the patient
-            total_api_cost: Total API cost for processing
-            trial_evaluation_results: List of individual trial evaluation results
-
-        Returns:
-            PatientEvaluationResult instance for successful evaluation
-        """
-        result = cls(
-            patient_id=patient_id,
-            ground_truth_count=len(ground_truth_trials),
-            retrieved_count=len(all_trial_ids),
-            predicted_eligible_count=len(predicted_eligible_trials),
-            true_positives=metrics['true_positives'],
-            false_positives=metrics['false_positives'],
-            false_negatives=metrics['false_negatives'],
-            precision=metrics['precision'],
-            recall=metrics['recall'],
-            f1_score=metrics['f1_score'],
-            accuracy=metrics['accuracy'],
-            processing_time=processing_time,
-            api_cost=total_api_cost,
-            error=None,
-            skipped=False
-        )
-        result.trial_evaluation_results = trial_evaluation_results
-        return result
-
-    @classmethod
-    def create_error_result(cls,
-                          patient_id: str,
-                          ground_truth_trials: List[str],
-                          error_message: str) -> 'PatientEvaluationResult':
-        """
-        Create an error evaluation result when processing fails.
-
-        Args:
-            patient_id: Patient identifier
-            ground_truth_trials: List of ground truth relevant trial IDs
-            error_message: Error message describing what went wrong
-
-        Returns:
-            PatientEvaluationResult instance for failed evaluation
-        """
-        return cls(
-            patient_id=patient_id,
-            ground_truth_count=len(ground_truth_trials),
-            retrieved_count=0,
-            predicted_eligible_count=0,
-            true_positives=0,
-            false_positives=0,
-            false_negatives=0,
-            precision=0.0,
-            recall=0.0,
-            f1_score=0.0,
-            accuracy=0.0,
-            processing_time=0.0,
-            api_cost=0.0,
-            error=error_message,
-            skipped=False
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert the result to a dictionary representation.
-
-        Returns:
-            Dictionary representation of the evaluation result
-        """
-        result_dict: Dict[str, Any] = {
-            'patient_id': self.patient_id,
-            'ground_truth_count': self.ground_truth_count,
-            'retrieved_count': self.retrieved_count,
-            'predicted_eligible_count': self.predicted_eligible_count,
-            'true_positives': self.true_positives,
-            'false_positives': self.false_positives,
-            'false_negatives': self.false_negatives,
-            'precision': self.precision,
-            'recall': self.recall,
-            'f1_score': self.f1_score,
-            'accuracy': self.accuracy,
-            'processing_time': self.processing_time,
-            'api_cost': self.api_cost,
-            'error': self.error,
-            'skipped': self.skipped
-        }
-
-        # Add trial evaluation results if available
-        if hasattr(self, 'trial_evaluation_results') and self.trial_evaluation_results:
-            result_dict['trial_evaluation_results'] = [trial.to_dict() for trial in self.trial_evaluation_results]
-
-        return result_dict
-
-    def is_successful(self) -> bool:
-        """
-        Check if the evaluation was successful.
-
-        Returns:
-            True if no error occurred and patient wasn't skipped
-        """
-        return self.error is None and not self.skipped
-
-    def __str__(self) -> str:
-        """String representation of the evaluation result."""
-        if self.is_successful():
-            return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
-                   f"precision={self.precision:.3f}, recall={self.recall:.3f}, "
-                   f"f1={self.f1_score:.3f}, time={self.processing_time:.2f}s)")
-        else:
-            return f"PatientEvaluationResult(patient_id='{self.patient_id}', error='{self.error}')"
-
-    def __repr__(self) -> str:
-        """Detailed string representation of the evaluation result."""
-        return (f"PatientEvaluationResult(patient_id='{self.patient_id}', "
-               f"ground_truth_count={self.ground_truth_count}, "
-               f"retrieved_count={self.retrieved_count}, "
-               f"predicted_eligible_count={self.predicted_eligible_count}, "
-               f"true_positives={self.true_positives}, "
-               f"false_positives={self.false_positives}, "
-               f"false_negatives={self.false_negatives}, "
-               f"precision={self.precision}, recall={self.recall}, "
-               f"f1_score={self.f1_score}, accuracy={self.accuracy}, "
-               f"processing_time={self.processing_time}, api_cost={self.api_cost}, "
-               f"error={self.error}, skipped={self.skipped})")
 
 
 class FilteringBenchmark:
@@ -650,6 +496,48 @@ class FilteringBenchmark:
         # Load dataset
         self._load_dataset()
 
+    def _load_corrected_labels(self) -> Dict[tuple[str, str], int]:
+        """Load corrected data labels from the corrected_data_label_errors.tsv file."""
+        corrected_labels: Dict[tuple[str, str], int] = {}
+        corrected_file = self.dataset_path / "corrected_data_label_errors.tsv"
+
+        if not corrected_file.exists():
+            logger.warning(f"Corrected labels file not found: {corrected_file}")
+            return corrected_labels
+
+        try:
+            with open(corrected_file, 'r') as f:
+                # Skip header line
+                next(f)
+                for line_num, line in enumerate(f, 2):
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        parts = line.split('\t')
+                        if len(parts) != 3:
+                            logger.warning(f"Skipping malformed line {line_num}: {line}")
+                            continue
+
+                        query_id, corpus_id, score = parts
+                        score = int(score)
+
+                        # Create a key tuple of (query_id, corpus_id) for easy lookup
+                        key = (query_id, corpus_id)
+                        corrected_labels[key] = score
+
+                    except ValueError as e:
+                        logger.warning(f"Skipping line {line_num} due to invalid score: {line}, error: {e}")
+                        continue
+
+            logger.info(f"Loaded {len(corrected_labels)} corrected labels")
+            return corrected_labels
+
+        except Exception as e:
+            logger.error(f"Error loading corrected labels: {e}")
+            return corrected_labels
+
     def _load_dataset(self):
         """Load TREC 2021 dataset components."""
         logger.info("Loading TREC 2021 dataset...")
@@ -668,6 +556,9 @@ class FilteringBenchmark:
         for i, patient in enumerate(self.patients[:10], 1):
             logger.info(f"  {i}. {patient.patient_id}: {patient.get_text_summary(100)}")
 
+        # Load corrected labels first
+        corrected_labels: Dict[tuple[str, str], int] = self._load_corrected_labels()
+
         # Load relevance judgments
         qrels_file = self.dataset_path / "qrels" / "test.tsv"
         self.relevance_judgments: List[RelevanceJudgment] = []
@@ -675,7 +566,20 @@ class FilteringBenchmark:
             for line in f:
                 judgment = RelevanceJudgment.from_tsv_line(line)
                 if judgment is not None:
-                    self.relevance_judgments.append(judgment)
+                    # Check if there's a corrected label for this judgment
+                    key = (judgment.patient_id, judgment.trial_id)
+                    if key in corrected_labels:
+                        corrected_score = corrected_labels[key]
+                        logger.info(f"Applying corrected label: {judgment.patient_id} -> {judgment.trial_id}: {judgment.relevance_score} -> {corrected_score}")
+                        # Create new judgment with corrected score
+                        corrected_judgment = RelevanceJudgment(
+                            patient_id=judgment.patient_id,
+                            trial_id=judgment.trial_id,
+                            relevance_score=corrected_score
+                        )
+                        self.relevance_judgments.append(corrected_judgment)
+                    else:
+                        self.relevance_judgments.append(judgment)
 
         # Validate that the set of patient_ids in relevance_judgments is the same as the set of patient_ids in patients
         relevance_patient_ids = set(judgment.patient_id for judgment in self.relevance_judgments)
@@ -1063,40 +967,7 @@ class FilteringBenchmark:
 
         return relevant_trials
 
-    def calculate_metrics(self, predicted_eligible: List[str], ground_truth: List[str]) -> Dict[str, float]:
-        """
-        Calculate precision, recall, F1-score, and accuracy.
-
-        Args:
-            predicted_eligible: List of predicted eligible trial IDs
-            ground_truth: List of ground truth relevant trial IDs
-
-        Returns:
-            Dictionary with metrics
-        """
-        predicted_set = set(predicted_eligible)
-        ground_truth_set = set(ground_truth)
-
-        true_positives = len(predicted_set & ground_truth_set)
-        false_positives = len(predicted_set - ground_truth_set)
-        false_negatives = len(ground_truth_set - predicted_set)
-
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        accuracy = true_positives / len(ground_truth_set) if ground_truth_set else 0.0
-
-        return {
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'accuracy': accuracy,
-            'true_positives': true_positives,
-            'false_positives': false_positives,
-            'false_negatives': false_negatives
-        }
-
-    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> PatientEvaluationResult:
+    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> List[TrialEvaluationResult]:
         """
         Evaluate filtering performance for a single patient.
 
@@ -1106,7 +977,7 @@ class FilteringBenchmark:
             title_only: Whether to use title-only evaluation instead of full trial evaluation
 
         Returns:
-            PatientEvaluationResult with evaluation metrics
+            List of trial evaluation results for this patient
         """
         patient_id = patient.patient_id
 
@@ -1124,9 +995,6 @@ class FilteringBenchmark:
         logger.info(f"Ground truth relevant trials: {len(ground_truth_trials)}")
 
         try:
-            # Call title check and regard trials that pass the title check as eligible
-            start_time = time.time()
-
             # Extract conditions from patient record
             conditions = self._get_cached_conditions(patient_id, patient.medical_record)
             logger.info(f"Extracted conditions:")
@@ -1146,15 +1014,9 @@ class FilteringBenchmark:
             # Check if patient has any trials to evaluate
             if not all_trial_ids:
                 logger.warning(f"Patient {patient_id} has no trials to evaluate")
-                return PatientEvaluationResult.create_error_result(
-                    patient_id=patient_id,
-                    ground_truth_trials=ground_truth_trials,
-                    error_message="No trials allocated to this patient"
-                )
+                return []
 
             # Evaluate each trial using title check
-            predicted_eligible_trials: List[str] = []
-            total_api_cost = 0.0
             trial_evaluation_results: List[TrialEvaluationResult] = []
 
             evaluation_desc = f"Evaluating trials for {patient_id} ({'title-only' if title_only else 'full evaluation'})"
@@ -1194,8 +1056,6 @@ class FilteringBenchmark:
                             reason: str = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failed_condition}\n failed_criterion: {failed_criterion}\n failure_details: {failure_details} "
                         logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
-                    total_api_cost += cost
-
                     # Determine ground truth relevance
                     ground_truth_relevant = trial_id in ground_truth_trials
 
@@ -1209,6 +1069,7 @@ class FilteringBenchmark:
                     trial_result = TrialEvaluationResult(
                         trial_id=trial_id,
                         trial_title=trial.identification.brief_title or trial.identification.official_title or trial.identification.acronym or trial_id,
+                        patient_id=patient_id,
                         predicted_eligible=is_eligible,
                         ground_truth_relevant=ground_truth_relevant,
                         suitability_probability=suitability_probability,
@@ -1218,66 +1079,20 @@ class FilteringBenchmark:
                     )
                     trial_evaluation_results.append(trial_result)
 
+                    evaluation_method = "title check" if title_only else "full evaluation"
                     if is_eligible:
-                        predicted_eligible_trials.append(trial_id)
-                        evaluation_method = "title check" if title_only else "full evaluation"
                         logger.debug(f"Trial {trial_id} passed {evaluation_method}")
                     else:
-                        evaluation_method = "title check" if title_only else "full evaluation"
                         logger.debug(f"Trial {trial_id} failed {evaluation_method}: {reason}")
 
                 except Exception as e:
                     logger.warning(f"Error evaluating trial {trial_id}: {str(e)}")
                     raise e
-                    # Get trial title safely, fallback to trial_id if trial object is not available
-                    trial_title = trial_id
-                    try:
-                        if 'trial' in locals():
-                            trial_obj = locals().get('trial')
-                            if trial_obj:
-                                trial_title = trial_obj.identification.brief_title or trial_obj.identification.official_title or trial_obj.identification.acronym or trial_id
-                    except:
-                        pass
-
-                    # Get original relevance score from relevance judgments
-                    original_relevance_score = None
-                    for judgment in self.relevance_judgments:
-                        if judgment.patient_id == patient_id and judgment.trial_id == trial_id:
-                            original_relevance_score = judgment.relevance_score
-                            break
-
-                    trial_result = TrialEvaluationResult(
-                        trial_id=trial_id,
-                        trial_title=trial_title,
-                        predicted_eligible=False,
-                        ground_truth_relevant=False,
-                        suitability_probability=0.0,
-                        reason=f"Evaluation failed: {e}",
-                        api_cost=0.0,
-                        original_relevance_score=original_relevance_score
-                    )
-                    trial_evaluation_results.append(trial_result)
-                    continue
-
-            processing_time = time.time() - start_time
-
-            # Calculate performance metrics
-            metrics = self.calculate_metrics(predicted_eligible_trials, ground_truth_trials)
 
             evaluation_method = "title check" if title_only else "full evaluation (title + inclusion criteria)"
-            logger.info(f"Patient {patient_id}: {len(predicted_eligible_trials)} trials passed {evaluation_method} out of {len(all_trial_ids)} total trials")
-            logger.info(f"Performance metrics: Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, F1={metrics['f1_score']:.3f}")
+            logger.info(f"Patient {patient_id}: {len([t for t in trial_evaluation_results if t.predicted_eligible])} trials passed {evaluation_method} out of {len(all_trial_ids)} total trials")
 
-            return PatientEvaluationResult.create_success_result(
-                patient_id=patient_id,
-                ground_truth_trials=ground_truth_trials,
-                all_trial_ids=all_trial_ids,
-                predicted_eligible_trials=predicted_eligible_trials,
-                metrics=metrics,
-                processing_time=processing_time,
-                total_api_cost=total_api_cost,
-                trial_evaluation_results=trial_evaluation_results
-            )
+            return trial_evaluation_results
 
         except Exception as e:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
@@ -1343,7 +1158,7 @@ class FilteringBenchmark:
 
             logger.info(f"Disease '{disease_name}' (patient {patient.patient_id}): {total_trial_count} trials")
 
-        results: List[PatientEvaluationResult] = []
+        all_trial_results: List[TrialEvaluationResult] = []
         total_processing_time = 0.0
         total_api_cost = 0.0
 
@@ -1357,11 +1172,14 @@ class FilteringBenchmark:
                 conditions = self._get_cached_conditions(patient.patient_id, patient.medical_record)
                 logger.info(f"Conditions: {conditions} for patient medical record: {patient.medical_record}")
 
-                result: PatientEvaluationResult = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
-                results.append(result)
+                start_time = time.time()
+                patient_trial_results: List[TrialEvaluationResult] = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
 
-                total_processing_time += result.processing_time
-                total_api_cost += result.api_cost
+                if patient_trial_results:
+                    all_trial_results.extend(patient_trial_results)
+                    processing_time = time.time() - start_time
+                    total_processing_time += processing_time
+                    total_api_cost += sum(trial.api_cost for trial in patient_trial_results)
 
                 # Update progress bar
                 pbar.update(1)
@@ -1372,39 +1190,43 @@ class FilteringBenchmark:
                     logger.info(f"Processed {i} patients. Total time: {total_processing_time:.2f}s, Total cost: ${total_api_cost:.4f}")
                     logger.info(f"Cache status: {cache_stats['cached_patients']}/{cache_stats['total_patients']} patients cached ({cache_stats['cache_hit_rate']:.1%})")
 
-        # Calculate aggregate metrics
-        successful_results: List[PatientEvaluationResult] = [r for r in results if r.error is None and not r.skipped]
-        skipped_results: List[PatientEvaluationResult] = [r for r in results if r.skipped]
-        failed_results: List[PatientEvaluationResult] = [r for r in results if r.error is not None and not r.skipped]
-        for failed_result in failed_results:
-            logger.warning(f"Failed result: {failed_result}")
-
-        if successful_results:
-            avg_precision = sum(r.precision for r in successful_results) / len(successful_results)
-            avg_recall = sum(r.recall for r in successful_results) / len(successful_results)
-            avg_f1 = sum(r.f1_score for r in successful_results) / len(successful_results)
-            avg_accuracy = sum(r.accuracy for r in successful_results) / len(successful_results)
-        else:
-            avg_precision = avg_recall = avg_f1 = avg_accuracy = 0.0
-
-        # Calculate trial-level metrics (across all trials regardless of patients)
-        all_trial_results: List[TrialEvaluationResult] = []
-        for result in successful_results:
-            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
-                all_trial_results.extend(result.trial_evaluation_results)
-
+                # Calculate trial-level metrics directly from all trial results
         if all_trial_results:
-            # Calculate trial-level precision, recall, and F1
-            trial_true_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and trial.ground_truth_relevant)
-            trial_false_positives = sum(1 for trial in all_trial_results if trial.predicted_eligible and not trial.ground_truth_relevant)
-            trial_false_negatives = sum(1 for trial in all_trial_results if not trial.predicted_eligible and trial.ground_truth_relevant)
+            # Prepare data for metrics calculation
+            y_true = [1 if trial.ground_truth_relevant else 0 for trial in all_trial_results]
+            y_pred = [1 if trial.predicted_eligible else 0 for trial in all_trial_results]
 
-            trial_precision = trial_true_positives / (trial_true_positives + trial_false_positives) if (trial_true_positives + trial_false_positives) > 0 else 0.0
-            trial_recall = trial_true_positives / (trial_true_positives + trial_false_negatives) if (trial_true_positives + trial_false_negatives) > 0 else 0.0
-            trial_f1 = 2 * (trial_precision * trial_recall) / (trial_precision + trial_recall) if (trial_precision + trial_recall) > 0 else 0.0
-            trial_accuracy = (trial_true_positives + sum(1 for trial in all_trial_results if not trial.predicted_eligible and not trial.ground_truth_relevant)) / len(all_trial_results)
+            # Calculate all metrics at once using the simplified function
+            metrics = calculate_metrics(y_true, y_pred)
+
+            # Extract primary metrics
+            trial_precision = metrics['precision']
+            trial_recall = metrics['recall']
+            trial_f1 = metrics['f1']
+            trial_accuracy = metrics['accuracy']
+            balanced_accuracy = metrics['balanced_accuracy']
+
+            # For backward compatibility and extended metrics
+            positive_precision = trial_precision
+            positive_recall = trial_recall
+            positive_f1 = trial_f1
+
+                        # Get negative class metrics directly from calculate_metrics
+            negative_precision = metrics['negative_precision']
+            negative_recall = metrics['negative_recall']
+            negative_f1 = metrics['negative_f1']
+
+            # Macro metrics (average of positive and negative)
+            macro_precision = (positive_precision + negative_precision) / 2
+            macro_recall = (positive_recall + negative_recall) / 2
+            macro_f1 = (positive_f1 + negative_f1) / 2
         else:
-            trial_precision = trial_recall = trial_f1 = trial_accuracy = 0.0
+            # Initialize all metrics to 0.0 when no results
+            positive_precision = positive_recall = positive_f1 = 0.0
+            negative_precision = negative_recall = negative_f1 = 0.0
+            macro_precision = macro_recall = macro_f1 = 0.0
+            trial_accuracy = balanced_accuracy = 0.0
+            trial_precision = trial_recall = trial_f1 = 0.0
 
         # Get trial coverage statistics
         coverage_stats = self.get_trial_coverage_stats()
@@ -1435,20 +1257,11 @@ class FilteringBenchmark:
                 'last_5_trial_ids': all_trial_ids[-5:]
             },
             'total_patients': len(patients_to_process),
-            'successful_patients': len(successful_results),
-            'skipped_patients': len(skipped_results),
-            'failed_patients': len(failed_results),
             'total_processing_time': total_processing_time,
             'total_api_cost': total_api_cost,
             'average_processing_time_per_patient': total_processing_time / len(patients_to_process) if patients_to_process else 0.0,
             'average_api_cost_per_patient': total_api_cost / len(patients_to_process) if patients_to_process else 0.0,
             'conditions_cache_stats': self.get_cache_statistics(),
-            'metrics': {
-                'average_precision': avg_precision,
-                'average_recall': avg_recall,
-                'average_f1_score': avg_f1,
-                'average_accuracy': avg_accuracy
-            },
             'trial_level_metrics': {
                 'trial_precision': trial_precision,
                 'trial_recall': trial_recall,
@@ -1456,24 +1269,37 @@ class FilteringBenchmark:
                 'trial_accuracy': trial_accuracy,
                 'total_trials_evaluated': len(all_trial_results)
             },
-            'detailed_results': [r.to_dict() for r in results]
+            'extended_metrics': {
+                'per_class_metrics': {
+                    'positive_precision': positive_precision,
+                    'positive_recall_sensitivity': positive_recall,
+                    'positive_f1': positive_f1,
+                    'negative_precision': negative_precision,
+                    'negative_recall_specificity': negative_recall,
+                    'negative_f1': negative_f1
+                },
+                'macro_metrics': {
+                    'macro_precision': macro_precision,
+                    'macro_recall': macro_recall,
+                    'macro_f1': macro_f1
+                },
+                'overall_metrics': {
+                    'accuracy': trial_accuracy,
+                    'balanced_accuracy': balanced_accuracy
+                }
+            },
+            'detailed_results': [trial.to_dict() for trial in all_trial_results]
         }
 
         evaluation_method = "title-only evaluation (evaluate_title)" if title_only else "full trial evaluation (evaluate_trial)"
         logger.info("Benchmark completed!")
         logger.info(f"Evaluation method used: {evaluation_method}")
         logger.info(f"Total patients processed: {len(patients_to_process)}")
-        logger.info(f"Successful patients: {len(successful_results)}")
-        logger.info(f"Skipped patients: {len(skipped_results)}")
-        logger.info(f"Failed patients: {len(failed_results)}")
         # Calculate effective available trials (excluding additional trials that aren't required)
         effective_available: set[str] = set(judgment.trial_id for judgment in self.relevance_judgments) & set(self.trials.keys())
         logger.info(f"Trial coverage: {coverage_stats['coverage_percentage']:.2f}% ({len(effective_available)}/{coverage_stats['total_required']})")
         logger.info(f"Total processing time: {total_processing_time:.2f}s")
         logger.info(f"Total API cost: ${total_api_cost:.4f}")
-        logger.info(f"Average precision: {avg_precision:.4f}")
-        logger.info(f"Average recall: {avg_recall:.4f}")
-        logger.info(f"Average F1-score: {avg_f1:.4f}")
 
         # Log trial-level metrics
         logger.info("=" * 60)
@@ -1484,6 +1310,24 @@ class FilteringBenchmark:
         logger.info(f"Trial-level recall: {trial_recall:.4f}")
         logger.info(f"Trial-level F1-score: {trial_f1:.4f}")
         logger.info(f"Trial-level accuracy: {trial_accuracy:.4f}")
+        logger.info("=" * 60)
+
+        # Log extended metrics in the requested format
+        logger.info("=" * 60)
+        logger.info("PER-CLASS METRICS")
+        logger.info("=" * 60)
+        logger.info(f"Positive precision: {positive_precision:.4f}")
+        logger.info(f"Positive recall (sensitivity): {positive_recall:.4f}")
+        logger.info(f"Positive F1: {positive_f1:.4f}")
+        logger.info(f"Negative precision: {negative_precision:.4f}")
+        logger.info(f"Negative recall (specificity): {negative_recall:.4f}")
+        logger.info(f"Negative F1: {negative_f1:.4f}")
+        logger.info("-" * 60)
+        logger.info(f"Macro precision: {macro_precision:.4f}")
+        logger.info(f"Macro recall: {macro_recall:.4f}")
+        logger.info(f"Macro F1: {macro_f1:.4f}")
+        logger.info(f"Accuracy: {trial_accuracy:.4f}")
+        logger.info(f"Balanced accuracy: {balanced_accuracy:.4f}")
         logger.info("=" * 60)
 
         # Log conditions cache statistics
@@ -1524,11 +1368,11 @@ class FilteringBenchmark:
         logger.info("=" * 60)
 
         # Log all error cases for analysis
-        self.log_error_cases(successful_results)
+        self.log_error_cases(all_trial_results)
 
         # Export error cases to a separate file for detailed analysis
         if output_path:
-            error_cases_file = self.export_error_cases(successful_results, output_path)
+            error_cases_file = self.export_error_cases(all_trial_results, output_path)
             if error_cases_file:
                 logger.info(f"Error cases exported to: {error_cases_file}")
         else:
@@ -1536,67 +1380,51 @@ class FilteringBenchmark:
 
         return benchmark_results
 
-    def log_error_cases(self, successful_results: List[PatientEvaluationResult]) -> None:
+    def log_error_cases(self, all_trial_results: List[TrialEvaluationResult]) -> None:
         """
         Log all error cases (incorrectly predicted or failed to recall) for analysis.
 
         Args:
-            successful_results: List of successful patient evaluation results
+            all_trial_results: List of all trial evaluation results
         """
         logger.info("=" * 80)
         logger.info("ERROR CASE ANALYSIS")
         logger.info("=" * 80)
 
-        all_error_cases: List[tuple[PatientEvaluationResult, 'TrialEvaluationResult']] = []
+        # Collect all error cases directly from trial results
+        error_cases = [trial for trial in all_trial_results if trial.is_error_case]
 
-        # Collect all error cases from successful results
-        for result in successful_results:
-            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
-                for trial_result in result.trial_evaluation_results:
-                    if trial_result.is_error_case:
-                        all_error_cases.append((result, trial_result))
-
-        if not all_error_cases:
+        if not error_cases:
             logger.info("No error cases found - all predictions were correct!")
             return
 
-        logger.info(f"Found {len(all_error_cases)} error cases:")
-        logger.info(f"- False positives: {len([case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_POSITIVE])}")
-        logger.info(f"- False negatives: {len([case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_NEGATIVE])}")
+        logger.info(f"Found {len(error_cases)} error cases:")
+        logger.info(f"- False positives: {len([case for case in error_cases if case.error_type == ErrorType.FALSE_POSITIVE])}")
+        logger.info(f"- False negatives: {len([case for case in error_cases if case.error_type == ErrorType.FALSE_NEGATIVE])}")
         logger.info("")
 
         # Group error cases by type
-        false_positive_cases = [case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_POSITIVE]
-        false_negative_cases = [case for _, case in all_error_cases if case.error_type == ErrorType.FALSE_NEGATIVE]
+        false_positive_cases = [case for case in error_cases if case.error_type == ErrorType.FALSE_POSITIVE]
+        false_negative_cases = [case for case in error_cases if case.error_type == ErrorType.FALSE_NEGATIVE]
 
         # Log false positive cases
         if false_positive_cases:
-            self._log_error_cases("FALSE POSITIVE CASES",
-                                 [case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_POSITIVE])
+            self._log_error_cases("FALSE POSITIVE CASES", false_positive_cases)
 
         # Log false negative cases
         if false_negative_cases:
-            self._log_error_cases("FALSE NEGATIVE CASES",
-                                 [case for case in all_error_cases if case[1].error_type == ErrorType.FALSE_NEGATIVE])
+            self._log_error_cases("FALSE NEGATIVE CASES", false_negative_cases)
 
-    def _log_error_cases(self, title: str, error_cases: List[tuple[PatientEvaluationResult, TrialEvaluationResult]]) -> None:
+    def _log_error_cases(self, title: str, error_cases: List[TrialEvaluationResult]) -> None:
         """Helper method to log error cases with consistent formatting."""
         logger.info(title)
         logger.info("-" * 60)
-        for i, (patient_result, trial_result) in enumerate(error_cases):
+        for i, trial_result in enumerate(error_cases):
             logger.info(f"Case {i+1}:")
-            logger.info(f"  Patient ID: {patient_result.patient_id}")
-            logger.info(f"  Disease: {self._get_patient_disease(patient_result.patient_id)}")
-            conditions = self._get_patient_extracted_conditions(patient_result.patient_id)
-            if conditions:
-                logger.info(f"  Extracted Conditions:")
-                for condition in conditions:
-                    logger.info(f"    - {condition}")
-            else:
-                logger.info(f"  Extracted Conditions: No conditions available")
-            logger.info(f"  Medical Record: {self._get_patient_full_medical_record(patient_result.patient_id)}")
             logger.info(f"  Trial ID: {trial_result.trial_id}")
             logger.info(f"  Trial Title: {trial_result.trial_title}")
+            logger.info(f"  Patient ID: {trial_result.patient_id}")
+            logger.info(f"  Disease: {self._get_patient_disease(trial_result.patient_id)}")
             logger.info(f"  Original Label: {trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'}")
             logger.info(f"  Error Type: {trial_result.error_type}")
             logger.info(f"  Suitability Probability: {trial_result.suitability_probability:.4f}")
@@ -1622,12 +1450,12 @@ class FilteringBenchmark:
                     return "Unknown"
         return "Unknown"
 
-    def export_error_cases(self, successful_results: List[PatientEvaluationResult], output_path: str) -> Optional[str]:
+    def export_error_cases(self, all_trial_results: List[TrialEvaluationResult], output_path: str) -> Optional[str]:
         """
         Export error cases to a separate JSON file for detailed analysis.
 
         Args:
-            successful_results: List of successful patient evaluation results
+            all_trial_results: List of all trial evaluation results
             output_path: Path to the main benchmark results file
 
         Returns:
@@ -1635,35 +1463,29 @@ class FilteringBenchmark:
         """
         all_error_cases: List[Dict[str, Any]] = []
 
-        # Collect all error cases from successful results
-        for result in successful_results:
-            if hasattr(result, 'trial_evaluation_results') and result.trial_evaluation_results:
-                for trial_result in result.trial_evaluation_results:
-                    if trial_result.is_error_case:
-                        # Get patient full medical record and disease
-                        patient_full_medical_record = self._get_patient_full_medical_record(result.patient_id)
-                        disease_name = self._get_patient_disease(result.patient_id)
+        # Collect all error cases directly from trial results
+        for trial_result in all_trial_results:
+            if trial_result.is_error_case:
+                # Get trial criteria from the loaded trial data
+                trial_criteria = "No criteria available"
+                if trial_result.trial_id in self.trials:
+                    trial_criteria = self.trials[trial_result.trial_id].eligibility.criteria
 
-                        # Get trial criteria from the loaded trial data
-                        trial_criteria = "No criteria available"
-                        if trial_result.trial_id in self.trials:
-                            trial_criteria = self.trials[trial_result.trial_id].eligibility.criteria
-
-                        error_case = {
-                            'patient_id': result.patient_id,
-                            'full_medical_record': patient_full_medical_record,
-                            'disease_name': disease_name,
-                            'trial_id': trial_result.trial_id,
-                            'trial_title': trial_result.trial_title,
-                            'trial_criteria': trial_criteria,
-                            'error_type': trial_result.error_type.value,
-                            'suitability_probability': trial_result.suitability_probability,
-                            'reason': trial_result.reason,
-                            'ground_truth_relevant': trial_result.ground_truth_relevant,
-                            'predicted_eligible': trial_result.predicted_eligible,
-                            'original_relevance_score': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'
-                        }
-                        all_error_cases.append(error_case)
+                error_case = {
+                    'trial_id': trial_result.trial_id,
+                    'trial_title': trial_result.trial_title,
+                    'patient_id': trial_result.patient_id,
+                    'disease_name': self._get_patient_disease(trial_result.patient_id),
+                    'trial_criteria': trial_criteria,
+                    'error_type': trial_result.error_type.value,
+                    'suitability_probability': trial_result.suitability_probability,
+                    'reason': trial_result.reason,
+                    'ground_truth_relevant': trial_result.ground_truth_relevant,
+                    'predicted_eligible': trial_result.predicted_eligible,
+                    'original_relevance_score': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A',
+                    'full_medical_record': self._get_patient_full_medical_record(trial_result.patient_id)
+                }
+                all_error_cases.append(error_case)
 
         if not all_error_cases:
             return None

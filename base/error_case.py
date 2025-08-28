@@ -89,6 +89,10 @@ class ErrorCase:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ErrorCase':
         """Create an ErrorCase instance from a dictionary."""
+        # Check if full_medical_record is present in the input data
+        if 'full_medical_record' not in data:
+            raise ValueError("full_medical_record is required in input data")
+
         return cls(**data)
 
     def __str__(self) -> str:
