@@ -1266,6 +1266,11 @@ Patient Conditions:
         Returns:
             A list of strings containing the individual inclusion criteria
         """
+        # Validate input
+        if not criteria or not criteria.strip():
+            logger.warning("_split_inclusion_criteria: Empty or None criteria provided")
+            return []
+
         prompt = f"""You are analyzing clinical trial inclusion criteria text.
 
 Split this text into individual inclusion criterion statements. Preserve logical structure and relationships between criteria.
@@ -1331,7 +1336,7 @@ Inclusion Criteria Text:
         logger.info(f"GPTTrialFilter.split_inclusion_criteria: result: {result}")
         return result["criteria"]
 
-    def _extract_inclusion_criteria(self, criteria: str) -> str:
+    def _extract_inclusion_criteria(self, criteria: Optional[str]) -> str:
         """Extract and validate inclusion criteria from the full criteria text.
 
         Args:
@@ -1343,11 +1348,14 @@ Inclusion Criteria Text:
         Raises:
             EligibilityCriteriaError: If the criteria format is invalid
         """
+        # Handle None case safely for logging
+        criteria_brief = str(criteria)[:50] if criteria is not None else "None"
+
         if not criteria or "Inclusion Criteria" not in criteria:
             logger.warning(
-                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria. Brief: {criteria[:50]}..."
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Inclusion Criteria' section in criteria. Brief: {criteria_brief}..."
             )
-            return criteria
+            return criteria or ""
 
         # Split by "Inclusion Criteria" and take everything after it
         inclusion_text = criteria.split("Inclusion Criteria")[1].strip()
@@ -1357,7 +1365,7 @@ Inclusion Criteria Text:
             inclusion_text = inclusion_text.split("Exclusion Criteria")[0].strip()
         else:
             logger.warning(
-                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria[:50]}..."
+                f"GPTTrialFilter._extract_inclusion_criteria: Missing 'Exclusion Criteria' section in criteria text: {criteria_brief}..."
             )
 
         return inclusion_text
@@ -1696,6 +1704,18 @@ Inclusion Criteria Text:
             inclusion_text: str = self._extract_inclusion_criteria(
                 trial.eligibility.criteria
             )
+
+            # Check if we have valid inclusion criteria to process
+            if not inclusion_text or inclusion_text.strip() == "":
+                failure = TrialFailureReason(
+                    type="format", message="No inclusion criteria found for trial"
+                )
+                logger.warning(
+                    f"evaluate_trial: No inclusion criteria found "
+                    f"for trial {trial.identification.nct_id}"
+                )
+                return False, title_cost, failure
+
             inclusion_criteria: List[str] = self._split_inclusion_criteria(inclusion_text)
             logger.info(
                 json.dumps(
