@@ -1482,7 +1482,8 @@ class FilteringBenchmark:
                     'reason': trial_result.reason,
                     'ground_truth_relevant': trial_result.ground_truth_relevant,
                     'predicted_eligible': trial_result.predicted_eligible,
-                    'original_relevance_score': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A'
+                    'original_relevance_score': trial_result.original_relevance_score if trial_result.original_relevance_score is not None else 'N/A',
+                    'full_medical_record': self._get_patient_full_medical_record(trial_result.patient_id)
                 }
                 all_error_cases.append(error_case)
 
