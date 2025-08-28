@@ -1699,8 +1699,14 @@ Inclusion Criteria Text:
             )
             return False, title_cost, failure
 
-        # 2) Extract and split the inclusion criteria
+                # 2) Extract and split the inclusion criteria
         try:
+            # Log the criteria for debugging
+            if not trial.eligibility.criteria:
+                logger.warning(
+                    f"evaluate_trial: Trial {trial.identification.nct_id} has empty or None eligibility criteria: {repr(trial.eligibility.criteria)}"
+                )
+
             inclusion_text: str = self._extract_inclusion_criteria(
                 trial.eligibility.criteria
             )
