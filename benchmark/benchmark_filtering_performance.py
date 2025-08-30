@@ -2099,6 +2099,30 @@ def main():
         logger.info("Re-checking trial coverage after sampling...")
         benchmark.print_coverage_summary(args.verbose_coverage)
     else:
+        # When max_trials is None, we still need to set patient_trial_mapping based on relevance_judgments
+        # This ensures each patient only gets evaluated on trials that are relevant to them
+        logger.info("Setting patient-trial mapping based on relevance judgments (no max_trials limit)")
+
+        patient_trial_mapping: Dict[str, set[str]] = {}
+        for patient in benchmark.patients:
+            patient_trial_ids: set[str] = set()
+            for judgment in benchmark.relevance_judgments:
+                if judgment.patient_id == patient.patient_id:
+                    patient_trial_ids.add(judgment.trial_id)
+
+            # Filter to available trials (those that exist in benchmark.trials)
+            available_patient_trials = patient_trial_ids.intersection(set(benchmark.trials.keys()))
+
+            if args.cancer_only:
+                # When cancer-only is specified, only use cancer-related trials for this patient
+                available_patient_trials = available_patient_trials.intersection(cancer_trial_ids)
+
+            patient_trial_mapping[patient.patient_id] = available_patient_trials
+            logger.info(f"  Patient {patient.patient_id}: {len(available_patient_trials)} trials from relevance judgments")
+
+        # Store the patient-trial mapping in the benchmark object for use during evaluation
+        benchmark.patient_trial_mapping = patient_trial_mapping
+
         if args.cancer_only:
             logger.info(f"Using all cancer-related trials for benchmark ({len(cancer_trial_ids)} trials, including all scores).")
         else:
