@@ -3,7 +3,6 @@ import json
 import os
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 import logging
@@ -24,17 +23,9 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
     ClinicalTrialsSpider,
 )
 
-# Configure logging
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"clinical_trial_analysis_{timestamp}.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler()
-    ]
-)
+# Configure logging using centralized configuration
+from base.logging_config import setup_logging
+log_filename = setup_logging("analyze_trial", log_level="INFO")
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
