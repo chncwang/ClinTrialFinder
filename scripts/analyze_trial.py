@@ -28,7 +28,7 @@ from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spide
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_filename = f"clinical_trial_analysis_{timestamp}.log"
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_filename),
