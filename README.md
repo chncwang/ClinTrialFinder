@@ -2,6 +2,12 @@
 
 ClinTrialFinder is a sophisticated tool for downloading, filtering, analyzing, and ranking clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4.1-mini, evidence-based analysis using Perplexity AI, and AI-powered ranking to help researchers and medical professionals find the most relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4.1-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level, and finally ranks the trials from best to worst match for the patient using pairwise comparisons.
 
+## 🎥 Demo Video
+
+Watch our demo video to see ClinTrialFinder in action:
+
+[![ClinTrialFinder Demo](https://img.youtube.com/vi/iARDMW6vb-w/maxresdefault.jpg)](https://www.youtube.com/watch?v=iARDMW6vb-w)
+
 ## Features
 
 - **Automated Data Collection**: Crawls ClinicalTrials.gov using their API v2 to fetch trial data based on disease name
