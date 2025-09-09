@@ -8,8 +8,6 @@ Watch our demo video to see ClinTrialFinder in action:
 
 [![Watch the video](https://img.youtube.com/vi/iARDMW6vb-w/0.jpg)](https://www.youtube.com/watch?v=iARDMW6vb-w)
 
-*If the video doesn't load, you can also [watch it on YouTube](https://www.youtube.com/watch?v=iARDMW6vb-w).*
-
 ## Features
 
 - **Automated Data Collection**: Crawls ClinicalTrials.gov using their API v2 to fetch trial data based on disease name
