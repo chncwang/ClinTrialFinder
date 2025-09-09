@@ -6,11 +6,7 @@ ClinTrialFinder is a sophisticated tool for downloading, filtering, analyzing, a
 
 Watch our demo video to see ClinTrialFinder in action:
 
-<video width="800" controls>
-  <source src="demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-  <a href="https://www.youtube.com/watch?v=iARDMW6vb-w">Watch on YouTube instead</a>
-</video>
+[![Watch the video](https://img.youtube.com/vi/iARDMW6vb-w/0.jpg)](https://www.youtube.com/watch?v=iARDMW6vb-w)
 
 *If the video doesn't load, you can also [watch it on YouTube](https://www.youtube.com/watch?v=iARDMW6vb-w).*
 
