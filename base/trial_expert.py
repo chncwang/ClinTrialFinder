@@ -266,23 +266,23 @@ def analyze_drugs_and_get_recommendation(
 
     # Extract disease from clinical record
     disease: str
-    cost: float
-    disease, cost = extract_disease_from_record(clinical_record, gpt_client)
-    total_cost += cost
+    disease_cost: float
+    disease, disease_cost = extract_disease_from_record(clinical_record, gpt_client)
+    total_cost += disease_cost
     logger.info(f"analyze_drugs_and_get_recommendation: Extracted Disease: {disease}")
-    logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
+    logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${disease_cost:.6f}")
 
     novel_drugs: List[str]
-    novel_drugs, cost = trial.get_novel_drugs_from_title(gpt_client)
+    novel_drugs, title_cost = trial.get_novel_drugs_from_title(gpt_client)
     logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs: {novel_drugs}")
-    total_cost += cost
+    total_cost += title_cost
 
     # If no novel drugs found in title, try extracting from arms
     if not novel_drugs:
         logger.info("analyze_drugs_and_get_recommendation: No novel drugs found in title, trying arms")
-        novel_drugs, cost = trial.get_novel_drugs_from_arms(gpt_client)
+        novel_drugs, arms_cost = trial.get_novel_drugs_from_arms(gpt_client)
         logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs from arms: {novel_drugs}")
-        total_cost += cost
+        total_cost += arms_cost
 
     # Analyze each drug's effectiveness
     if novel_drugs and disease:
@@ -292,11 +292,11 @@ def analyze_drugs_and_get_recommendation(
             )
             analysis: str
             citations: List[str]
-            cost: float
-            analysis, citations, cost = analyze_drug_efficacy(
+            drug_cost: float
+            analysis, citations, drug_cost = analyze_drug_efficacy(
                 drug, disease, perplexity_client
             )
-            total_cost += cost
+            total_cost += drug_cost
 
             if analysis:
                 drug_analyses[drug] = analysis
@@ -311,7 +311,7 @@ def analyze_drugs_and_get_recommendation(
                         logger.info(
                             f"analyze_drugs_and_get_recommendation: Citation {i}: {citation}"
                         )
-                logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${cost:.6f}")
+                logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${drug_cost:.6f}")
 
     # Generate recommendation
     prompt: str = build_recommendation_prompt(clinical_record, trial, drug_analyses)
@@ -335,7 +335,7 @@ def analyze_drugs_and_get_recommendation(
     try:
         data: dict[str, str]
         correction_cost: float
-        data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
+        data, correction_cost = parse_json_response(completion, dict[str, str], gpt_client, 0.0)
         total_cost += correction_cost
 
         # Ensure required fields are present
@@ -575,6 +575,35 @@ class GPTTrialFilter:
             temperature=temperature,
             refresh_cache=refresh_cache,
             response_format={"type": "json_object"},
+        )
+
+    def _call_gpt_text(
+        self,
+        prompt: str,
+        system_role: str,
+        model: str,
+        temperature: float = 0.1,
+        refresh_cache: bool = False,
+    ) -> Tuple[str, float]:
+        """
+        Common method for making GPT API calls with text response format.
+
+        Args:
+            prompt (str): The prompt for the GPT API call
+            system_role (str): The system role for the GPT API call
+            model (str): The model to use for the GPT API call
+            temperature (float): The temperature for the GPT API call
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A tuple containing the response content and the cost
+        """
+        return self.gpt_client.call_gpt(
+            prompt,
+            system_role,
+            model=model,
+            temperature=temperature,
+            refresh_cache=refresh_cache,
         )
 
     def _call_gpt_with_retry(
@@ -1589,11 +1618,22 @@ Inclusion Criteria Text:
                 f"GPTTrialFilter.evaluate_inclusion_criteria: Evaluating criterion: {criterion}"
             )
 
+            # Check if this is a subgroup-specific criterion
+            is_subgroup, subgroup_cost = self._is_subgroup_specific_criterion(criterion)
+            total_cost += subgroup_cost
+            if is_subgroup:
+                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Subgroup-specific criterion detected: {criterion}")
+                # For subgroup-specific criteria, treat as satisfied (probability = 1.0)
+                # This prevents valid trials from being wrongly excluded due to subgroup-specific requirements
+                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Treating subgroup-specific criterion as satisfied")
+                overall_probability *= 1.0  # No penalty for subgroup criteria
+                continue
+
             # Handle OR criterion
             is_or_criterion: bool
-            cost: float
-            is_or_criterion, cost = self._is_or_criterion(criterion)
-            total_cost += cost
+            or_cost: float
+            is_or_criterion, or_cost = self._is_or_criterion(criterion)
+            total_cost += or_cost
             if is_or_criterion:
                 logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: OR criterion detected: {criterion}")
                 or_branches: List[str] = self._split_or_branches(criterion)
@@ -1662,6 +1702,63 @@ Inclusion Criteria Text:
                 "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
             )
         return overall_probability, failure_reason, total_cost
+
+    def _is_subgroup_specific_criterion(self, criterion: str) -> Tuple[bool, float]:
+        """
+        Check if a criterion is subgroup-specific using GPT.
+
+        Args:
+            criterion: The criterion text to check
+
+        Returns:
+            Tuple of (is_subgroup_specific, cost)
+        """
+        prompt = f"""You are analyzing a clinical trial inclusion criterion to determine if it is subgroup-specific.
+
+A subgroup-specific criterion is one that applies only to a specific subgroup, arm, or cohort of the trial, not to all participants.
+
+Examples of subgroup-specific criteria:
+- "For VEGFR TKI Combination Dose Expansion only: Relapsed advance ccRCC with no more than 1 prior VEGFR TKI"
+- "For patients in Arm A: Must have received prior immunotherapy"
+- "Cohort 1 only: Age 18-65 years"
+- "For dose escalation phase: No prior radiation therapy"
+
+Examples of general criteria (NOT subgroup-specific):
+- "Age ≥18 years"
+- "ECOG performance status 0-1"
+- "Adequate organ function"
+- "Histologically confirmed advanced clear cell renal cell carcinoma"
+
+Criterion to analyze:
+"{criterion}"
+
+Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain text format."""
+
+        try:
+            response_content, cost = self._call_gpt_text(
+                prompt,
+                "You are a clinical trial analyst focused on identifying subgroup-specific criteria.",
+                model="gpt-4.1-mini",
+                temperature=0.0,
+                refresh_cache=False,
+            )
+
+            # Parse the response
+            response = response_content.strip().upper()
+            return response == "YES", cost
+
+        except Exception as e:
+            logger.warning(f"Error checking if criterion is subgroup-specific: {e}")
+            # Fallback to simple pattern matching if GPT fails
+            import re
+            subgroup_patterns = [
+                r"For\s+[^:]+only:",
+                r"For\s+[^:]+:",
+                r"Subgroup\s+[^:]+:",
+                r"Arm\s+[^:]+:",
+                r"Cohort\s+[^:]+:",
+            ]
+            return any(re.search(pattern, criterion, re.IGNORECASE) for pattern in subgroup_patterns), 0.0
 
     def evaluate_trial(
         self,
