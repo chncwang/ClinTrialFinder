@@ -92,6 +92,7 @@ def filter_specific_trial(
     api_key: Optional[str] = None,
     cache_size: int = 100000,
     refresh_cache: bool = False,
+    subgroup_aware: bool = True,
 ) -> Dict[str, Any]:
     """
     Filter a specific clinical trial by NCT ID against a clinical record.
@@ -103,6 +104,7 @@ def filter_specific_trial(
         api_key: OpenAI API key
         cache_size: Size of the GPT response cache
         refresh_cache: Whether to refresh the cache
+        subgroup_aware: Whether to enable subgroup awareness in filtering
 
     Returns:
         Dictionary containing the filtering results
@@ -122,7 +124,7 @@ def filter_specific_trial(
         temperature=0.1,
         max_retries=3,
     )
-    gpt_filter = GPTTrialFilter(gpt_client)
+    gpt_filter = GPTTrialFilter(gpt_client, subgroup_aware=subgroup_aware)
 
     # Extract conditions from clinical record
     logger.info(f"filter_specific_trial: Reading clinical record from {clinical_record}")
@@ -247,8 +249,16 @@ def main():
         default="INFO",
         help="Set the logging level",
     )
+    parser.add_argument(
+        "--no-subgroup-aware",
+        action="store_true",
+        help="Disable subgroup awareness in filtering (default: enabled)",
+    )
 
     args = parser.parse_args()
+
+    # Determine subgroup awareness setting (default: enabled, can be disabled with --no-subgroup-aware)
+    subgroup_aware = not args.no_subgroup_aware
 
     # Setup logging
     log_file = setup_logging_for_trial(args.nct_id, args.log_level)
@@ -256,6 +266,7 @@ def main():
     logger.info("main: Starting specific trial filtering process")
     logger.info(f"main: Input clinical record: {args.clinical_record}")
     logger.info(f"main: Target NCT ID: {args.nct_id}")
+    logger.info(f"main: Subgroup awareness: {'enabled' if subgroup_aware else 'disabled'}")
     if args.trials_file:
         logger.info(f"main: Input trials file: {args.trials_file}")
     else:
@@ -278,6 +289,7 @@ def main():
             api_key=api_key,
             cache_size=args.cache_size,
             refresh_cache=args.refresh_cache,
+            subgroup_aware=subgroup_aware,
         )
 
         # Save results if output file specified

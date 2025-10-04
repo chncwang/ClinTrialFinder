@@ -538,14 +538,16 @@ class GPTTrialFilter:
     A class for filtering clinical trials based on patient conditions and trial title.
     """
 
-    def __init__(self, gpt_client: GPTClient):
+    def __init__(self, gpt_client: GPTClient, subgroup_aware: bool = True):
         """
         Initialize the GPTTrialFilter.
 
         Args:
             gpt_client (GPTClient): The GPT client instance to use for API calls
+            subgroup_aware (bool): Whether to enable subgroup awareness in filtering
         """
         self.gpt_client = gpt_client
+        self.subgroup_aware = subgroup_aware
 
     def _call_gpt(
         self,
@@ -1618,16 +1620,19 @@ Inclusion Criteria Text:
                 f"GPTTrialFilter.evaluate_inclusion_criteria: Evaluating criterion: {criterion}"
             )
 
-            # Check if this is a subgroup-specific criterion
-            is_subgroup, subgroup_cost = self._is_subgroup_specific_criterion(criterion)
-            total_cost += subgroup_cost
-            if is_subgroup:
-                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Subgroup-specific criterion detected: {criterion}")
-                # For subgroup-specific criteria, treat as satisfied (probability = 1.0)
-                # This prevents valid trials from being wrongly excluded due to subgroup-specific requirements
-                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Treating subgroup-specific criterion as satisfied")
-                overall_probability *= 1.0  # No penalty for subgroup criteria
-                continue
+            # Check if this is a subgroup-specific criterion (only if subgroup awareness is enabled)
+            if self.subgroup_aware:
+                is_subgroup, subgroup_cost = self._is_subgroup_specific_criterion(criterion)
+                total_cost += subgroup_cost
+                if is_subgroup:
+                    logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Subgroup-specific criterion detected: {criterion}")
+                    # For subgroup-specific criteria, treat as satisfied (probability = 1.0)
+                    # This prevents valid trials from being wrongly excluded due to subgroup-specific requirements
+                    logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Treating subgroup-specific criterion as satisfied")
+                    overall_probability *= 1.0  # No penalty for subgroup criteria
+                    continue
+            else:
+                logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Subgroup awareness disabled, evaluating all criteria normally")
 
             # Handle OR criterion
             is_or_criterion: bool
