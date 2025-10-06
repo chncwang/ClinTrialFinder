@@ -1733,6 +1733,8 @@ Examples of general criteria (NOT subgroup-specific):
 - "ECOG performance status 0-1"
 - "Adequate organ function"
 - "Histologically confirmed advanced clear cell renal cell carcinoma"
+- "The participant is planning on continuing the pregnancy."
+- "The participant consents to the study at the first trimester of her pregnancy"
 
 Criterion to analyze:
 "{criterion}"

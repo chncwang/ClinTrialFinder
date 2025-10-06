@@ -1811,6 +1811,13 @@ def main():
         default=8,
         help="Maximum number of retry attempts for GPT API calls (default: 8)"
     )
+    parser.add_argument(
+        "--no-subgroup-aware",
+        action="store_false",
+        dest="subgroup_aware",
+        default=True,
+        help="Disable subgroup awareness during filtering (default: enabled). When enabled, subgroup-specific criteria are treated as satisfied to prevent valid trials from being excluded."
+    )
 
     args = parser.parse_args()
 
@@ -2137,7 +2144,7 @@ def main():
     # Reuse the existing GPTClient instance from the benchmark object
     # This prevents the singleton error that would occur if we tried to create a new GPTClient instance
     gpt_client = benchmark.gpt_client
-    gpt_filter = GPTTrialFilter(gpt_client)
+    gpt_filter = GPTTrialFilter(gpt_client, subgroup_aware=args.subgroup_aware)
 
     results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only)
 
