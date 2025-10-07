@@ -1736,6 +1736,7 @@ Examples of general criteria (NOT subgroup-specific):
 - "The participant is planning on continuing the pregnancy."
 - "The participant consents to the study at the first trimester of her pregnancy"
 - "Patient must have a cluster of differentiation 19 (CD19)-expressing B-cell lymphoma. Patients with diffuse large B-cell lymphoma, primary mediastinal B-cell lymphoma, and diffuse large B-cell lymphoma transformed from follicular lymphoma must have measurable disease after at least two prior chemotherapy regimens, one of which must have contained doxorubicin and rituximab"
+- "Healthy volunteers, male and/or female aged 18-30 years"
 
 Criterion to analyze:
 "{criterion}"
