@@ -755,10 +755,10 @@ class FilteringBenchmark:
             for key in keys:
                 if not isinstance(d, dict):
                     return default
-                d = d.get(str(key), default)  # type: ignore
+                d = d.get(str(key), default)  # type: ignore[union-attr]
                 if d is None:
                     return default
-            return d
+            return d  # type: ignore[return-value]
 
         trial_dict = {
             "identification": {
@@ -1027,33 +1027,29 @@ class FilteringBenchmark:
                     # Use GPTTrialFilter to evaluate the trial based on title_only parameter
                     if title_only:
                         # Title-only evaluation (faster but less accurate)
-                        suitability_probability: float
-                        reason: str
-                        cost: float
                         suitability_probability, reason, cost = gpt_filter.evaluate_title(
                             trial, conditions, refresh_cache=False
                         )
                         logger.info(f"Trial {trial_id} title suitability probability: {suitability_probability}, reason: {reason}, cost: {cost}")
-                        is_eligible: bool = suitability_probability > 0.0
+                        is_eligible = suitability_probability > 0.0
                     else:
                         # Full trial evaluation (title + inclusion criteria)
-                        is_eligible: bool
                         cost: float
                         failure_reason: Optional[TrialFailureReason]
                         is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
                             trial, conditions, refresh_cache=False
                         )
                         if is_eligible:
-                            suitability_probability: float = 1.0
-                            reason: str = "Trial passed full evaluation (title + inclusion criteria)"
+                            suitability_probability = 1.0
+                            reason = "Trial passed full evaluation (title + inclusion criteria)"
                         else:
                             if failure_reason is None:
                                 raise RuntimeError(f"Trial {trial_id} failed full evaluation but no failure reason was recorded")
-                            suitability_probability: float = 0.0
+                            suitability_probability = 0.0
                             failure_details: str = failure_reason.failure_details if failure_reason.failure_details else 'Empty'
                             failed_condition: str = failure_reason.failed_condition if failure_reason.failed_condition else 'Empty'
                             failed_criterion: str = failure_reason.failed_criterion if failure_reason.failed_criterion else 'Empty'
-                            reason: str = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failed_condition}\n failed_criterion: {failed_criterion}\n failure_details: {failure_details} "
+                            reason = f"Trial failed full evaluation: {failure_reason.message}\n failed_condition: {failed_condition}\n failed_criterion: {failed_criterion}\n failure_details: {failure_details} "
                         logger.info(f"Trial {trial_id} full evaluation result: eligible={is_eligible}, reason: {reason}, cost: {cost}")
 
                     # Determine ground truth relevance
@@ -2016,11 +2012,11 @@ def main():
         # Include all trials in the allocation calculation (scores 0, 1, and 2)
         patient_trial_counts: Dict[str, int] = {}
         for patient in benchmark.patients:
-            patient_trial_ids: set[str] = set()
+            current_patient_trial_ids: set[str] = set()
             for judgment in benchmark.relevance_judgments:
                 if judgment.patient_id == patient.patient_id:
-                    patient_trial_ids.add(judgment.trial_id)
-            patient_trial_counts[patient.patient_id] = len(patient_trial_ids)
+                    current_patient_trial_ids.add(judgment.trial_id)
+            patient_trial_counts[patient.patient_id] = len(current_patient_trial_ids)
 
         total_original_trials = sum(patient_trial_counts.values())
 
@@ -2062,18 +2058,18 @@ def main():
 
         # Sample trials for each patient based on their allocation
         sampled_trial_ids: set[str] = set()
-        patient_trial_mapping: Dict[str, set[str]] = {}  # Map patient_id to their allocated trials
+        sampled_patient_trial_mapping: Dict[str, set[str]] = {}  # Map patient_id to their allocated trials
 
         for patient_id, allocation in patient_trial_allocations.items():
             if allocation > 0:
                 # Get all trials for this patient (scores 0, 1, and 2)
-                patient_trial_ids: set[str] = set()
+                patient_trial_set: set[str] = set()
                 for judgment in benchmark.relevance_judgments:
                     if judgment.patient_id == patient_id:
-                        patient_trial_ids.add(judgment.trial_id)
+                        patient_trial_set.add(judgment.trial_id)
 
                 # Filter to available trials (those that exist in benchmark.trials)
-                available_patient_trials = patient_trial_ids.intersection(set(benchmark.trials.keys()))
+                available_patient_trials = patient_trial_set.intersection(set(benchmark.trials.keys()))
 
                 if args.cancer_only:
                     # When cancer-only is specified, only use cancer-related trials for this patient
@@ -2085,15 +2081,15 @@ def main():
                     num_to_sample = min(allocation, len(sorted_patient_trials))
                     sampled_patient_trials = random.sample(sorted_patient_trials, num_to_sample)
                     sampled_trial_ids.update(sampled_patient_trials)
-                    patient_trial_mapping[patient_id] = set(sampled_patient_trials)
+                    sampled_patient_trial_mapping[patient_id] = set(sampled_patient_trials)
 
                     logger.info(f"  Sampled {num_to_sample} trials for patient {patient_id} (including all trials)")
                 else:
                     logger.warning(f"  No available trials for patient {patient_id} after filtering")
-                    patient_trial_mapping[patient_id] = set()
+                    sampled_patient_trial_mapping[patient_id] = set()
 
         # Store the patient-trial mapping in the benchmark object for use during evaluation
-        benchmark.patient_trial_mapping = patient_trial_mapping
+        benchmark.patient_trial_mapping = sampled_patient_trial_mapping
 
         # Filter trials to only include sampled ones
         benchmark.trials = {k: v for k, v in benchmark.trials.items() if k in sampled_trial_ids}
