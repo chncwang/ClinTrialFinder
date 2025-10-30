@@ -92,8 +92,8 @@ def process_trials_file(
     except json.JSONDecodeError:
         logger.error(f"Error decoding JSON from {filename}")
         raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+    except Exception as unexpected_error:
+        logger.error(f"Unexpected error: {str(unexpected_error)}")
         raise
     
     finally:
@@ -166,8 +166,8 @@ if __name__ == "__main__":
         # Final message just to be sure
         logger.info("Main process completed successfully")
         
-    except Exception as e:
-        logger.error(f"Error in main: {str(e)}", exc_info=True)
+    except Exception as main_error:
+        logger.error(f"Error in main: {str(main_error)}", exc_info=True)
         raise
         
     finally:

@@ -57,6 +57,6 @@ def analyze_drug_efficacy(
             messages, max_tokens=2000
         )
         return completion, citations, cost
-    except requests.exceptions.RequestException as e:
-        logger.error(f"analyze_drug_efficacy: Error analyzing drug efficacy: {e}")
+    except requests.exceptions.RequestException as api_error:
+        logger.error(f"analyze_drug_efficacy: Error analyzing drug efficacy: {api_error}")
         raise
