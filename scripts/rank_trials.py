@@ -6,46 +6,19 @@ from datetime import datetime
 from typing import List, Any, Optional
 import logging
 
-logger = logging.getLogger(__name__)
-
+from base.logging_config import setup_logging as setup_logging_base
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.trial_expert import compare_trials
 from base.disease_expert import extract_disease_from_record
+from base.utils import load_json_list_file
 
-def setup_logging():
-    """Set up logging configuration with timestamp in filename."""
-    import sys
-    from pathlib import Path
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-    log_file = logs_dir / f"trial_ranking_{timestamp}.log"
-
-    # Configure standard logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ],
-        force=True
-    )
+logger = logging.getLogger(__name__)
 
 
 def read_trials_file(file_path: str):
     """Read and parse the trials JSON file."""
-    try:
-        with open(file_path, "r") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parsing JSON file: {e}")
-        raise
-    except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
-        raise
+    return load_json_list_file(file_path)
 
 
 def log_trial_details(trial: ClinicalTrial):
@@ -233,7 +206,7 @@ def main():
 
     args = parser.parse_args()
 
-    setup_logging()
+    setup_logging_base("trial_ranking")
     logger.info(f"main: Starting trial ranking process for file: {args.input_file}")
 
     try:

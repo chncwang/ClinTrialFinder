@@ -22,17 +22,12 @@ from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter
 from base.logging_config import setup_logging
+from base.utils import load_json_list_file, get_api_key, create_gpt_client
 
 
 def setup_logging_for_trial(nct_id: str, log_level: str = "INFO") -> str:
     """Setup logging with timestamp and NCT ID in filename."""
     return setup_logging("filter_specific_trial", log_level)
-
-
-def load_trials(trials_file: str) -> List[Dict[str, Any]]:
-    """Load trials from a JSON file."""
-    with open(trials_file, "r") as f:
-        return json.load(f)
 
 
 def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
@@ -118,12 +113,7 @@ def filter_specific_trial(
     logger.info("filter_specific_trial: Initializing GPT client and filter")
     if not api_key:
         raise ValueError("API key is required")
-    gpt_client = GPTClient(
-        api_key=api_key,
-        cache_size=cache_size,
-        temperature=0.1,
-        max_retries=3,
-    )
+    gpt_client = create_gpt_client(api_key=api_key, cache_size=cache_size)
     gpt_filter = GPTTrialFilter(gpt_client, subgroup_aware=subgroup_aware)
 
     # Extract conditions from clinical record
@@ -140,7 +130,7 @@ def filter_specific_trial(
     # Load or fetch trial data
     if trials_file and os.path.exists(trials_file):
         logger.info(f"filter_specific_trial: Loading trial from file: {trials_file}")
-        trials_data = load_trials(trials_file)
+        trials_data = load_json_list_file(trials_file)
         trials_parser = ClinicalTrialsParser(trials_data)
         trial = trials_parser.get_trial_by_nct_id(nct_id)
         if not trial:
@@ -273,12 +263,7 @@ def main():
         logger.info("main: Will fetch trial data from ClinicalTrials.gov")
 
     # Get API key from command line or environment
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        logger.error("main: OpenAI API key not found")
-        raise ValueError(
-            "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
-        )
+    api_key = get_api_key(args.api_key)
 
     try:
         # Perform the filtering
