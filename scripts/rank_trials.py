@@ -144,8 +144,8 @@ def rank_trials(
 
     # Log first 10 trial titles before shuffle
     logger.info("rank_trials: First 10 trial titles before shuffle:")
-    for i in range(min(10, len(trial_objects))):
-        logger.info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
+    for index in range(min(10, len(trial_objects))):
+        logger.info(f"rank_trials: {index+1}. {trial_objects[index].identification.brief_title}")
 
     # Randomize trials before sorting
     random.seed(seed)
@@ -160,8 +160,8 @@ def rank_trials(
 
     # Log first 10 trial titles after shuffle
     logger.info("rank_trials: First 10 trial titles after shuffle:")
-    for i in range(min(10, len(trial_objects))):
-        logger.info(f"rank_trials: {i+1}. {trial_objects[i].identification.brief_title}")
+    for index in range(min(10, len(trial_objects))):
+        logger.info(f"rank_trials: {index+1}. {trial_objects[index].identification.brief_title}")
 
     # Sort trials using quicksort
     total_cost = quicksort(
@@ -234,8 +234,8 @@ def main():
 
         # Log ranked trials
         logger.info("\nmain: Ranked Trials (from best to worst):")
-        for i, trial in enumerate(ranked_trials, 1):
-            logger.info(f"\nmain: Rank {i}:")
+        for rank_position, trial in enumerate(ranked_trials, 1):
+            logger.info(f"\nmain: Rank {rank_position}:")
             log_trial_details(trial)
 
         # Save ranked trials to file
@@ -255,8 +255,8 @@ def main():
                 logger.info(f"main: CSV output saved to: {csv_output_file}")
             except ImportError:
                 logger.warning("main: CSV conversion module not available. Skipping CSV output.")
-            except Exception as e:
-                logger.error(f"main: Error generating CSV output: {e}")
+            except Exception as csv_error:
+                logger.error(f"main: Error generating CSV output: {csv_error}")
 
         # Log summary
         logger.info("\n" + "=" * 80)
@@ -268,8 +268,8 @@ def main():
             logger.info(f"main: CSV output: {csv_output_file}")
         logger.info("main: " + "=" * 80)
 
-    except Exception as e:
-        logger.error(f"main: An error occurred: {e}")
+    except Exception as main_error:
+        logger.error(f"main: An error occurred: {main_error}")
         raise
 
 
