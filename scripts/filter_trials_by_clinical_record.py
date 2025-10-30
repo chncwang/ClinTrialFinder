@@ -7,41 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, List
 import logging
 
-logger = logging.getLogger(__name__)
-
+from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrialsParser
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
+from base.utils import load_json_list_file, get_api_key, create_gpt_client
 
-# Configure standard logging with timestamp in filename
+# Setup logging using centralized configuration
+log_file = setup_logging("filter_trials_by_clinical_record")
+logger = logging.getLogger(__name__)
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-# Create logs directory if it doesn't exist
-logs_dir = Path("logs")
-logs_dir.mkdir(exist_ok=True)
-log_file = logs_dir / f"filter_trials_by_clinical_record_{timestamp}.log"
-
-# Configure standard logging with both file and console output
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler(sys.stdout)
-    ],
-    force=True
-)
-
-# Set console handler to INFO level
-for handler in logging.getLogger().handlers:
-    if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
-        handler.setLevel(logging.INFO)
-
-
-def load_trials(trials_file: str) -> List[Dict[str, Any]]:
-    """Load trials from a JSON file."""
-    with open(trials_file, "r") as f:
-        return json.load(f)
 
 
 def main():
@@ -86,22 +62,12 @@ def main():
     logger.info(f"Output file: {args.output}")
 
     # Get API key from command line or environment
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        logger.error("OpenAI API key not found")
-        raise ValueError(
-            "OpenAI API key not found. Please provide it via --api-key argument or OPENAI_API_KEY environment variable"
-        )
+    api_key = get_api_key(args.api_key)
 
     try:
         # Initialize GPT client and filter
         logger.info("Initializing GPT client and filter")
-        gpt_client = GPTClient(
-            api_key=api_key,
-            cache_size=args.cache_size,
-            temperature=0.1,
-            max_retries=3,
-        )
+        gpt_client = create_gpt_client(api_key=api_key, cache_size=args.cache_size)
         gpt_filter = GPTTrialFilter(gpt_client)
 
         # Extract conditions from clinical record
@@ -116,7 +82,7 @@ def main():
 
         # Load trials
         logger.info(f"Loading trials from {args.trials_file}")
-        trials = load_trials(args.trials_file)
+        trials = load_json_list_file(args.trials_file)
         if args.max_trials:
             trials = trials[: args.max_trials]
             logger.info(f"Limited to processing {args.max_trials} trials")

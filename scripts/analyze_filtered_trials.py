@@ -7,32 +7,19 @@ from pathlib import Path
 from typing import Any
 import logging
 
-logger = logging.getLogger(__name__)
-
+from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recommendation
-from base.utils import read_input_file
+from base.utils import read_input_file, get_api_key, create_gpt_client
 
-# Configure logging
-# Create logs directory if it doesn't exist
-logs_dir = Path("logs")
-logs_dir.mkdir(exist_ok=True)
+# Setup logging using centralized configuration
+log_filename = setup_logging("analyze_filtered_trials")
+logger = logging.getLogger(__name__)
 
-# Set up timestamp for log files
+# Set up timestamp for output files
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"logs/analyze_filtered_trials_{timestamp}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
@@ -159,8 +146,11 @@ if __name__ == "__main__":
 
     try:
         # Initialize clients
-        gpt_client = GPTClient(api_key=args.openai_api_key)
-        perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
+        api_key = get_api_key(args.openai_api_key)
+        perplexity_api_key = get_api_key(args.perplexity_api_key, "PERPLEXITY_API_KEY")
+        
+        gpt_client = create_gpt_client(api_key=api_key)
+        perplexity_client = PerplexityClient(api_key=perplexity_api_key)
 
         clinical_record = read_input_file(args.clinical_record_file)
         

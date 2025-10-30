@@ -22,7 +22,7 @@ from base.trial_expert import (
     process_trials_with_conditions,
 )
 from base.gpt_client import GPTClient
-from base.utils import load_json_list_file
+from base.utils import load_json_list_file, create_gpt_client
 from typing import List
 
 
@@ -107,11 +107,10 @@ def main():
     # Initialize GPT filter only if needed
     gpt_filter = None
     if args.conditions and api_key:
-        gpt_client = GPTClient(
+        gpt_client = create_gpt_client(
             api_key=api_key,
             cache_size=args.cache_size,
-            temperature=0.1,
-            max_retries=args.max_retries,
+            max_retries=args.max_retries
         )
         gpt_filter = GPTTrialFilter(gpt_client)
 
