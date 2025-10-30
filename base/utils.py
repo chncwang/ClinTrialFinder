@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from base.gpt_client import GPTClient
 
-T = TypeVar("T")
+ReturnType = TypeVar("ReturnType")
 
 
 def get_api_key(args_key: Optional[str], env_var: str = "OPENAI_API_KEY") -> str:
@@ -47,18 +47,18 @@ def read_input_file(file_path: str) -> str:
     except FileNotFoundError:
         logger.error(f"read_input_file: Input file not found: {file_path}")
         sys.exit(1)
-    except Exception as e:
-        logger.error(f"read_input_file: Error reading input file: {e}")
+    except Exception as read_error:
+        logger.error(f"read_input_file: Error reading input file: {read_error}")
         sys.exit(1)
 
 
 def parse_json_response(
     response: str,
-    expected_type: type[T],
+    expected_type: type[ReturnType],
     gpt_client: GPTClient,
     cost: float = 0.0,
     validation_func: Callable[[Any], bool] | None = None,
-) -> Tuple[T, float]:
+) -> Tuple[ReturnType, float]:
     """
     Parse a JSON response and attempt to correct it if invalid.
 
@@ -88,8 +88,8 @@ def parse_json_response(
                 raise ValueError("Response failed validation")
             return result, cost
 
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"parse_json_response: Invalid JSON structure detected: {e}")
+        except (json.JSONDecodeError, ValueError) as json_error:
+            logger.warning(f"parse_json_response: Invalid JSON structure detected: {json_error}")
             logger.warning(
                 f"parse_json_response: Attempting to correct response: {cleaned_response}"
             )
@@ -117,17 +117,17 @@ def parse_json_response(
                     raise ValueError("Corrected response failed validation")
                 return result, total_cost
 
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"parse_json_response: Failed to correct JSON: {e}")
+            except (json.JSONDecodeError, ValueError) as correction_error:
+                logger.error(f"parse_json_response: Failed to correct JSON: {correction_error}")
                 logger.error(
                     f"parse_json_response: Failed to convert to valid JSON: {completion}"
                 )
                 raise ValueError(
-                    f"Failed to convert to valid JSON: {e}. Response content: {completion}"
+                    f"Failed to convert to valid JSON: {correction_error}. Response content: {completion}"
                 )
 
-    except Exception as e:
-        raise ValueError(f"Error parsing JSON response: {e}. Raw response: {response}")
+    except Exception as parse_error:
+        raise ValueError(f"Error parsing JSON response: {parse_error}. Raw response: {response}")
 
 
 def load_json_list_file(file_path: str) -> List[Dict[str, Any]]:
@@ -159,8 +159,8 @@ def save_json_list_file(data: List[Dict[str, Any]], output_path: str, file_type:
         logger.info(
             f"save_json_list_file: {file_type.capitalize()} saved to {output_path}"
         )
-    except Exception as e:
-        logger.error(f"save_json_list_file: Error saving {file_type}: {str(e)}")
+    except Exception as save_error:
+        logger.error(f"save_json_list_file: Error saving {file_type}: {str(save_error)}")
         sys.exit(1)
 
 

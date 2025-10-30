@@ -165,8 +165,8 @@ class GPTClient:
 
             return result, cost
 
-        except Exception as e:
-            logger.error(f"GPTClient.call_gpt: Error in GPT call: {str(e)}")
+        except Exception as gpt_error:
+            logger.error(f"GPTClient.call_gpt: Error in GPT call: {str(gpt_error)}")
             raise
 
     def call_with_retry(
@@ -220,9 +220,9 @@ class GPTClient:
                             f"GPTClient.call_with_retry: Call with retry succeeded in {total_time:.3f}s (attempt {attempt+1}/{self.max_retries})"
                         )
                         return parsed, total_cost
-                    except json.JSONDecodeError as e:
+                    except json.JSONDecodeError as json_parse_error:
                         logger.warning(
-                            f"GPTClient.call_with_retry: JSON decode error on attempt {attempt+1}: {str(e)}"
+                            f"GPTClient.call_with_retry: JSON decode error on attempt {attempt+1}: {str(json_parse_error)}"
                         )
                         logger.debug(f"GPTClient.call_with_retry: Invalid JSON response: {response[:200]}...")
                         raise
@@ -233,15 +233,15 @@ class GPTClient:
                 )
                 return response, total_cost
 
-            except json.JSONDecodeError if validate_json else Exception as e:
+            except json.JSONDecodeError if validate_json else Exception as retry_error:
                 if attempt == self.max_retries - 1:
                     logger.warning(
-                        f"GPTClient.call_with_retry: Failed after {self.max_retries} attempts: {str(e)}"
+                        f"GPTClient.call_with_retry: Failed after {self.max_retries} attempts: {str(retry_error)}"
                     )
                     raise
 
                 # Special handling for 404 errors (API endpoint temporarily unavailable)
-                if "404" in str(e) or "Not Found" in str(e):
+                if "404" in str(retry_error) or "Not Found" in str(retry_error):
                     # Use longer backoff for 404 errors as they might indicate temporary API issues
                     backoff_time = min(2**(attempt + 2), 60)  # Start with 4s, max 60s
                     logger.warning(
@@ -250,7 +250,7 @@ class GPTClient:
                 else:
                     backoff_time = 2**attempt
                     logger.info(
-                        f"GPTClient.call_with_retry: Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(e)}"
+                        f"GPTClient.call_with_retry: Attempt {attempt+1} failed, retrying after {backoff_time}s backoff: {str(retry_error)}"
                     )
 
                 time.sleep(backoff_time)  # Exponential backoff

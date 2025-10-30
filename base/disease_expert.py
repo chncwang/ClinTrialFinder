@@ -37,8 +37,8 @@ def extract_disease_from_record(
         disease_name = completion.strip()
         logger.info(f"Extracted disease name: {disease_name}")
         return disease_name, cost
-    except Exception as e:
-        raise RuntimeError(f"Error extracting disease from clinical record: {e}")
+    except Exception as extraction_error:
+        raise RuntimeError(f"Error extracting disease from clinical record: {extraction_error}")
 
 
 def get_parent_disease_categories(
@@ -125,9 +125,9 @@ def get_parent_disease_categories(
         )
         return filtered_categories, total_cost
 
-    except Exception as e:
+    except Exception as category_error:
         raise RuntimeError(
-            f"Error getting parent disease categories for {disease_name}: {e}"
+            f"Error getting parent disease categories for {disease_name}: {category_error}"
         )
 
 
@@ -156,8 +156,8 @@ def extract_conditions_from_record(
             refresh_cache=refresh_cache,
         )
 
-    except Exception as e:
-        logger.error(f"Error processing clinical record: {e}")
+    except Exception as record_processing_error:
+        logger.error(f"Error processing clinical record: {record_processing_error}")
         raise
 
     return []
@@ -299,8 +299,8 @@ def extract_conditions_from_content(
 
             return history
 
-    except Exception as e:
-        logger.error(f"Error processing clinical record content: {e}")
+    except Exception as content_processing_error:
+        logger.error(f"Error processing clinical record content: {content_processing_error}")
         raise
 
     return []
@@ -334,8 +334,8 @@ def has_absolute_time_reference(item: str, gpt_client: GPTClient) -> bool:
         response = completion.strip().lower()
         return response == "yes"
 
-    except Exception as e:
-        logger.error(f"Error checking for absolute time references: {e}")
+    except Exception as time_reference_error:
+        logger.error(f"Error checking for absolute time references: {time_reference_error}")
         return False
 
 
@@ -400,8 +400,8 @@ def convert_item_to_relative_time(
         logger.info(f"Converted time reference: '{item}' → '{updated_item}'")
         return updated_item, cost
 
-    except Exception as e:
-        logger.error(f"Error converting time references: {e}")
+    except Exception as conversion_error:
+        logger.error(f"Error converting time references: {conversion_error}")
         return item, 0.0
 
 

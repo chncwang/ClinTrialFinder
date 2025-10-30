@@ -121,17 +121,17 @@ def build_trial_info(trial: ClinicalTrial) -> str:
     # Add arms information if available
     if trial.design.arms:
         arms_info: List[str] = []
-        for i, arm in enumerate(trial.design.arms, 1):
-            arm_str = f"Arm {i}: {arm.get('name', 'N/A')} ({arm.get('type', 'N/A')})"
+        for arm_index, arm in enumerate(trial.design.arms, 1):
+            arm_str = f"Arm {arm_index}: {arm.get('name', 'N/A')} ({arm.get('type', 'N/A')})"
             if arm.get('description'):
                 arm_str += f" - {arm['description']}"
             if arm.get('interventions'):
                 interventions = arm['interventions']
                 if isinstance(interventions, list):
                     intervention_strs: List[str] = []
-                    for x in cast(List[Any], interventions):
-                        if x is not None:
-                            intervention_strs.append(str(x))
+                    for intervention in cast(List[Any], interventions):
+                        if intervention is not None:
+                            intervention_strs.append(str(intervention))
                     arm_str += f" - Interventions: {', '.join(intervention_strs)}"
                 else:
                     arm_str += f" - Interventions: {interventions}"
@@ -161,7 +161,7 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         )
 
         try:
-            data = json.loads(cleaned_response)
+            response_data = json.loads(cleaned_response)
         except json.JSONDecodeError:
             # Last resort - if JSON parsing still fails, manually extract the fields using regex
             logger.warning(
@@ -169,8 +169,8 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
             )
 
             # Extract recommendation field
-            rec_match = re.search(r'"recommendation"\s*:\s*"([^"]+)"', cleaned_response)
-            recommendation_str = rec_match.group(1) if rec_match else None
+            recommendation_match = re.search(r'"recommendation"\s*:\s*"([^"]+)"', cleaned_response)
+            recommendation_str = recommendation_match.group(1) if recommendation_match else None
 
             # Extract reason field (this handles multiline text)
             reason_start = cleaned_response.find('"reason"')
@@ -207,13 +207,13 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
                 )
 
             # Create data dictionary manually
-            data = {"recommendation": recommendation_str, "reason": reason}
+            response_data = {"recommendation": recommendation_str, "reason": reason}
             logger.info(
-                f"parse_recommendation_response: Manually extracted data: {data}"
+                f"parse_recommendation_response: Manually extracted data: {response_data}"
             )
 
-        recommendation_str = data.get("recommendation")
-        reason = data.get("reason")
+        recommendation_str = response_data.get("recommendation")
+        reason = response_data.get("reason")
 
         if not recommendation_str or not reason:
             raise ValueError(
@@ -227,14 +227,14 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         recommendation = RecommendationLevel(recommendation_str)
         return recommendation, reason
 
-    except json.JSONDecodeError as e:
-        logger.error(f"parse_recommendation_response: Invalid JSON response: {e}")
+    except json.JSONDecodeError as json_error:
+        logger.error(f"parse_recommendation_response: Invalid JSON response: {json_error}")
         logger.error(f"parse_recommendation_response: Response content: {response}")
-        raise ValueError(f"Invalid JSON response: {e}. Response content: {response}")
-    except Exception as e:
-        logger.error(f"parse_recommendation_response: Unexpected error: {e}")
+        raise ValueError(f"Invalid JSON response: {json_error}. Response content: {response}")
+    except Exception as parse_error:
+        logger.error(f"parse_recommendation_response: Unexpected error: {parse_error}")
         logger.error(f"parse_recommendation_response: Response content: {response}")
-        raise ValueError(f"Error parsing response: {e}. Response content: {response}")
+        raise ValueError(f"Error parsing response: {parse_error}. Response content: {response}")
 
 
 def analyze_drugs_and_get_recommendation(
@@ -307,9 +307,9 @@ def analyze_drugs_and_get_recommendation(
                     logger.info(
                         f"analyze_drugs_and_get_recommendation: Citations ({len(citations)}):"
                     )
-                    for i, citation in enumerate(citations, 1):
+                    for citation_index, citation in enumerate(citations, 1):
                         logger.info(
-                            f"analyze_drugs_and_get_recommendation: Citation {i}: {citation}"
+                            f"analyze_drugs_and_get_recommendation: Citation {citation_index}: {citation}"
                         )
                 logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${drug_cost:.6f}")
 
@@ -333,13 +333,13 @@ def analyze_drugs_and_get_recommendation(
 
     # Use the existing parse_json_response utility for robust error handling
     try:
-        data: dict[str, str]
+        response_data: dict[str, str]
         correction_cost: float
-        data, correction_cost = parse_json_response(completion, dict[str, str], gpt_client, 0.0)
+        response_data, correction_cost = parse_json_response(completion, dict[str, str], gpt_client, 0.0)
         total_cost += correction_cost
 
         # Ensure required fields are present
-        if "reason" not in data or "recommendation" not in data:
+        if "reason" not in response_data or "recommendation" not in response_data:
             raise ValueError(
                 "JSON response missing 'reason' or 'recommendation' fields"
             )
@@ -444,9 +444,9 @@ def compare_trials(
 
             # Parse the comparison response
             try:
-                data: dict[str, str] = json.loads(completion)
-                reason: str | None = data.get("reason")
-                better_trial_id: str | None = data.get("better_trial")
+                response_data: dict[str, str] = json.loads(completion)
+                reason: str | None = response_data.get("reason")
+                better_trial_id: str | None = response_data.get("better_trial")
 
                 if not better_trial_id or not reason:
                     logger.error(
@@ -492,9 +492,9 @@ def compare_trials(
                     continue
                 raise ValueError(f"Invalid JSON response: {completion}")
 
-        except Exception as e:
+        except Exception as comparison_error:
             logger.error(
-                f"compare_trials: Error on attempt {attempt + 1}/{max_retries}: {str(e)}"
+                f"compare_trials: Error on attempt {attempt + 1}/{max_retries}: {str(comparison_error)}"
             )
             if attempt < max_retries - 1:
                 logger.info(
@@ -644,7 +644,7 @@ class GPTTrialFilter:
         try:
             # First try to parse the response directly
             return json.loads(response_content)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             logger.error(
                 f"GPTTrialFilter._parse_gpt_response: Failed to parse GPT response: {response_content}"
             )
@@ -672,7 +672,7 @@ class GPTTrialFilter:
                         pass
 
                 # If all attempts fail, raise the original error
-                raise ValueError(f"Failed to parse GPT response as JSON: {str(e)}")
+                raise ValueError(f"Failed to parse GPT response as JSON: {str(json_error)}")
 
     def _parse_gpt_response_with_fallback(self, response_content: str) -> Dict[str, Any]:
         """
@@ -731,9 +731,9 @@ class GPTTrialFilter:
                 f"Missing required fields in GPT response: {parsed_response}"
             )
 
-        prob = parsed_response["suitability_probability"]
-        if not isinstance(prob, (int, float)) or not 0 <= prob <= 1:
-            raise ValueError(f"Invalid probability value: {prob}")
+        probability = parsed_response["suitability_probability"]
+        if not isinstance(probability, (int, float)) or not 0 <= probability <= 1:
+            raise ValueError(f"Invalid probability value: {probability}")
 
         return parsed_response
 
@@ -967,8 +967,6 @@ Does this criterion contain multiple alternative options connected by OR at the 
 Criterion: {criterion}"""
 
         try:
-            response_content: str
-            cost: float
             response_content, cost = self._call_gpt(
                 prompt,
                 "You are a clinical trial analyst specializing in logical structure analysis.",
@@ -1152,8 +1150,8 @@ Reference list of valid conditions:
             validation_note = (
                 "\n\nIMPORTANT NOTE: Previous responses had the following issues:\n"
             )
-            for i, note in enumerate(need_to_note_list, 1):
-                validation_note += f"{i}. {note}\n"
+            for note_index, note in enumerate(need_to_note_list, 1):
+                validation_note += f"{note_index}. {note}\n"
             validation_note += "\nYou MUST only select conditions that are exactly present in the provided list. Do not modify, paraphrase, or create new conditions."
 
         prompt = f"""You are analyzing a clinical trial inclusion criterion branch to determine which patient conditions are most relevant.
@@ -1757,8 +1755,8 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             response = response_content.strip().upper()
             return response == "YES", cost
 
-        except Exception as e:
-            logger.warning(f"Error checking if criterion is subgroup-specific: {e}")
+        except Exception as subgroup_error:
+            logger.warning(f"Error checking if criterion is subgroup-specific: {subgroup_error}")
             # Fallback to simple pattern matching if GPT fails
             import re
             subgroup_patterns = [
@@ -1852,7 +1850,7 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             return False, title_cost, failure
 
         # 3) Evaluate the inclusion criteria
-        inclusion_probability, inc_failure_reason, criteria_cost = (
+        inclusion_probability, inclusion_failure_reason, criteria_cost = (
             self._evaluate_inclusion_criteria(
                 inclusion_criteria, conditions, trial.identification.brief_title
             )
@@ -1862,13 +1860,13 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
         overall_probability = title_probability * inclusion_probability
 
         # If it failed on an inclusion criterion
-        if inc_failure_reason is not None:
-            (cond_failed, crit_failed, reason) = inc_failure_reason
+        if inclusion_failure_reason is not None:
+            (condition_failed, criterion_failed, reason) = inclusion_failure_reason
             failure = TrialFailureReason(
                 type="inclusion_criterion",
                 message="Failed inclusion criterion evaluation",
-                failed_condition=cond_failed,
-                failed_criterion=crit_failed,
+                failed_condition=condition_failed,
+                failed_criterion=criterion_failed,
                 failure_details=reason,
             )
             logger.info(
@@ -1877,7 +1875,7 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
             return False, total_cost, failure
 
-        # If overall probability is zero or near zero but no explicit inc_failure_reason
+        # If overall probability is zero or near zero but no explicit inclusion_failure_reason
         if overall_probability <= 0.0:
             raise RuntimeError(
                 "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
@@ -1919,9 +1917,9 @@ def process_trials_with_conditions(
 
         logger.info(f"Processing {total_trials} trials with conditions: {conditions}")
 
-        for i, trial in enumerate(trials, 1):
+        for trial_index, trial in enumerate(trials, 1):
             logger.info(
-                f"Processing trial {i}/{total_trials}: {trial.identification.nct_id}"
+                f"Processing trial {trial_index}/{total_trials}: {trial.identification.nct_id}"
             )
 
             is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
@@ -1971,7 +1969,7 @@ def process_trials_with_conditions(
                 excluded_trials.append(excluded_info)
 
             logger.info(
-                f"Eligible trials so far: {eligible_count}/{i} processed, total cost: ${total_cost:.2f}"
+                f"Eligible trials so far: {eligible_count}/{trial_index} processed, total cost: ${total_cost:.2f}"
             )
     else:
         logger.info(
