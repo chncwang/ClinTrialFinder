@@ -3,21 +3,14 @@ import os
 from datetime import datetime
 import logging
 
-logger = logging.getLogger(__name__)
-
+from base.logging_config import setup_logging
 from base.disease_expert import extract_conditions_from_record
 from base.gpt_client import GPTClient
+from base.utils import get_api_key, create_gpt_client
 
-# Configure logging with file output
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f"extract_conditions_{timestamp}.log"),
-        logging.StreamHandler()
-    ]
-)
+# Configure logging using centralized configuration
+log_filename = setup_logging("extract_conditions")
+logger = logging.getLogger(__name__)
 
 
 def process_clinical_record(
@@ -32,7 +25,7 @@ def process_clinical_record(
             raise ValueError("OpenAI API key is required. Please provide it via --openai-api-key argument or OPENAI_API_KEY environment variable.")
         
         # Initialize GPT client
-        gpt_client = GPTClient(api_key=openai_api_key)
+        gpt_client = create_gpt_client(api_key=openai_api_key)
 
         # Extract clinical history
         history = extract_conditions_from_record(

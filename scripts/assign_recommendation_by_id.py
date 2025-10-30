@@ -9,30 +9,19 @@ from pathlib import Path
 from typing import Any, Dict, List
 import logging
 
-logger = logging.getLogger(__name__)
-
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
 
+from base.logging_config import setup_logging
 from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import analyze_drugs_and_get_recommendation
-from base.utils import read_input_file
+from base.utils import read_input_file, get_api_key, create_gpt_client, load_json_list_file
 
-# Configure logging
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"assign_recommendation_by_id_{timestamp}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Configure logging using centralized configuration
+log_filename = setup_logging("assign_recommendation_by_id")
+logger = logging.getLogger(__name__)
 
 # Log the filename being used
 logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
@@ -120,8 +109,7 @@ def assign_recommendation_to_trial(
     # Load trial data
     if trials_file and os.path.exists(trials_file):
         logger.info(f"Loading trial from file: {trials_file}")
-        with open(trials_file, "r") as f:
-            trials_data = json.load(f)
+        trials_data = load_json_list_file(trials_file)
         trials_parser = ClinicalTrialsParser(trials_data)
         trial = trials_parser.get_trial_by_nct_id(nct_id)
         if not trial:
@@ -197,20 +185,8 @@ def main():
     args = parser.parse_args()
 
     # Get API keys from arguments or environment
-    api_key = args.openai_api_key or os.getenv("OPENAI_API_KEY")
-    perplexity_api_key = args.perplexity_api_key or os.getenv("PERPLEXITY_API_KEY")
-
-    if not api_key:
-        logger.error(
-            "OpenAI API key must be provided via --openai-api-key or OPENAI_API_KEY environment variable"
-        )
-        sys.exit(1)
-
-    if not perplexity_api_key:
-        logger.error(
-            "Perplexity API key must be provided via --perplexity-api-key or PERPLEXITY_API_KEY environment variable"
-        )
-        sys.exit(1)
+    api_key = get_api_key(args.openai_api_key)
+    perplexity_api_key = get_api_key(args.perplexity_api_key, "PERPLEXITY_API_KEY")
 
     try:
         # Read clinical record
@@ -218,7 +194,7 @@ def main():
         logger.info(f"Read clinical record from {args.clinical_record_file}")
 
         # Initialize clients
-        gpt_client = GPTClient(api_key=api_key, cache_size=args.cache_size)
+        gpt_client = create_gpt_client(api_key=api_key, cache_size=args.cache_size)
         perplexity_client = PerplexityClient(perplexity_api_key)
 
         # Assign recommendation to trial

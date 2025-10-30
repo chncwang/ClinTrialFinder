@@ -18,7 +18,7 @@ from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import analyze_drugs_and_get_recommendation
-from base.utils import read_input_file
+from base.utils import read_input_file, get_api_key, create_gpt_client
 from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
     ClinicalTrialsSpider,
 )
@@ -106,20 +106,8 @@ def main():
     args = parser.parse_args()
 
     # Get API keys from arguments or environment
-    api_key = args.openai_api_key or os.getenv("OPENAI_API_KEY")
-    perplexity_api_key = args.perplexity_api_key or os.getenv("PERPLEXITY_API_KEY")
-
-    if not api_key:
-        logger.error(
-            "OpenAI API key must be provided via --openai-api-key or OPENAI_API_KEY environment variable"
-        )
-        sys.exit(1)
-
-    if not perplexity_api_key:
-        logger.error(
-            "Perplexity API key must be provided via --perplexity-api-key or PERPLEXITY_API_KEY environment variable"
-        )
-        sys.exit(1)
+    api_key = get_api_key(args.openai_api_key)
+    perplexity_api_key = get_api_key(args.perplexity_api_key, "PERPLEXITY_API_KEY")
 
     # Read clinical record from input file if specified
     clinical_record = ""
@@ -137,9 +125,9 @@ def main():
         logger.error(f"main: Trial with NCT ID {args.nct_id} not found")
         sys.exit(1)
 
-    # Initialize Perplexity client
+    # Initialize clients
     perplexity_client = PerplexityClient(perplexity_api_key)
-    gpt_client = GPTClient(api_key)
+    gpt_client = create_gpt_client(api_key=api_key, cache_size=args.cache_size)
     # Replace the drug analysis and recommendation section with:
     try:
         recommendation, reason, _, total_cost = analyze_drugs_and_get_recommendation(

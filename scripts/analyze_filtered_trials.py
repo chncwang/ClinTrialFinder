@@ -12,7 +12,7 @@ from base.clinical_trial import ClinicalTrial
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import RecommendationLevel, analyze_drugs_and_get_recommendation
-from base.utils import read_input_file
+from base.utils import read_input_file, get_api_key, create_gpt_client
 
 # Setup logging using centralized configuration
 log_filename = setup_logging("analyze_filtered_trials")
@@ -146,8 +146,11 @@ if __name__ == "__main__":
 
     try:
         # Initialize clients
-        gpt_client = GPTClient(api_key=args.openai_api_key)
-        perplexity_client = PerplexityClient(api_key=args.perplexity_api_key)
+        api_key = get_api_key(args.openai_api_key)
+        perplexity_api_key = get_api_key(args.perplexity_api_key, "PERPLEXITY_API_KEY")
+        
+        gpt_client = create_gpt_client(api_key=api_key)
+        perplexity_client = PerplexityClient(api_key=perplexity_api_key)
 
         clinical_record = read_input_file(args.clinical_record_file)
         
