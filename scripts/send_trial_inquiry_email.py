@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
-from base.utils import read_input_file
+from base.utils import read_input_file, load_json_list_file
 
 # Add argument parser
 parser = argparse.ArgumentParser(
@@ -74,8 +74,7 @@ logger.info("Starting trial inquiry email script")
 def get_trial(trial_data_path: str, ctd_id: str):
     """Read the trial data and return the trial object for the given CTD ID."""
     try:
-        with open(trial_data_path, "r") as f:
-            trials = json.load(f)
+        trials = load_json_list_file(trial_data_path)
 
         parser = ClinicalTrialsParser(trials)
         trial = parser.get_trial_by_nct_id(ctd_id)
