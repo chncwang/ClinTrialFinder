@@ -27,34 +27,11 @@ Watch our demo video to see ClinTrialFinder in action:
 
 ## Analyzing Clinical Trials
 
-Below is a flowchart demonstrating the process of analyzing a clinical trial against a patient clinical record:
+Below is a system overview demonstrating the process of analyzing a clinical trial against a patient clinical record:
 
-```mermaid
-graph TD
-    A[Patient: A 58-year-old female with a history of HER2-positive invasive ductal carcinoma of the left breast, ... In January 2025, she developed multiple bone metastases ...]
-    B[Disease: Metastatic Breast Cancer]
-    C[Trial: A Study of T-DXd as Monotherapy or in Combination With Anti-cancer Agents in Patients With Selected HER2-expressing Tumors]
-    D[Novel Drug: T-DXd]
-    A -->|gpt-4.1-mini| B
-    C -->|gpt-4.1-mini| D
-    E[Evidence for T-DXd efficacy in treating Metastatic Breast Cancer?]
-    B --> E
-    D --> E
-    F["Trastuzumab deruxtecan (T-DXd) has shown significant efficacy in treating metastatic breast cancer, particularly in HER2-positive and HER2-low subtypes ..."]
-    E -->|Perplexity API| F
-    G["Clinical Record:
-    A 58-year-old female ...<br>
-    Trial Information:
-    Brief Title: A Study of T-DXd ...<br>
-    Drug efficacy Analysis:
-    Trastuzumab deruxtecan (T-DXd) has shown ..."]
-    A --> G
-    C --> G
-    F --> G
-    H[Strongly Recommend
-    Reason: The patient is a 58-year-old female with HER2-positive metastatic breast cancer with bone metastases ...]
-    G -->|gpt-4.1| H
-```
+<img src="images/system-overview.png" alt="ClinTrialFinder System Overview" width="800">
+
+*Figure: System architecture and workflow for matching patients with clinical trials*
 
 ## Installation
 
