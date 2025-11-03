@@ -25,7 +25,7 @@ Watch our demo video to see ClinTrialFinder in action:
   - Custom conditions and criteria
 - **Email Service**: Send clinical summaries via email for instant trial matching without any setup
 
-## Analyzing Clinical Trials
+## System Overview
 
 Below is a system overview demonstrating the process of analyzing a clinical trial against a patient clinical record:
 
