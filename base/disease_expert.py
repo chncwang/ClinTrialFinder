@@ -195,9 +195,9 @@ def extract_conditions_from_content(
             time_instruction = "Keep all time references in their original format (years, dates, etc.). "
 
         common_prompt_middle = (
-            "Present the results as a JSON array of strings. Include relevant demographic information (age, sex, etc.) as the first item.\n\n"
+            "Present the results as a JSON array of strings.\n\n"
             "Focus on:\n"
-            "- Demographic features (age, sex, etc.)\n"
+            "- Demographic features (age, sex, etc.) - IF explicitly mentioned in the record\n"
             "- Major medical conditions\n"
             "- Significant treatments and their status\n"
             "- Current clinical status\n"
@@ -257,12 +257,13 @@ def extract_conditions_from_content(
 
         common_prompt_end = (
             "Guidelines:\n"
-            "1. Always include demographic information as the first item\n"
+            "1. ONLY extract demographic information (age, sex, gender) if EXPLICITLY stated in the clinical record. If demographics are mentioned, include them as the first item. If NOT mentioned, DO NOT invent or infer them - simply omit demographic information or include 'age unspecified, sex unspecified' if needed for context.\n"
             "2. Focus on the condition and its current status\n"
             "3. Include relevant treatment information if applicable\n"
             f"{time_guideline}"
             "5. Keep descriptions concise and medically relevant\n"
-            "6. Include any other conditions relevant to trial eligibility\n\n"
+            "6. Include any other conditions relevant to trial eligibility\n"
+            "7. IMPORTANT: Only extract information that is explicitly stated in the clinical record. Do not make assumptions or inferences about missing information.\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
             "Return only the JSON array, without any additional text or explanation."
         )
