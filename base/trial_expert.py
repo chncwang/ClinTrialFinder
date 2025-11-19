@@ -525,9 +525,9 @@ class CriterionEvaluation:
 class TrialFailureReason:
     """Represents why a trial was deemed ineligible."""
 
-    type: str  # "title" or "inclusion_criterion"
+    type: str  # "title", "inclusion_criterion", or "exclusion_criterion"
     message: str  # General failure message for title failures
-    # Fields specific to inclusion criterion failures
+    # Fields specific to inclusion/exclusion criterion failures
     failed_condition: Optional[str] = None
     failed_criterion: Optional[str] = None
     failure_details: Optional[str] = None
@@ -1399,6 +1399,262 @@ Inclusion Criteria Text:
 
         return inclusion_text
 
+    def _extract_exclusion_criteria(self, criteria: Optional[str]) -> str:
+        """Extract exclusion criteria from the full criteria text.
+
+        Args:
+            criteria: Full criteria text containing both inclusion and exclusion criteria
+
+        Returns:
+            str: The exclusion criteria section, or empty string if not found
+        """
+        # Handle None case safely for logging
+        criteria_brief = str(criteria)[:50] if criteria is not None else "None"
+
+        if not criteria or "Exclusion Criteria" not in criteria:
+            logger.info(
+                f"GPTTrialFilter._extract_exclusion_criteria: No 'Exclusion Criteria' section found in criteria. Brief: {criteria_brief}..."
+            )
+            return ""
+
+        # Split by "Exclusion Criteria" and take everything after it
+        exclusion_text = criteria.split("Exclusion Criteria")[1].strip()
+
+        # Remove any leading colon or whitespace
+        if exclusion_text.startswith(":"):
+            exclusion_text = exclusion_text[1:].strip()
+
+        return exclusion_text
+
+    def _split_exclusion_criteria(
+        self, criteria: str, refresh_cache: bool = False
+    ) -> List[str]:
+        """
+        Split the exclusion criteria into individual statements using GPT.
+
+        Args:
+            criteria (str): The exclusion criteria to split
+            refresh_cache (bool): Whether to refresh the cache
+
+        Returns:
+            A list of strings containing the individual exclusion criteria
+        """
+        # Validate input
+        if not criteria or not criteria.strip():
+            logger.warning("_split_exclusion_criteria: Empty or None criteria provided")
+            return []
+
+        prompt = f"""You are analyzing clinical trial exclusion criteria text.
+
+Split this text into individual exclusion criterion statements. Preserve logical structure and relationships between criteria.
+
+Return ONLY valid JSON with criteria list.
+
+Example original criteria:
+"Exclusion Criteria:
+- History of severe allergic reactions to any component of the study drug
+- Active autoimmune disease requiring systemic treatment
+- Known HIV infection or active hepatitis B/C
+- Pregnancy or breastfeeding"
+
+Example response:
+{{"criteria": [
+    "History of severe allergic reactions to any component of the study drug",
+    "Active autoimmune disease requiring systemic treatment",
+    "Known HIV infection or active hepatitis B/C",
+    "Pregnancy or breastfeeding"
+]}}
+
+Exclusion Criteria Text:
+{criteria}"""
+
+        response_content, _ = self._call_gpt(
+            prompt,
+            "You are a clinical trial analyst focused on parsing exclusion criteria.",
+            model="gpt-4.1-mini",
+            temperature=0.0,
+            refresh_cache=refresh_cache,
+        )
+        try:
+            result = self._parse_gpt_response(response_content)
+        except json.JSONDecodeError:
+            logger.error(
+                f"GPTTrialFilter.split_exclusion_criteria: Failed to parse GPT response. Response was:\n{response_content}\nPrompt was:\n{prompt}"
+            )
+            raise
+        logger.info(
+            f"GPTTrialFilter.split_exclusion_criteria: original criteria: {criteria}"
+        )
+        logger.info(f"GPTTrialFilter.split_exclusion_criteria: result: {result}")
+        return result.get("criteria", [])
+
+    def _evaluate_exclusion_criterion(
+        self, criterion: str, conditions: List[str], title: str
+    ) -> Tuple[float, str, float]:
+        """
+        Evaluate an exclusion criterion against multiple conditions at once.
+        Uses GPT-4 for accurate evaluation.
+
+        For exclusion criteria, we check if the patient MEETS the exclusion criterion.
+        If they do, they should be EXCLUDED from the trial (probability = 0.0).
+        If they don't meet the exclusion criterion, they can continue (probability = 1.0).
+
+        Args:
+            criterion (str): The exclusion criterion to evaluate
+            conditions (List[str]): The patient conditions to evaluate
+            title (str): The study title
+
+        Returns:
+            A tuple containing:
+                - The eligibility probability (1.0 if patient does NOT meet exclusion criterion, 0.0 if patient MEETS it)
+                - The reason for the evaluation
+                - The cost
+        """
+        prompt = f"""You are evaluating a clinical trial EXCLUSION criterion against multiple patient conditions.
+
+IMPORTANT: Exclusion criteria specify conditions that would DISQUALIFY a patient from participating in the trial.
+
+Please determine if this EXCLUSION criterion applies to the patient based on any of the provided conditions.
+Choose the MOST RELEVANT condition and evaluate the criterion against it.
+
+If the patient MEETS the exclusion criterion (i.e., they have the condition that would exclude them), set exclusion_applies to 1.0.
+If the patient does NOT meet the exclusion criterion (i.e., they don't have the disqualifying condition), set exclusion_applies to 0.0.
+If the conditions don't provide enough information to determine whether the exclusion applies, set exclusion_applies to 0.0 (benefit of the doubt).
+
+IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
+{{"reason": "your explanation here including which condition was most relevant",
+  "exclusion_applies": 0.0 or 1.0}}
+
+Do not include any other text outside the JSON object.
+
+Example response 1 (patient is excluded):
+{{"reason": "Condition X indicates the patient has active hepatitis B, which meets the exclusion criterion for active viral hepatitis.", "exclusion_applies": 1.0}}
+
+Example response 2 (patient is not excluded):
+{{"reason": "None of the conditions indicate the patient has a history of organ transplant, so this exclusion criterion does not apply.", "exclusion_applies": 0.0}}
+
+Example response 3 (insufficient information):
+{{"reason": "The patient conditions do not mention HIV status, so we cannot determine if this exclusion applies. Giving benefit of the doubt.", "exclusion_applies": 0.0}}
+
+Study Title:
+{title}
+
+Exclusion Criterion:
+{criterion}
+
+Patient Conditions to Evaluate:
+{json.dumps(conditions, indent=2)}"""
+
+        try:
+            # Try with retries first
+            response_content: str | dict[str, Any]
+            cost: float
+            response_content, cost = self._call_gpt_with_retry(
+                prompt,
+                "You are a clinical trial analyst focused on evaluating exclusion criteria.",
+                model="gpt-4.1-mini",
+            )
+            logger.info(
+                f"GPTTrialFilter.evaluate_exclusion_criterion: Response content: {response_content}"
+            )
+
+            # If response_content is already a dict, use it directly
+            if isinstance(response_content, dict):
+                result = response_content
+            else:
+                result = self._parse_gpt_response(response_content)
+
+            # Extract exclusion_applies and reason
+            exclusion_applies = result.get("exclusion_applies", 0.0)
+            reason = result.get("reason", "No reason provided")
+
+            # Convert exclusion_applies to eligibility probability
+            # If exclusion applies (1.0), eligibility is 0.0
+            # If exclusion doesn't apply (0.0), eligibility is 1.0
+            eligibility = 1.0 - float(exclusion_applies)
+
+            logger.info(
+                f"GPTTrialFilter.evaluate_exclusion_criterion: Evaluated criterion: {criterion} for conditions: {conditions}"
+                + json.dumps(
+                    {
+                        "criterion": criterion,
+                        "conditions": conditions,
+                        "exclusion_applies": exclusion_applies,
+                        "eligibility": eligibility,
+                        "reason": reason,
+                        "cost": cost,
+                    },
+                    indent=2,
+                )
+            )
+            return eligibility, reason, cost
+        except Exception as e:
+            logger.error(
+                f"GPTTrialFilter.evaluate_exclusion_criterion: Failed to evaluate criterion: {str(e)}"
+            )
+            raise
+
+    def _evaluate_exclusion_criteria(
+        self, exclusion_criteria: List[str], conditions: List[str], trial_title: str
+    ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
+        """
+        Evaluate a list of exclusion criteria against given conditions.
+
+        For exclusion criteria, if ANY criterion is met by the patient, they are excluded.
+
+        Args:
+            exclusion_criteria: List of exclusion criteria to evaluate
+            conditions: List of conditions to check against
+            trial_title: Title of the clinical trial
+
+        Returns:
+            Tuple of (
+                overall_probability: float (0.0 if any exclusion criterion is met, 1.0 otherwise),
+                failure_reason: Optional[Tuple[str, str, str]],  # (condition, criterion, reason) if failed
+                total_cost: float
+            )
+        """
+        total_cost = 0.0
+        failure_reason: Optional[Tuple[str, str, str]] = None
+
+        for criterion in exclusion_criteria:
+            logger.info(
+                f"GPTTrialFilter.evaluate_exclusion_criteria: Evaluating exclusion criterion: {criterion}"
+            )
+
+            # Choose the most relevant conditions for this exclusion criterion
+            need_to_note_list: List[str] = []
+            most_relevant_conditions: List[str] = self._choose_most_relevant_conditions(
+                criterion,
+                conditions,
+                trial_title,
+                need_to_note_list=need_to_note_list,
+            )
+
+            # Evaluate the exclusion criterion
+            probability: float
+            reason: str
+            cost: float
+            probability, reason, cost = self._evaluate_exclusion_criterion(
+                criterion, most_relevant_conditions, trial_title
+            )
+            total_cost += cost
+
+            # If the exclusion criterion is met (probability = 0.0), the patient is excluded
+            if probability <= 0.0:
+                failure_reason = (
+                    ", ".join(most_relevant_conditions),
+                    criterion,
+                    reason,
+                )
+                logger.info(
+                    f"GPTTrialFilter.evaluate_exclusion_criteria: Patient meets exclusion criterion: {criterion}"
+                )
+                return 0.0, failure_reason, total_cost
+
+        # If no exclusion criteria were met, patient passes
+        return 1.0, None, total_cost
+
     def _evaluate_branch(
         self, branch: str, conditions: List[str], trial_title: str
     ) -> Tuple[float, Dict[str, CriterionEvaluation], float]:
@@ -1775,7 +2031,7 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
         refresh_cache: bool = False,
     ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
-        Evaluate a trial's eligibility based on title and inclusion criteria.
+        Evaluate a trial's eligibility based on title, inclusion criteria, and exclusion criteria.
 
         Args:
             trial: The clinical trial to evaluate
@@ -1804,7 +2060,7 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
             return False, title_cost, failure
 
-                # 2) Extract and split the inclusion criteria
+        # 2) Extract and split the inclusion criteria
         try:
             # Log the criteria for debugging
             if not trial.eligibility.criteria:
@@ -1850,14 +2106,13 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             return False, title_cost, failure
 
         # 3) Evaluate the inclusion criteria
-        inclusion_probability, inclusion_failure_reason, criteria_cost = (
+        inclusion_probability, inclusion_failure_reason, inclusion_cost = (
             self._evaluate_inclusion_criteria(
                 inclusion_criteria, conditions, trial.identification.brief_title
             )
         )
 
-        total_cost = title_cost + criteria_cost
-        overall_probability = title_probability * inclusion_probability
+        total_cost = title_cost + inclusion_cost
 
         # If it failed on an inclusion criterion
         if inclusion_failure_reason is not None:
@@ -1875,7 +2130,67 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
             return False, total_cost, failure
 
-        # If overall probability is zero or near zero but no explicit inclusion_failure_reason
+        # 4) Extract and evaluate exclusion criteria
+        exclusion_text: str = self._extract_exclusion_criteria(
+            trial.eligibility.criteria
+        )
+
+        if exclusion_text and exclusion_text.strip():
+            try:
+                exclusion_criteria: List[str] = self._split_exclusion_criteria(exclusion_text)
+                logger.info(
+                    json.dumps(
+                        {
+                            "message": "evaluate_trial: Split exclusion criteria",
+                            "trial_id": trial.identification.nct_id,
+                            "criteria_count": len(exclusion_criteria),
+                            "criteria": exclusion_criteria,
+                        },
+                        indent=2,
+                    )
+                )
+
+                # Evaluate exclusion criteria
+                exclusion_probability, exclusion_failure_reason, exclusion_cost = (
+                    self._evaluate_exclusion_criteria(
+                        exclusion_criteria, conditions, trial.identification.brief_title
+                    )
+                )
+
+                total_cost += exclusion_cost
+
+                # If it failed on an exclusion criterion (patient meets exclusion criterion)
+                if exclusion_failure_reason is not None:
+                    (condition_failed, criterion_failed, reason) = exclusion_failure_reason
+                    failure = TrialFailureReason(
+                        type="exclusion_criterion",
+                        message="Patient meets exclusion criterion",
+                        failed_condition=condition_failed,
+                        failed_criterion=criterion_failed,
+                        failure_details=reason,
+                    )
+                    logger.info(
+                        f"evaluate_trial: Trial {trial.identification.nct_id} failed "
+                        f"exclusion criteria evaluation - patient meets exclusion criterion"
+                    )
+                    return False, total_cost, failure
+
+            except Exception as e:
+                # Log but don't fail on exclusion criteria parsing errors
+                # This is to maintain backwards compatibility
+                logger.warning(
+                    f"evaluate_trial: Error processing exclusion criteria for "
+                    f"trial {trial.identification.nct_id}: {str(e)}. Continuing without exclusion filtering."
+                )
+        else:
+            logger.info(
+                f"evaluate_trial: No exclusion criteria found for trial {trial.identification.nct_id}"
+            )
+
+        # Calculate overall probability
+        overall_probability = title_probability * inclusion_probability
+
+        # If overall probability is zero or near zero but no explicit failure_reason
         if overall_probability <= 0.0:
             raise RuntimeError(
                 "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
