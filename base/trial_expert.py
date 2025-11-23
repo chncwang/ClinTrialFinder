@@ -1517,9 +1517,13 @@ IMPORTANT: Exclusion criteria specify conditions that would DISQUALIFY a patient
 Please determine if this EXCLUSION criterion applies to the patient based on any of the provided conditions.
 Choose the MOST RELEVANT condition and evaluate the criterion against it.
 
-If the patient MEETS the exclusion criterion (i.e., they have the condition that would exclude them), set exclusion_applies to 1.0.
-If the patient does NOT meet the exclusion criterion (i.e., they don't have the disqualifying condition), set exclusion_applies to 0.0.
-If the conditions don't provide enough information to determine whether the exclusion applies, set exclusion_applies to 0.0 (benefit of the doubt).
+CRITICAL GUIDANCE - Be very conservative when excluding patients:
+- ONLY set exclusion_applies to 1.0 if you are 100% certain the patient clearly and unambiguously meets the exclusion criterion based on explicitly documented conditions.
+- If there is ANY uncertainty, ambiguity, or lack of explicit information → set exclusion_applies to 0.0 (benefit of the doubt).
+- If the exclusion criterion is subjective (e.g., "incapacitated", "poor performance status") and the patient conditions don't explicitly state this → set exclusion_applies to 0.0.
+- If you need to make assumptions or inferences to conclude the exclusion applies → set exclusion_applies to 0.0.
+
+Only exclude when the evidence is clear, explicit, and unambiguous.
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
 {{"reason": "your explanation here including which condition was most relevant",
