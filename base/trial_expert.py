@@ -758,6 +758,18 @@ Focus only on evaluating this single condition, even though the patient may have
 If this condition does not provide information related to the criterion, consider it as fully compatible (probability 1.0).
 If the inclusion criterion represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
 
+CRITICAL INSTRUCTION FOR MALIGNANCY-RELATED CRITERIA:
+
+When evaluating criteria that mention "no history of prior or current malignancy", "no other malignancy", "no second cancer", "no concurrent malignancy", or similar language:
+
+1. This criterion ONLY excludes patients with OTHER/CONCURRENT cancers (i.e., a second different cancer), NOT the primary cancer being treated in this trial.
+
+2. The cancer mentioned in the study title is the TARGET DISEASE being treated - it should NEVER be considered as an exclusion reason for malignancy criteria.
+
+3. Only exclude if patient condition explicitly mentions ADDITIONAL cancers beyond the trial's target disease.
+
+4. Default assumption: Unless explicitly stated otherwise, assume the patient ONLY has the primary cancer related to this trial and NO other malignancies.
+
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
 {{"reason": "your explanation here", "suitability_probability": 0.0-1.0}}
 
@@ -879,6 +891,25 @@ Please determine if this inclusion criterion aligns with any of the provided con
 Choose the BEST MATCHING condition and evaluate the criterion against it.
 If none of the conditions provide information related to the criterion, consider it as fully compatible (probability 1.0).
 If the inclusion criterion represents a willingness to participate (e.g. "willing to undergo procedure X"), consider it as suitable.
+
+CRITICAL INSTRUCTION FOR MALIGNANCY-RELATED CRITERIA:
+
+When evaluating criteria that mention "no history of prior or current malignancy", "no other malignancy", "no second cancer", "no concurrent malignancy", or similar language:
+
+1. This criterion ONLY excludes patients with OTHER/CONCURRENT cancers (i.e., a second different cancer), NOT the primary cancer being treated in this trial.
+
+2. The cancer mentioned in the study title is the TARGET DISEASE being treated - it should NEVER be considered as an exclusion reason for malignancy criteria.
+
+3. Examples:
+   ✓ CORRECT: A colorectal cancer trial with criterion "no other malignancy" should INCLUDE patients whose only cancer is colorectal cancer (the trial's target disease).
+   ✗ WRONG: Excluding colorectal cancer patients because they have "current malignancy that requires treatment" (the colorectal cancer IS the trial's target disease).
+
+4. Only exclude if patient has ADDITIONAL cancers beyond the trial's target disease:
+   - Example excluding case: Colorectal cancer patient who ALSO has active lung cancer
+   - Example excluding case: Colorectal cancer patient with prior breast cancer requiring ongoing treatment
+   - Example including case: Colorectal cancer patient with ONLY colorectal cancer (no other malignancies)
+
+5. Default assumption: Unless explicitly stated in patient conditions, assume the patient ONLY has the primary cancer related to this trial and NO other malignancies.
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
 {{"reason": "your explanation here including which condition was most relevant",
