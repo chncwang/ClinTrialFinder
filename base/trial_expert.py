@@ -1525,6 +1525,45 @@ CRITICAL GUIDANCE - Be very conservative when excluding patients:
 
 Only exclude when the evidence is clear, explicit, and unambiguous.
 
+TEMPORAL REASONING - Distinguish past vs. current conditions:
+- PAST/HISTORICAL: "recent", "history of", "prior", "lost to follow-up", "required X until [date]", past tense verbs
+  → These indicate resolved or historical conditions. Do NOT exclude unless the criterion explicitly addresses historical conditions.
+- ACTIVE/CURRENT: "currently", "ongoing", "active", "admitted with", present tense verbs, "requiring" (present tense)
+  → Only these indicate current active conditions that should trigger exclusion.
+- AMBIGUOUS: If temporal status is unclear (e.g., "recent admission" without clear resolution), give benefit of doubt → set exclusion_applies to 0.0.
+
+Examples:
+- "Required pressors until [date]" → PAST (resolved), do not exclude
+- "Recent admission for bleeding on [date]" + exclusion criterion "active bleeding" → PAST admission ≠ active bleeding, do not exclude
+- "Currently on mechanical ventilation" + exclusion "requiring ventilation" → ACTIVE, consider excluding
+- "Lost to follow-up" → PAST status, do not exclude for compliance criteria
+
+SYMPTOM-DISEASE ALIGNMENT - Check if exclusion condition is the disease being studied:
+Before excluding, compare the exclusion criterion with the trial's target disease/condition (from title):
+- If the exclusion symptom/condition IS the primary disease being studied → Strong benefit of doubt, likely set exclusion_applies to 0.0
+  Examples:
+  * Cholera trial + "diarrhea" exclusion: The trial studies cholera, which causes diarrhea. Consider if trial is treatment (may target acute cases) vs prevention (may exclude acute cases)
+  * BPH trial + "urinary retention" exclusion: BPH causes urinary retention. If it's a treatment trial, retention may be the target complication
+  * Sickle cell trial + "recent crisis" exclusion: For observational/imaging trials, they may specifically want to study crisis presentations
+- EXCEPTION: Prevention/vaccine trials typically exclude acutely ill patients even if they have the target disease
+
+TRIAL CONTEXT AWARENESS - Consider trial objectives:
+Look at the trial title to infer trial type and adjust exclusion interpretation:
+- OBSERVATIONAL/IMAGING/BIOMARKER trials (titles with "imaging", "biomarker", "assessment", "evaluation", "accuracy"):
+  → Often want to observe disease states including acute presentations. Be more permissive with disease-related exclusions.
+- TREATMENT/INTERVENTION trials (titles with "therapy", "treatment", "ablation", "surgery"):
+  → May specifically target patients with the complication/symptom. Check if exclusion symptom is what's being treated.
+- PREVENTION/VACCINE trials (titles with "vaccine", "prevention", "prophylaxis"):
+  → Typically exclude acutely ill patients. Be stricter with acute illness exclusions.
+- POST-TRANSPLANT/POST-PROCEDURE trials (titles with "post-", "after", "following"):
+  → Check if patient's transplant/procedure history matches what the trial is studying
+
+LAB VALUE INTERPRETATION:
+- Do NOT interpret abnormal lab values as exclusionary "disorders" unless the exclusion criterion explicitly mentions that specific lab or disorder
+- Example: WBC 135K should not trigger "hematological disorder" exclusion for an unrelated trial (e.g., BPH trial) unless hematological disorders are explicitly excluded
+
+If in doubt about any of these considerations, default to exclusion_applies = 0.0 (benefit of the doubt).
+
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
 {{"reason": "your explanation here including which condition was most relevant",
   "exclusion_applies": 0.0 or 1.0}}
