@@ -1525,11 +1525,21 @@ CRITICAL GUIDANCE - Be very conservative when excluding patients:
 
 Only exclude when the evidence is clear, explicit, and unambiguous.
 
-TEMPORAL REASONING - Distinguish past vs. current conditions:
+TEMPORAL REASONING - Distinguish past vs. current conditions AND acute vs. chronic:
 - PAST/HISTORICAL: "recent", "history of", "prior", "lost to follow-up", "required X until [date]", past tense verbs
   → These indicate resolved or historical conditions. Do NOT exclude unless the criterion explicitly addresses historical conditions.
 - ACTIVE/CURRENT: "currently", "ongoing", "active", "admitted with", present tense verbs, "requiring" (present tense)
   → Only these indicate current active conditions that should trigger exclusion.
+- ACUTE vs CHRONIC (CRITICAL - New Guidance):
+  * ACUTE symptoms: "worsening X for 2 days", "X for 3 days", "acute X", "new onset X", "recent X" with short duration (hours/days)
+    → These are TEMPORARY symptoms, NOT chronic conditions
+  * CHRONIC conditions: "unable to X", "cannot X", "chronic X", "permanent X", "requires X" (long-term), no improvement over weeks/months
+    → These are PERMANENT or long-standing conditions
+  * EXCLUSION CRITERIA INTERPRETATION:
+    - If exclusion says "unable to" or "cannot" → it typically means CHRONIC/PERMANENT, not acute symptoms
+    - Example: "Unable to swallow tablets" means chronic dysphagia, NOT "worsening dysphagia for 2 days"
+    - Example: "Cannot tolerate oral medications" means permanent intolerance, NOT temporary nausea
+    - If patient has ACUTE symptom (duration in days) but exclusion requires CHRONIC condition → do NOT exclude
 - AMBIGUOUS: If temporal status is unclear (e.g., "recent admission" without clear resolution), give benefit of doubt → set exclusion_applies to 0.0.
 
 Examples:
@@ -1537,6 +1547,8 @@ Examples:
 - "Recent admission for bleeding on [date]" + exclusion criterion "active bleeding" → PAST admission ≠ active bleeding, do not exclude
 - "Currently on mechanical ventilation" + exclusion "requiring ventilation" → ACTIVE, consider excluding
 - "Lost to follow-up" → PAST status, do not exclude for compliance criteria
+- "Worsening dysphagia for 2 days" + exclusion "unable to swallow tablets" → ACUTE symptom ≠ CHRONIC inability, do NOT exclude
+- "Chronic dysphagia requiring feeding tube" + exclusion "unable to swallow tablets" → CHRONIC condition, consider excluding
 
 SYMPTOM-DISEASE ALIGNMENT - Check if exclusion condition is the disease being studied:
 Before excluding, compare the exclusion criterion with the trial's target disease/condition (from title):
@@ -1551,8 +1563,17 @@ TRIAL CONTEXT AWARENESS - Consider trial objectives:
 Look at the trial title to infer trial type and adjust exclusion interpretation:
 - OBSERVATIONAL/IMAGING/BIOMARKER trials (titles with "imaging", "biomarker", "assessment", "evaluation", "accuracy"):
   → Often want to observe disease states including acute presentations. Be more permissive with disease-related exclusions.
-- TREATMENT/INTERVENTION trials (titles with "therapy", "treatment", "ablation", "surgery"):
-  → May specifically target patients with the complication/symptom. Check if exclusion symptom is what's being treated.
+- TREATMENT/INTERVENTION trials (titles with "therapy", "treatment", "ablation", "surgery", "resection") - CRITICAL GUIDANCE:
+  → May specifically target patients WITH the complication/symptom being treated
+  → If exclusion symptom matches what the treatment addresses, check if it's ACUTE (treatment indication) vs CHRONIC (contraindication):
+    * ACUTE symptom in past days/weeks = likely WHY patient needs the treatment → do NOT exclude
+    * CHRONIC/PERMANENT condition requiring different management = likely contraindication → consider excluding
+  → Examples:
+    * BPH treatment trial + "acute urinary retention in past 2 days" → Patient needs BPH procedure, do NOT exclude
+    * BPH treatment trial + "permanent indwelling catheter for years" → Chronic management, may exclude
+    * Stroke treatment trial + "acute stroke within 24 hours" → Treatment window, do NOT exclude
+    * Cardiac ablation + "acute arrhythmia episode" → Treatment indication, do NOT exclude
+  → Key principle: Treatment trials often ENROLL patients experiencing the acute problem the treatment solves
 - PREVENTION/VACCINE trials (titles with "vaccine", "prevention", "prophylaxis"):
   → Typically exclude acutely ill patients. Be stricter with acute illness exclusions.
 - POST-TRANSPLANT/POST-PROCEDURE trials (titles with "post-", "after", "following"):
