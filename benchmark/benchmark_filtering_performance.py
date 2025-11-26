@@ -967,7 +967,7 @@ class FilteringBenchmark:
 
         return relevant_trials
 
-    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False) -> List[TrialEvaluationResult]:
+    def evaluate_filtering_performance(self, patient: Patient, gpt_filter: GPTTrialFilter, title_only: bool = False, specific_trial_id: Optional[str] = None) -> List[TrialEvaluationResult]:
         """
         Evaluate filtering performance for a single patient.
 
@@ -975,6 +975,7 @@ class FilteringBenchmark:
             patient: Patient object
             gpt_filter: GPTTrialFilter instance for trial filtering
             title_only: Whether to use title-only evaluation instead of full trial evaluation
+            specific_trial_id: If provided, only evaluate this specific trial ID
 
         Returns:
             List of trial evaluation results for this patient
@@ -1002,7 +1003,14 @@ class FilteringBenchmark:
                 logger.info(f"  - {condition}")
 
             # Get trials for this specific patient (either all trials or allocated trials if max-trials is specified)
-            if hasattr(self, 'patient_trial_mapping') and self.patient_trial_mapping:
+            if specific_trial_id:
+                # Only evaluate the specific trial requested
+                if specific_trial_id not in self.trials:
+                    logger.error(f"Specified trial ID {specific_trial_id} not found in available trials")
+                    return []
+                all_trial_ids = [specific_trial_id]
+                logger.info(f"Evaluating specific trial {specific_trial_id} for patient {patient_id}")
+            elif hasattr(self, 'patient_trial_mapping') and self.patient_trial_mapping:
                 # Use allocated trials for this patient
                 all_trial_ids = list(self.patient_trial_mapping.get(patient_id, set()))
                 logger.info(f"Evaluating {len(all_trial_ids)} allocated trials for patient {patient_id}")
@@ -1094,7 +1102,7 @@ class FilteringBenchmark:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
             raise e
 
-    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None, title_only: bool = False) -> Dict[str, Any]:
+    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None, title_only: bool = False, specific_trial_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Run the complete benchmark.
 
@@ -1103,6 +1111,7 @@ class FilteringBenchmark:
             max_patients: Maximum number of patients to process (for testing)
             output_path: Path to the output file for error case export
             title_only: Whether to use title-only evaluation instead of full trial evaluation
+            specific_trial_id: If provided, only evaluate this specific trial ID (must be used with single patient)
         Returns:
             Dictionary with overall benchmark results
         """
@@ -1169,7 +1178,7 @@ class FilteringBenchmark:
                 logger.info(f"Conditions: {conditions} for patient medical record: {patient.medical_record}")
 
                 start_time = time.time()
-                patient_trial_results: List[TrialEvaluationResult] = self.evaluate_filtering_performance(patient, gpt_filter, title_only)
+                patient_trial_results: List[TrialEvaluationResult] = self.evaluate_filtering_performance(patient, gpt_filter, title_only, specific_trial_id)
 
                 if patient_trial_results:
                     all_trial_results.extend(patient_trial_results)
@@ -1718,6 +1727,10 @@ def main():
         help="Run benchmark only on a specific patient ID"
     )
     parser.add_argument(
+        "--trial-id",
+        help="Run benchmark only on a specific trial ID (must be used with --patient-id)"
+    )
+    parser.add_argument(
         "--save-coverage",
         action="store_true",
         help="Save coverage statistics to a separate file"
@@ -2142,7 +2155,7 @@ def main():
     gpt_client = benchmark.gpt_client
     gpt_filter = GPTTrialFilter(gpt_client, subgroup_aware=args.subgroup_aware)
 
-    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only)
+    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only, args.trial_id)
 
     # Save results
     with open(output_path, 'w') as f:
