@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple, Union
@@ -10,6 +11,51 @@ from openai import OpenAI
 
 from base.pricing import AITokenPricing
 from base.prompt_cache import PromptCache
+
+
+def sanitize_text_for_gpt(text: str) -> str:
+    """
+    Sanitize text before sending to GPT API to prevent encoding issues.
+
+    Replaces problematic Unicode characters with ASCII equivalents.
+    This fixes issues where characters like '×' (U+00D7) cause API response corruption.
+
+    Args:
+        text: Input text that may contain problematic Unicode characters
+
+    Returns:
+        Sanitized text safe for GPT API
+    """
+    if not text:
+        return text
+
+    # Common Unicode to ASCII replacements
+    replacements = {
+        "\u00d7": "x",       # × (multiplication sign) -> x
+        "\u00f7": "/",       # ÷ (division sign) -> /
+        "\u2013": "-",       # – (en dash) -> -
+        "\u2014": "--",      # — (em dash) -> --
+        "\u2018": "'",       # ' (left single quote) -> '
+        "\u2019": "'",       # ' (right single quote) -> '
+        "\u201c": '"',       # " (left double quote) -> "
+        "\u201d": '"',       # " (right double quote) -> "
+        "\u2026": "...",     # … (ellipsis) -> ...
+        "\u00b0": " degrees",  # ° (degree sign) -> degrees
+        "\u00b1": "+/-",     # ± (plus-minus) -> +/-
+        "\u2264": "<=",      # ≤ (less than or equal) -> <=
+        "\u2265": ">=",      # ≥ (greater than or equal) -> >=
+        "\u03bc": "u",       # μ (mu) -> u (for units like μg)
+        "\u00b5": "u",       # µ (micro sign) -> u
+    }
+
+    result = text
+    for unicode_char, ascii_replacement in replacements.items():
+        result = result.replace(unicode_char, ascii_replacement)
+
+    # Remove any remaining non-printable characters (except newlines, tabs, and common whitespace)
+    result = re.sub(r"[^\x20-\x7E\n\t\r]", "", result)
+
+    return result
 
 
 class GPTClient:
@@ -86,6 +132,10 @@ class GPTClient:
         # Validate that temperature is not set when model is gpt-5
         if model.startswith("gpt-5") and temperature is not None:
             raise ValueError("Temperature is not supported for gpt-5 models")
+
+        # Sanitize inputs to prevent Unicode encoding issues with GPT API
+        prompt = sanitize_text_for_gpt(prompt)
+        system_role = sanitize_text_for_gpt(system_role)
 
         start_time = time.time()
         temp = temperature if temperature is not None else self.default_temperature
