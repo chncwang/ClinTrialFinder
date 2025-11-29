@@ -1614,6 +1614,29 @@ LAB VALUE INTERPRETATION:
 - Do NOT interpret abnormal lab values as exclusionary "disorders" unless the exclusion criterion explicitly mentions that specific lab or disorder
 - Example: WBC 135K should not trigger "hematological disorder" exclusion for an unrelated trial (e.g., BPH trial) unless hematological disorders are explicitly excluded
 
+CRITICAL: "OTHER CANCERS" / "OTHER MALIGNANCIES" INTERPRETATION:
+When evaluating exclusion criteria that mention "other cancers", "other malignancies", "second cancer", "concurrent malignancy", or similar:
+- The cancer mentioned in the study title is the TARGET DISEASE being treated
+- The target disease is NOT "another cancer" - it is THE cancer the trial is designed to treat
+- Only exclude if patient has ADDITIONAL cancers BEYOND the trial's target disease
+- Examples:
+  * NPC trial + "other cancers within 3 years" exclusion: NPC is the target disease, NOT "another cancer". Do NOT exclude.
+  * NPC trial + patient also has lung cancer: This IS "another cancer". Consider excluding.
+  * Colorectal cancer trial + "no other malignancy" exclusion: Colorectal cancer is the target. Do NOT exclude for having colorectal cancer.
+- Default assumption: Patient ONLY has the primary cancer being studied unless other cancers are explicitly documented.
+
+TREATMENT-FREE INTERVAL / WASHOUT PERIOD CALCULATION:
+When exclusion criteria specify time-based requirements (e.g., "within X weeks", "within X days"):
+- Compare the criterion's time requirement against patient's documented treatment end dates
+- If patient's last treatment ended LONGER AGO than the washout period → do NOT exclude
+- Examples:
+  * Exclusion: "anti-tumor therapy within 4 weeks" + Patient: "Docetaxel completed March 2025" + Current: November 2025
+    → 8+ months since treatment ended, far exceeds 4-week requirement → do NOT exclude
+  * Exclusion: "immunotherapy within 14 days" + Patient: "Toripalimab stopped September 2024" + Current: November 2025
+    → 14+ months since stopped, far exceeds 14-day requirement → do NOT exclude
+- Key: Focus on WHEN treatment ENDED, not when it started
+- If no treatment end date specified, give benefit of doubt if treatment clearly in the past
+
 If in doubt about any of these considerations, default to exclusion_applies = 0.0 (benefit of the doubt).
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
