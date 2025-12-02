@@ -225,15 +225,15 @@ def extract_conditions_from_content(
                 "Given the above record and the current date of 2023-12-01, the result should be:\n"
                 "[\n"
                 '  "65-year-old female",\n'
-                '  "Type 2 Diabetes Mellitus diagnosed 13 years ago, managed with Metformin",\n'
-                '  "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, currently on chemotherapy",\n'
+                '  "Type 2 Diabetes Mellitus diagnosed 13 years ago, Metformin started 13 years ago, currently ongoing",\n'
+                '  "Non-small cell lung cancer (Stage 3) diagnosed 8 months ago, chemotherapy cycle 4 started recently, currently ongoing",\n'
                 '  "Liver metastasis detected 6 months ago, stable on recent imaging",\n'
-                '  "Hypertension, well-controlled on Lisinopril",\n'
+                '  "Hypertension, Lisinopril started previously, currently ongoing and well-controlled",\n'
                 '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
-                '  "Myocardial infarction 4 years ago, treated with stent placement",\n'
-                '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
-                '  "Hypothyroidism, on levothyroxine",\n'
-                '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
+                '  "Myocardial infarction 4 years ago, stent placement completed 4 years ago",\n'
+                '  "Osteoarthritis of the right knee, NSAIDs used as needed",\n'
+                '  "Hypothyroidism, levothyroxine started previously, currently ongoing",\n'
+                '  "COPD with history of 2 exacerbations in the past year, albuterol inhaler used as needed"\n'
                 "]\n\n"
             )
             time_guideline = "4. Use relative time references (e.g., '2 years ago' instead of '2021')\n"
@@ -242,15 +242,15 @@ def extract_conditions_from_content(
                 "Given the above record, the result should be:\n"
                 "[\n"
                 '  "65-year-old female",\n'
-                '  "Type 2 Diabetes Mellitus diagnosed in 2010, currently managed with Metformin",\n'
-                '  "Non-small cell lung cancer (Stage 3) diagnosed in April 2023, currently on chemotherapy",\n'
+                '  "Type 2 Diabetes Mellitus diagnosed in 2010, Metformin started in 2010, currently ongoing",\n'
+                '  "Non-small cell lung cancer (Stage 3) diagnosed in April 2023, chemotherapy cycle 4 started recently, currently ongoing",\n'
                 '  "Liver metastasis detected in June 2023, stable on recent imaging",\n'
-                '  "Hypertension, well-controlled on Lisinopril",\n'
+                '  "Hypertension, Lisinopril started previously, currently ongoing and well-controlled",\n'
                 '  "Chronic kidney disease (Stage 2) with eGFR 75 mL/min",\n'
-                '  "Myocardial infarction in 2019, treated with stent placement",\n'
-                '  "Osteoarthritis of the right knee, managed with NSAIDs as needed",\n'
-                '  "Hypothyroidism, on levothyroxine",\n'
-                '  "COPD with history of 2 exacerbations in the past year, uses albuterol inhaler"\n'
+                '  "Myocardial infarction in 2019, stent placement completed in 2019",\n'
+                '  "Osteoarthritis of the right knee, NSAIDs used as needed",\n'
+                '  "Hypothyroidism, levothyroxine started previously, currently ongoing",\n'
+                '  "COPD with history of 2 exacerbations in the past year, albuterol inhaler used as needed"\n'
                 "]\n\n"
             )
             time_guideline = "4. Keep all time references in their original format (years, dates, etc.)\n"
@@ -263,7 +263,12 @@ def extract_conditions_from_content(
             f"{time_guideline}"
             "5. Keep descriptions concise and medically relevant\n"
             "6. Include any other conditions relevant to trial eligibility\n"
-            "7. IMPORTANT: Only extract information that is explicitly stated in the clinical record. Do not make assumptions or inferences about missing information.\n\n"
+            "7. CRITICAL FOR TREATMENTS: ALL treatment entries MUST include temporal context (when started, when ended, or if ongoing). This is essential for evaluating exclusion criteria like 'concurrent treatment' or 'washout periods'. Use these formats:\n"
+            "   - Active treatments: '[Treatment] started [X time ago], currently ongoing'\n"
+            "   - Completed treatments: '[Treatment] from [start] to [end], completed [X time ago]'\n"
+            "   - Stopped treatments: '[Treatment] stopped [X time ago]' (include reason if known)\n"
+            "   - Example: Instead of 'Maintenance Tislelizumab + Anlotinib', write 'Maintenance Tislelizumab + Anlotinib from Aug 2023 to Mar 2024, stopped 8 months ago'\n"
+            "8. IMPORTANT: Only extract information that is explicitly stated in the clinical record. Do not make assumptions or inferences about missing information.\n\n"
             f"Clinical Record:\n{clinical_record}\n\n"
             "Return only the JSON array, without any additional text or explanation."
         )
