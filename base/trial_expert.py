@@ -2178,6 +2178,12 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
             return False, title_cost, failure
 
+        # Log when title check passes
+        logger.info(
+            f"GPTTrialFilter.evaluate_trial: Title check passed "
+            f"for {trial.identification.nct_id} | probability: {title_probability} | reason: {title_reason}"
+        )
+
         # 2) Extract and split the inclusion criteria
         try:
             # Log the criteria for debugging
