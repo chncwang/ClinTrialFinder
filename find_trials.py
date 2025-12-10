@@ -72,20 +72,20 @@ def read_clinical_record(clinical_record_input: str) -> str:
         return clinical_record_input
 
 
-def download_active_trials_for_disease(disease_name: str, output_file: str) -> bool:
+def download_active_trials_for_disease(disease_name: str, output_file: str) -> tuple[bool, str]:
     """
     Download active clinical trials for a given disease.
 
     Args:
         disease_name: The disease or condition to search for
-        output_file: Path to save the downloaded trials
+        output_file: Path to save the downloaded trials (ignored, actual path returned)
 
     Returns:
-        True if download succeeded, False otherwise
+        Tuple of (success, actual_file_path)
     """
     if not disease_name or disease_name in ("Invalid", "Error", "Unknown"):
         logger.error(f"Invalid disease name: {disease_name}")
-        return False
+        return False, ""
 
     try:
         logger.info(f"Downloading active trials for disease: {disease_name}")
@@ -109,14 +109,14 @@ def download_active_trials_for_disease(disease_name: str, output_file: str) -> b
 
         if success and result_file and os.path.exists(result_file) and os.path.getsize(result_file) > 0:
             logger.info(f"Successfully downloaded trials to {result_file}")
-            return True
+            return True, result_file
         else:
             logger.error(f"Failed to download trials for {disease_name}")
-            return False
+            return False, ""
 
     except Exception as e:
         logger.error(f"Error downloading trials: {str(e)}")
-        return False
+        return False, ""
 
 
 def filter_analyze_and_rank_trials(
@@ -356,13 +356,10 @@ Examples:
             sys.exit(1)
 
         # Download trials
-        temp_dir = tempfile.mkdtemp()
-        trials_file = os.path.join(temp_dir, "downloaded_trials.json")
-
         logger.info("Downloading trials from ClinicalTrials.gov...")
-        success = download_active_trials_for_disease(disease, trials_file)
+        success, trials_file = download_active_trials_for_disease(disease, None)
 
-        if not success:
+        if not success or not trials_file:
             logger.error("Failed to download trials")
             sys.exit(1)
 
