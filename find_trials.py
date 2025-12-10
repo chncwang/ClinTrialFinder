@@ -345,7 +345,7 @@ Examples:
 
         # Extract disease and conditions
         logger.info("Extracting disease and conditions from clinical record...")
-        disease, _ = extract_disease_from_record(clinical_record, gpt_client, avoid_specific_disease=True)
+        disease, _ = extract_disease_from_record(clinical_record, gpt_client)
         conditions = extract_conditions_from_content(clinical_record, gpt_client)
 
         logger.info(f"Identified disease: {disease}")
