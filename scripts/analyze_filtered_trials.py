@@ -52,31 +52,52 @@ def process_trials_file(
         for index, trial_dict in enumerate(trials, start=1):
             trial = ClinicalTrial(trial_dict)
             logger.info(f"Processing trial {index}/{len(trials)}: {trial}")
-            # Analyze the trial
-            recommendation: RecommendationLevel
-            reason: str
-            drug_analyses: dict[str, str]
-            cost: float
-            recommendation, reason, drug_analyses, cost = (
-                analyze_drugs_and_get_recommendation(
-                    clinical_record,
-                    trial=trial,
-                    perplexity_client=perplexity_client,
-                    gpt_client=gpt_client,
-                )
-            )
-            total_cost += cost
-            logger.info(f"Recommendation: {recommendation}")
-            logger.info(f"Reason: {reason}")
-            logger.info(f"Drug Analyses: {drug_analyses}")
-            logger.info(f"Cost for this trial: ${cost:.6f}")
-            logger.info(f"Total cost so far: ${total_cost:.6f}")
 
-            # Add recommendation, reason, and drug analysis to the trial data
-            trial_dict["recommendation_level"] = str(recommendation)
-            trial_dict["reason"] = reason
-            trial_dict["drug_analysis"] = drug_analyses
-            updated_trials.append(trial_dict)
+            try:
+                # Analyze the trial
+                recommendation: RecommendationLevel
+                reason: str
+                drug_analyses: dict[str, str]
+                cost: float
+                recommendation, reason, drug_analyses, cost = (
+                    analyze_drugs_and_get_recommendation(
+                        clinical_record,
+                        trial=trial,
+                        perplexity_client=perplexity_client,
+                        gpt_client=gpt_client,
+                    )
+                )
+                total_cost += cost
+                logger.info(f"Recommendation: {recommendation}")
+                logger.info(f"Reason: {reason}")
+                logger.info(f"Drug Analyses: {drug_analyses}")
+                logger.info(f"Cost for this trial: ${cost:.6f}")
+                logger.info(f"Total cost so far: ${total_cost:.6f}")
+
+                # Add recommendation, reason, and drug analysis to the trial data
+                trial_dict["recommendation_level"] = str(recommendation)
+                trial_dict["reason"] = reason
+                trial_dict["drug_analysis"] = drug_analyses
+                updated_trials.append(trial_dict)
+
+            except Exception as trial_error:
+                # Log the error but continue processing other trials
+                logger.error(
+                    f"Failed to analyze trial {trial.identification.nct_id} "
+                    f"({index}/{len(trials)}): {str(trial_error)}"
+                )
+                logger.error(f"Error details: {type(trial_error).__name__}")
+
+                # Assign NEUTRAL recommendation for failed trials
+                trial_dict["recommendation_level"] = str(RecommendationLevel.NEUTRAL)
+                trial_dict["reason"] = (
+                    f"Analysis failed due to error: {type(trial_error).__name__}. "
+                    f"This trial could not be properly evaluated."
+                )
+                trial_dict["drug_analysis"] = {}
+                updated_trials.append(trial_dict)
+
+                logger.info(f"Assigned NEUTRAL recommendation to failed trial, continuing with next trial...")
 
         # Write the analyzed trials to a new JSON file
         with open(output_filename, "w") as f:
