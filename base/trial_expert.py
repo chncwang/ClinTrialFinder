@@ -378,7 +378,7 @@ def analyze_drugs_and_get_recommendation(
     try:
         response_data: dict[str, str]
         correction_cost: float
-        response_data, correction_cost = parse_json_response(completion, dict[str, str], gpt_client, 0.0)
+        response_data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
         total_cost += correction_cost
 
         # Ensure required fields are present
