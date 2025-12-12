@@ -9,7 +9,7 @@ from base.utils import parse_json_response, read_input_file
 
 
 def extract_disease_from_record(
-    clinical_record: str, gpt_client: GPTClient
+    clinical_record: str, gpt_client: GPTClient, avoid_specific_disease: bool = False
 ) -> Tuple[str, float]:
     """
     Extracts the primary disease or condition from a clinical record using GPT.
@@ -17,15 +17,37 @@ def extract_disease_from_record(
     Parameters:
     - clinical_record (str): The patient's clinical record text
     - gpt_client (GPTClient): Initialized GPT client for making API calls
+    - avoid_specific_disease (bool): If True, extracts broader disease categories instead of specific disease names
 
     Returns:
     - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found) and the cost of the API call
     """
-    prompt = (
-        "Extract the primary disease or medical condition from the following clinical record. "
-        "Return only the disease name without any additional text or explanation.\n\n"
-        f"Clinical Record:\n{clinical_record}"
-    )
+    if avoid_specific_disease:
+        prompt = (
+            "Extract the primary disease or medical condition from the following clinical record. "
+            "However, instead of returning the specific disease name, return a broader disease category "
+            "that would include this condition. The category should be broader than the specific diagnosis "
+            "but still retain important clinical characteristics.\n\n"
+            "Examples of appropriate specificity levels:\n"
+            "- 'glioblastoma multiforme' → 'brain tumor' or 'central nervous system cancer'\n"
+            "- 'acute myeloid leukemia' → 'myeloid leukemia' or 'acute leukemia' (NOT just 'leukemia')\n"
+            "- 'non-small cell lung cancer' → 'lung cancer' or 'pulmonary carcinoma'\n"
+            "- 'type 1 diabetes mellitus' → 'type 1 diabetes' or 'insulin-dependent diabetes'\n"
+            "- 'clear cell renal cell carcinoma' → 'renal cell carcinoma' (broader than clear cell subtype)\n"
+            "- 'nasopharyngeal carcinoma' → 'nasopharyngeal carcinoma' (already appropriately specific)\n\n"
+            "IMPORTANT: The result should be broader than the specific diagnosis when possible, but retain key clinical characteristics. "
+            "For diseases that are already at an appropriate level of specificity (like 'nasopharyngeal carcinoma'), "
+            "you may return the same name. For very specific diagnoses (like 'acute myeloid leukemia'), "
+            "return a broader category like 'myeloid leukemia' or 'acute leukemia'.\n\n"
+            "Return only the broader disease category without any additional text or explanation.\n\n"
+            f"Clinical Record:\n{clinical_record}"
+        )
+    else:
+        prompt = (
+            "Extract the primary disease or medical condition from the following clinical record. "
+            "Return only the disease name without any additional text or explanation.\n\n"
+            f"Clinical Record:\n{clinical_record}"
+        )
 
     try:
         completion, cost = gpt_client.call_gpt(

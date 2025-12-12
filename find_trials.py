@@ -306,6 +306,11 @@ Examples:
         help='Perplexity API key (default: from PERPLEXITY_API_KEY environment variable)'
     )
     parser.add_argument(
+        '--broader-disease',
+        action='store_true',
+        help='Extract broader disease category instead of specific disease for trial download (e.g., "lung cancer" instead of "non-small cell lung cancer")'
+    )
+    parser.add_argument(
         '--verbose',
         action='store_true',
         help='Enable verbose logging'
@@ -345,8 +350,11 @@ Examples:
 
         # Extract disease and conditions
         logger.info("Extracting disease and conditions from clinical record...")
-        disease, _ = extract_disease_from_record(clinical_record, gpt_client)
+        disease, _ = extract_disease_from_record(clinical_record, gpt_client, args.broader_disease)
         conditions = extract_conditions_from_content(clinical_record, gpt_client)
+
+        if args.broader_disease:
+            logger.info(f"Using broader disease category for trial download: {disease}")
 
         logger.info(f"Identified disease: {disease}")
         logger.info(f"Identified conditions: {conditions}")
