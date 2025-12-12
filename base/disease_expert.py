@@ -78,12 +78,15 @@ def get_parent_disease_categories(
         "For the following specific disease or condition, provide a list of 2-3 broader disease categories "
         "that would include this condition. Focus on specific, clinically relevant categories, not overly general ones.\n\n"
         "For example:\n"
-        "- For 'glioblastoma multiforme', good categories would be 'brain tumor' and 'central nervous system cancer'\n"
-        "- For 'acute myeloid leukemia', good categories would be 'leukemia' and 'hematologic malignancy'\n\n"
+        "- For 'glioblastoma multiforme', good categories would be 'brain tumor', 'central nervous system cancer', and 'solid tumor'\n"
+        "- For 'acute myeloid leukemia', good categories would be 'leukemia' and 'hematologic malignancy'\n"
+        "- For 'nasopharyngeal carcinoma', good categories would be 'head and neck cancer' and 'solid tumor'\n\n"
+        "For solid tumors (carcinomas, sarcomas, etc.), include 'solid tumor' as one of the categories.\n"
+        "For hematologic malignancies (leukemias, lymphomas, etc.), do NOT include 'solid tumor'.\n\n"
         "AVOID overly general categories like 'cancer', 'malignancy', 'oncological disorder', 'disease', etc.\n\n"
         f"Disease: {disease_name}\n\n"
         "Return your response as a JSON object with a single key 'categories' containing an array of strings.\n"
-        'Example format: {"categories": ["specific category", "broader category"]}\n'
+        'Example format: {"categories": ["specific category", "broader category", "solid tumor"]}\n'
         "Do not include any explanations or additional text, just the JSON object."
     )
 
