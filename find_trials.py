@@ -32,13 +32,17 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from base.clinical_trial import ClinicalTrial, ClinicalTrialsParser
-from base.disease_expert import extract_conditions_from_content, extract_disease_from_record
+from base.disease_expert import (
+    extract_conditions_from_content,
+    extract_disease_from_record,
+    get_parent_disease_categories,
+)
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import GPTTrialFilter, process_trials_with_conditions
 from base.utils import trials_to_csv
 from scripts.analyze_filtered_trials import process_trials_file
-from scripts.download_trials import download_trials
+from scripts.download_trials import download_trials, load_trials_from_file, merge_trials
 from scripts.rank_trials import rank_trials
 
 # Configure logging
@@ -350,11 +354,8 @@ Examples:
 
         # Extract disease and conditions
         logger.info("Extracting disease and conditions from clinical record...")
-        disease, _ = extract_disease_from_record(clinical_record, gpt_client, args.broader_disease)
+        disease, _ = extract_disease_from_record(clinical_record, gpt_client, avoid_specific_disease=False)
         conditions = extract_conditions_from_content(clinical_record, gpt_client)
-
-        if args.broader_disease:
-            logger.info(f"Using broader disease category for trial download: {disease}")
 
         logger.info(f"Identified disease: {disease}")
         logger.info(f"Identified conditions: {conditions}")
@@ -363,13 +364,66 @@ Examples:
             logger.error("Unable to identify disease from clinical record")
             sys.exit(1)
 
-        # Download trials
+        # Download trials (with optional broader disease merging)
         logger.info("Downloading trials from ClinicalTrials.gov...")
-        success, trials_file = download_active_trials_for_disease(disease, None)
 
-        if not success or not trials_file:
-            logger.error("Failed to download trials")
-            sys.exit(1)
+        if args.broader_disease:
+            # Get broader disease categories
+            logger.info(f"Getting broader categories for: {disease}")
+            broader_categories, _ = get_parent_disease_categories(disease, gpt_client)
+
+            if not broader_categories or len(broader_categories) == 0:
+                logger.warning(f"No broader categories found for {disease}, downloading specific disease trials only")
+                success, trials_file = download_active_trials_for_disease(disease, None)
+                if not success or not trials_file:
+                    logger.error("Failed to download trials")
+                    sys.exit(1)
+            else:
+                broader_disease = broader_categories[0]
+                logger.info(f"Will merge trials from specific disease '{disease}' and broader category '{broader_disease}'")
+
+                # Download trials for specific disease
+                logger.info(f"Downloading trials for specific disease: {disease}")
+                success1, specific_file = download_active_trials_for_disease(disease, None)
+
+                # Download trials for broader category
+                logger.info(f"Downloading trials for broader category: {broader_disease}")
+                success2, broader_file = download_active_trials_for_disease(broader_disease, None)
+
+                if not success1 or not specific_file:
+                    logger.warning(f"Failed to download trials for specific disease {disease}, using broader category only")
+                    if not success2 or not broader_file:
+                        logger.error("Failed to download trials for both specific and broader categories")
+                        sys.exit(1)
+                    trials_file = broader_file
+                elif not success2 or not broader_file:
+                    logger.warning(f"Failed to download trials for broader category {broader_disease}, using specific disease only")
+                    trials_file = specific_file
+                else:
+                    # Merge the two trial sets
+                    logger.info("Merging trial sets...")
+                    specific_trials = load_trials_from_file(specific_file)
+                    broader_trials = load_trials_from_file(broader_file)
+
+                    logger.info(f"Loaded {len(specific_trials)} trials from specific disease file")
+                    logger.info(f"Loaded {len(broader_trials)} trials from broader category file")
+
+                    merged_trials = merge_trials([specific_trials, broader_trials])
+                    logger.info(f"After merging: {len(merged_trials)} unique trials")
+
+                    # Save merged trials to file
+                    merged_filename = f"{disease.replace(' ', '_').lower()}_with_broader_trials.json"
+                    trials_file = os.path.join(os.path.dirname(specific_file), merged_filename)
+
+                    with open(trials_file, "w") as f:
+                        json.dump(merged_trials, f, indent=2)
+                    logger.info(f"Saved merged trials to: {trials_file}")
+        else:
+            # Just download trials for specific disease
+            success, trials_file = download_active_trials_for_disease(disease, None)
+            if not success or not trials_file:
+                logger.error("Failed to download trials")
+                sys.exit(1)
 
         # Filter, analyze, and rank trials
         num_results, total_cost = filter_analyze_and_rank_trials(
