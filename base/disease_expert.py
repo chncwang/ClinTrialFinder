@@ -22,32 +22,11 @@ def extract_disease_from_record(
     Returns:
     - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found) and the cost of the API call
     """
-    if avoid_specific_disease:
-        prompt = (
-            "Extract the primary disease or medical condition from the following clinical record. "
-            "However, instead of returning the specific disease name, return a broader disease category "
-            "that would include this condition. The category should be broader than the specific diagnosis "
-            "but still retain important clinical characteristics.\n\n"
-            "Examples of appropriate specificity levels:\n"
-            "- 'glioblastoma multiforme' → 'brain tumor' or 'central nervous system cancer'\n"
-            "- 'acute myeloid leukemia' → 'myeloid leukemia' or 'acute leukemia' (NOT just 'leukemia')\n"
-            "- 'non-small cell lung cancer' → 'lung cancer' or 'pulmonary carcinoma'\n"
-            "- 'type 1 diabetes mellitus' → 'type 1 diabetes' or 'insulin-dependent diabetes'\n"
-            "- 'clear cell renal cell carcinoma' → 'renal cell carcinoma' (broader than clear cell subtype)\n"
-            "- 'nasopharyngeal carcinoma' → 'nasopharyngeal carcinoma' (already appropriately specific)\n\n"
-            "IMPORTANT: The result should be broader than the specific diagnosis when possible, but retain key clinical characteristics. "
-            "For diseases that are already at an appropriate level of specificity (like 'nasopharyngeal carcinoma'), "
-            "you may return the same name. For very specific diagnoses (like 'acute myeloid leukemia'), "
-            "return a broader category like 'myeloid leukemia' or 'acute leukemia'.\n\n"
-            "Return only the broader disease category without any additional text or explanation.\n\n"
-            f"Clinical Record:\n{clinical_record}"
-        )
-    else:
-        prompt = (
-            "Extract the primary disease or medical condition from the following clinical record. "
-            "Return only the disease name without any additional text or explanation.\n\n"
-            f"Clinical Record:\n{clinical_record}"
-        )
+    prompt = (
+        "Extract the primary disease or medical condition from the following clinical record. "
+        "Return only the disease name without any additional text or explanation.\n\n"
+        f"Clinical Record:\n{clinical_record}"
+    )
 
     try:
         completion, cost = gpt_client.call_gpt(
@@ -58,6 +37,19 @@ def extract_disease_from_record(
 
         disease_name = completion.strip()
         logger.info(f"Extracted disease name: {disease_name}")
+
+        # If broader disease is requested, get parent categories and use the first one
+        if avoid_specific_disease:
+            categories, broader_cost = get_parent_disease_categories(disease_name, gpt_client)
+            cost += broader_cost
+            if categories and len(categories) > 0:
+                broader_disease = categories[0]
+                logger.info(f"Using broader disease category: {broader_disease} (from specific: {disease_name})")
+                return broader_disease, cost
+            else:
+                logger.warning(f"No broader categories found for {disease_name}, using original disease")
+                return disease_name, cost
+
         return disease_name, cost
     except Exception as extraction_error:
         raise RuntimeError(f"Error extracting disease from clinical record: {extraction_error}")
