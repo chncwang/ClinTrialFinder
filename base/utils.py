@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import sys
@@ -188,3 +189,107 @@ def create_gpt_client(
         temperature=temperature,
         max_retries=max_retries,
     )
+
+
+def trials_to_csv(trials_data: List[Dict[str, Any]], output_path: str) -> str:
+    """
+    Convert trial data to CSV format for user-friendly filtering.
+
+    Args:
+        trials_data: List of trial dictionaries
+        output_path: Path where CSV file should be saved
+
+    Returns:
+        str: Path to the created CSV file
+    """
+    if not trials_data:
+        logger.warning("No trials data provided for CSV conversion")
+        return output_path
+
+    # Define CSV columns with user-friendly names
+    csv_columns = [
+        "NCT_ID",
+        "Title",
+        "Start_Date",
+        "Completion_Date",
+        "Phases",
+        "Enrollment",
+        "Lead_Sponsor",
+        "Collaborators",
+        "City",
+        "State",
+        "Country",
+        "Location_Status",
+        "Recommendation_Level",
+        "Analysis_Reason",
+        "Drug_Analysis",
+        "URL"
+    ]
+
+    try:
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=csv_columns)
+            writer.writeheader()
+
+            for trial in trials_data:
+                # Extract location info and concatenate multiple locations
+                locations = trial.get("contacts_locations", {}).get("locations", [])
+
+                # Extract and concatenate location data
+                cities: List[str] = []
+                states: List[str] = []
+                countries: List[str] = []
+                location_statuses: List[str] = []
+
+                for location in locations:
+                    if location.get("city"):
+                        cities.append(location.get("city"))
+                    if location.get("state"):
+                        states.append(location.get("state"))
+                    if location.get("country"):
+                        countries.append(location.get("country"))
+                    if location.get("status"):
+                        location_statuses.append(location.get("status"))
+
+                # Create concatenated strings, removing duplicates
+                cities_str = "; ".join(list(set(cities))) if cities else ""
+                states_str = "; ".join(list(set(states))) if states else ""
+                countries_str = "; ".join(list(set(countries))) if countries else ""
+                location_statuses_str = "; ".join(list(set(location_statuses))) if location_statuses else ""
+
+                # Extract phases as readable string
+                phases = trial.get("design", {}).get("phases", [])
+                phases_str = ", ".join(map(str, phases)) if phases else ""
+
+                # Extract collaborators as readable string
+                collaborators = trial.get("sponsor", {}).get("collaborators", [])
+                collaborators_str = "; ".join(collaborators) if collaborators else ""
+
+                # Create CSV row
+                row = {
+                    "NCT_ID": trial.get("identification", {}).get("nct_id", ""),
+                    "Title": trial.get("identification", {}).get("brief_title", ""),
+                    "Start_Date": trial.get("status", {}).get("start_date", ""),
+                    "Completion_Date": trial.get("status", {}).get("completion_date", ""),
+                    "Phases": phases_str,
+                    "Enrollment": trial.get("design", {}).get("enrollment", ""),
+                    "Lead_Sponsor": trial.get("sponsor", {}).get("lead_sponsor", ""),
+                    "Collaborators": collaborators_str,
+                    "City": cities_str,
+                    "State": states_str,
+                    "Country": countries_str,
+                    "Location_Status": location_statuses_str,
+                    "Recommendation_Level": trial.get("recommendation_level", ""),
+                    "Analysis_Reason": trial.get("reason", ""),
+                    "Drug_Analysis": trial.get("drug_analysis", ""),
+                    "URL": trial.get("identification", {}).get("url", "")
+                }
+
+                writer.writerow(row)
+
+        logger.info(f"Successfully converted {len(trials_data)} trials to CSV: {output_path}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"Error converting trials to CSV: {e}")
+        raise

@@ -9,7 +9,7 @@ from base.utils import parse_json_response, read_input_file
 
 
 def extract_disease_from_record(
-    clinical_record: str, gpt_client: GPTClient
+    clinical_record: str, gpt_client: GPTClient, avoid_specific_disease: bool = False
 ) -> Tuple[str, float]:
     """
     Extracts the primary disease or condition from a clinical record using GPT.
@@ -17,6 +17,7 @@ def extract_disease_from_record(
     Parameters:
     - clinical_record (str): The patient's clinical record text
     - gpt_client (GPTClient): Initialized GPT client for making API calls
+    - avoid_specific_disease (bool): If True, extracts broader disease categories instead of specific disease names
 
     Returns:
     - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found) and the cost of the API call
@@ -36,6 +37,19 @@ def extract_disease_from_record(
 
         disease_name = completion.strip()
         logger.info(f"Extracted disease name: {disease_name}")
+
+        # If broader disease is requested, get parent categories and use the first one
+        if avoid_specific_disease:
+            categories, broader_cost = get_parent_disease_categories(disease_name, gpt_client)
+            cost += broader_cost
+            if categories and len(categories) > 0:
+                broader_disease = categories[0]
+                logger.info(f"Using broader disease category: {broader_disease} (from specific: {disease_name})")
+                return broader_disease, cost
+            else:
+                logger.warning(f"No broader categories found for {disease_name}, using original disease")
+                return disease_name, cost
+
         return disease_name, cost
     except Exception as extraction_error:
         raise RuntimeError(f"Error extracting disease from clinical record: {extraction_error}")
@@ -64,12 +78,15 @@ def get_parent_disease_categories(
         "For the following specific disease or condition, provide a list of 2-3 broader disease categories "
         "that would include this condition. Focus on specific, clinically relevant categories, not overly general ones.\n\n"
         "For example:\n"
-        "- For 'glioblastoma multiforme', good categories would be 'brain tumor' and 'central nervous system cancer'\n"
-        "- For 'acute myeloid leukemia', good categories would be 'leukemia' and 'hematologic malignancy'\n\n"
+        "- For 'glioblastoma multiforme', good categories would be 'brain tumor', 'central nervous system cancer', and 'solid tumor'\n"
+        "- For 'acute myeloid leukemia', good categories would be 'leukemia' and 'hematologic malignancy'\n"
+        "- For 'nasopharyngeal carcinoma', good categories would be 'head and neck cancer' and 'solid tumor'\n\n"
+        "For solid tumors (carcinomas, sarcomas, etc.), include 'solid tumor' as one of the categories.\n"
+        "For hematologic malignancies (leukemias, lymphomas, etc.), do NOT include 'solid tumor'.\n\n"
         "AVOID overly general categories like 'cancer', 'malignancy', 'oncological disorder', 'disease', etc.\n\n"
         f"Disease: {disease_name}\n\n"
         "Return your response as a JSON object with a single key 'categories' containing an array of strings.\n"
-        'Example format: {"categories": ["specific category", "broader category"]}\n'
+        'Example format: {"categories": ["specific category", "broader category", "solid tumor"]}\n'
         "Do not include any explanations or additional text, just the JSON object."
     )
 

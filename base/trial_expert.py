@@ -237,6 +237,43 @@ def parse_recommendation_response(response: str) -> tuple[RecommendationLevel, s
         raise ValueError(f"Error parsing response: {parse_error}. Response content: {response}")
 
 
+def deduplicate_drug_names(drug_names: List[str]) -> List[str]:
+    """
+    Deduplicate drug names using case-insensitive comparison.
+    Preserves the first occurrence's casing.
+
+    Args:
+        drug_names: List of drug names that may contain duplicates
+
+    Returns:
+        List of unique drug names with original casing preserved
+    """
+    if not drug_names:
+        return []
+
+    seen_lower: dict[str, str] = {}  # Maps lowercase to original casing
+    unique_drugs: List[str] = []
+
+    for drug in drug_names:
+        drug_lower = drug.lower().strip()
+        if drug_lower not in seen_lower:
+            seen_lower[drug_lower] = drug
+            unique_drugs.append(drug)
+        else:
+            logger.info(
+                f"deduplicate_drug_names: Removing duplicate '{drug}' "
+                f"(already have '{seen_lower[drug_lower]}')"
+            )
+
+    if len(unique_drugs) < len(drug_names):
+        logger.info(
+            f"deduplicate_drug_names: Reduced {len(drug_names)} drugs to "
+            f"{len(unique_drugs)} unique drugs"
+        )
+
+    return unique_drugs
+
+
 def analyze_drugs_and_get_recommendation(
     clinical_record: str,
     trial: ClinicalTrial,
@@ -283,6 +320,12 @@ def analyze_drugs_and_get_recommendation(
         novel_drugs, arms_cost = trial.get_novel_drugs_from_arms(gpt_client)
         logger.info(f"analyze_drugs_and_get_recommendation: novel_drugs from arms: {novel_drugs}")
         total_cost += arms_cost
+
+    # Deduplicate drug names to avoid redundant API calls
+    if novel_drugs:
+        logger.info(f"analyze_drugs_and_get_recommendation: Before deduplication: {novel_drugs}")
+        novel_drugs = deduplicate_drug_names(novel_drugs)
+        logger.info(f"analyze_drugs_and_get_recommendation: After deduplication: {novel_drugs}")
 
     # Analyze each drug's effectiveness
     if novel_drugs and disease:
@@ -335,7 +378,7 @@ def analyze_drugs_and_get_recommendation(
     try:
         response_data: dict[str, str]
         correction_cost: float
-        response_data, correction_cost = parse_json_response(completion, dict[str, str], gpt_client, 0.0)
+        response_data, correction_cost = parse_json_response(completion, dict, gpt_client, 0.0)
         total_cost += correction_cost
 
         # Ensure required fields are present

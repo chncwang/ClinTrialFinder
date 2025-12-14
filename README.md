@@ -57,6 +57,74 @@ Below is a system overview demonstrating the process of analyzing a clinical tri
 
 ## Usage
 
+### Quick Start: One-Click Pipeline
+
+The simplest way to find clinical trials is using the one-click pipeline that handles the entire workflow automatically:
+
+```bash
+python find_trials.py --clinical-record patient_record.txt --output results.csv
+```
+
+This single command will:
+1. Extract disease and conditions from the clinical record
+2. Download relevant trials from ClinicalTrials.gov
+3. Filter trials based on patient conditions
+4. Analyze drug efficacy using Perplexity AI
+5. Rank trials from best to worst match
+6. Output results in CSV format
+
+#### Options
+
+- `--clinical-record`: Path to patient clinical record file (required)
+- `--output`: Output CSV file path (default: trials_YYYYMMDD_HHMMSS.csv)
+- `--max-results`: Maximum number of top trials to include in output (default: no limit)
+- `--broader-disease`: Also search trials for broader disease categories (e.g., "head and neck cancer" for NPC)
+- `--verbose`: Enable detailed logging to see progress
+
+#### Examples
+
+```bash
+# Basic usage - outputs all recommended trials
+python find_trials.py --clinical-record patient.txt --output trials.csv
+
+# Get top 10 trials with verbose logging
+python find_trials.py --clinical-record patient.txt --output top10.csv --max-results 10 --verbose
+
+# Search both specific and broader disease categories for maximum coverage
+python find_trials.py --clinical-record patient.txt --output trials.csv --broader-disease --verbose
+
+# Broader disease example: NPC patient
+# Will search "nasopharyngeal carcinoma" + "head and neck cancer" + "epithelial tumor" + "solid tumor"
+# Automatically merges and deduplicates results
+python find_trials.py --clinical-record npc_patient.txt --output npc_trials.csv --broader-disease
+```
+
+#### What You Get
+
+The output CSV contains 16 columns for each recommended trial:
+- **NCT_ID**: ClinicalTrials.gov identifier
+- **Title**: Trial title
+- **Start_Date** / **Completion_Date**: Trial timeline
+- **Phases**: Trial phase (1, 2, 3, 4)
+- **Enrollment**: Number of participants
+- **Lead_Sponsor** / **Collaborators**: Organizations running the trial
+- **City** / **State** / **Country**: Trial locations
+- **Location_Status**: Recruitment status
+- **Recommendation_Level**: STRONGLY_RECOMMENDED, RECOMMENDED, NEUTRAL, or NOT_RECOMMENDED
+- **Analysis_Reason**: Why this trial was recommended
+- **Drug_Analysis**: Detailed evidence from Perplexity AI about drug efficacy
+- **URL**: Direct link to trial on ClinicalTrials.gov
+
+#### Performance
+
+- **Typical runtime**: 2-4 hours for ~250 trials, 12-14 hours for ~2,000 trials (with --broader-disease)
+- **Cost**: ~$0.01 per trial analyzed (GPT-4.1-mini + Perplexity AI)
+- **Coverage**: --broader-disease typically finds 5-8x more trials than disease-specific search
+
+#### Advanced: Individual Pipeline Steps
+
+For more control over the process, you can run individual pipeline steps separately:
+
 ### Crawling Clinical Trials
 
 To download clinical trials data:
