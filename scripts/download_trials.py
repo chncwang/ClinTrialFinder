@@ -1,5 +1,5 @@
 """
-Script to download clinical trials using the scrapy crawler.
+Script to download clinical trials using the ClinicalTrials.gov API v2.
 
 Usage:
     python -m scripts.download_trials --condition "disease name" [options]
@@ -16,8 +16,8 @@ Options:
 
 import argparse
 import json
+import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple, Optional, Any, Dict
@@ -25,6 +25,10 @@ from typing import List, Tuple, Optional, Any, Dict
 # Import the disease expert module for broader categories
 from base.disease_expert import get_parent_disease_categories
 from base.gpt_client import GPTClient
+
+# Import the direct API client
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "clinical_trial_crawler"))
+from direct_api_download import ClinicalTrialsAPIClient
 
 
 def parse_arguments():
@@ -122,11 +126,9 @@ def get_output_filename(condition: str, args: argparse.Namespace) -> str:
 
 
 def download_trials(args: argparse.Namespace, condition: Optional[str] = None, output_file: Optional[str] = None) -> Tuple[bool, Optional[str]]:
-    """Download clinical trials using scrapy."""
-    # Get the project root directory and change to crawler directory
+    """Download clinical trials using the direct API client."""
+    # Get the project root directory
     project_root = Path(__file__).resolve().parent.parent
-    crawler_dir = project_root / "clinical_trial_crawler"
-    os.chdir(crawler_dir)
 
     # Use provided condition or from args
     condition = condition or args.condition
@@ -139,56 +141,39 @@ def download_trials(args: argparse.Namespace, condition: Optional[str] = None, o
             # For specific trials, use the trial ID as filename
             output_file = os.path.join(project_root, f"{args.specific_trial}.json")
 
-    # Build the scrapy command
-    cmd = "python3 -m scrapy crawl clinical_trials"
-
-    # Add condition if provided
-    if condition:
-        cmd += f' -a condition="{condition}"'
-
-    # Add specific trial if provided
+    # Print what we're downloading
     if args.specific_trial:
-        cmd += f" -a specific_trial={args.specific_trial}"
+        print(f"Downloading specific trial: {args.specific_trial}")
+    elif condition:
+        status_filter = "active" if args.exclude_completed else "all"
+        print(f"Downloading {status_filter} trials for condition: {condition}")
 
-    # Add exclude completed flag if set
-    if args.exclude_completed:
-        cmd += " -a exclude_completed=true"
-
-    # Add log level
-    cmd += f" --loglevel={args.log_level}"
-
-    # Add output file
-    cmd += f' -O "{output_file}"'
-
-    # Print the command being executing
-    print(f"Executing command: {cmd}")
+    print(f"Output file: {output_file}")
 
     try:
-        # Execute the command
-        process = subprocess.Popen(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        # Create the API client
+        client = ClinicalTrialsAPIClient()
+
+        # Download trials
+        success = client.download_trials(
+            condition=condition,
+            exclude_completed=args.exclude_completed,
+            specific_trial=args.specific_trial,
+            output_file=output_file
         )
-        stdout, stderr = process.communicate()
 
-        # Get the return code
-        return_code = process.returncode
-
-        # Print any output
-        if stdout:
-            print(stdout.decode())
-        if stderr:
-            print(stderr.decode())
-
-        if return_code == 0:
-            print(f"Command completed successfully.")
+        if success:
+            print(f"Download completed successfully.")
             print(f"Output saved to: {output_file}")
             return True, output_file
         else:
-            print(f"Command failed with exit code: {return_code}")
+            print(f"Download failed.")
             return False, None
 
     except Exception as e:
-        print(f"Error executing command: {e}")
+        print(f"Error downloading trials: {e}")
+        import traceback
+        traceback.print_exc()
         return False, None
 
 
@@ -240,6 +225,12 @@ def main():
     """Main entry point."""
     args = parse_arguments()
 
+    # Set up logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
     # Set OpenAI API key if provided
     if args.openai_api_key:
         os.environ["OPENAI_API_KEY"] = args.openai_api_key
@@ -250,7 +241,7 @@ def main():
         sys.exit(0 if success else 1)
 
     # Get broader categories
-    broader_categories = get_broader_categories(args.condition, args.openai_api_key)
+    broader_categories = get_broader_categories(args.condition, args.openai_api_key or os.getenv("OPENAI_API_KEY"))
     if not broader_categories:
         print("No broader categories found")
         sys.exit(1)
