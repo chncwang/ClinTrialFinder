@@ -379,45 +379,62 @@ Examples:
                     logger.error("Failed to download trials")
                     sys.exit(1)
             else:
-                broader_disease = broader_categories[0]
-                logger.info(f"Will merge trials from specific disease '{disease}' and broader category '{broader_disease}'")
+                logger.info(f"Will merge trials from specific disease '{disease}' and {len(broader_categories)} broader categories: {broader_categories}")
 
                 # Download trials for specific disease
                 logger.info(f"Downloading trials for specific disease: {disease}")
                 success1, specific_file = download_active_trials_for_disease(disease, None)
 
-                # Download trials for broader category
-                logger.info(f"Downloading trials for broader category: {broader_disease}")
-                success2, broader_file = download_active_trials_for_disease(broader_disease, None)
+                # Download trials for ALL broader categories
+                all_trial_sets = []
+                broader_files = []
+                first_file = None
 
-                if not success1 or not specific_file:
-                    logger.warning(f"Failed to download trials for specific disease {disease}, using broader category only")
-                    if not success2 or not broader_file:
-                        logger.error("Failed to download trials for both specific and broader categories")
-                        sys.exit(1)
-                    trials_file = broader_file
-                elif not success2 or not broader_file:
-                    logger.warning(f"Failed to download trials for broader category {broader_disease}, using specific disease only")
-                    trials_file = specific_file
-                else:
-                    # Merge the two trial sets
-                    logger.info("Merging trial sets...")
+                if success1 and specific_file:
                     specific_trials = load_trials_from_file(specific_file)
-                    broader_trials = load_trials_from_file(broader_file)
-
                     logger.info(f"Loaded {len(specific_trials)} trials from specific disease file")
-                    logger.info(f"Loaded {len(broader_trials)} trials from broader category file")
+                    all_trial_sets.append(specific_trials)
+                    first_file = specific_file
+                else:
+                    logger.warning(f"Failed to download trials for specific disease {disease}")
 
-                    merged_trials = merge_trials([specific_trials, broader_trials])
-                    logger.info(f"After merging: {len(merged_trials)} unique trials")
+                # Download and load trials for each broader category
+                for idx, broader_category in enumerate(broader_categories, 1):
+                    logger.info(f"Downloading trials for broader category {idx}/{len(broader_categories)}: {broader_category}")
+                    success, broader_file = download_active_trials_for_disease(broader_category, None)
 
-                    # Save merged trials to file
-                    merged_filename = f"{disease.replace(' ', '_').lower()}_with_broader_trials.json"
-                    trials_file = os.path.join(os.path.dirname(specific_file), merged_filename)
+                    if success and broader_file:
+                        broader_trials = load_trials_from_file(broader_file)
+                        logger.info(f"Loaded {len(broader_trials)} trials from '{broader_category}' category")
+                        all_trial_sets.append(broader_trials)
+                        broader_files.append((broader_category, len(broader_trials)))
+                        if not first_file:
+                            first_file = broader_file
+                    else:
+                        logger.warning(f"Failed to download trials for broader category: {broader_category}")
 
-                    with open(trials_file, "w") as f:
-                        json.dump(merged_trials, f, indent=2)
-                    logger.info(f"Saved merged trials to: {trials_file}")
+                if not all_trial_sets:
+                    logger.error("Failed to download trials for both specific disease and all broader categories")
+                    sys.exit(1)
+
+                # Merge all trial sets with deduplication
+                logger.info("Merging all trial sets...")
+                specific_count = len(specific_trials) if success1 and specific_file else 0
+                category_counts = ", ".join([f"{cat}={count}" for cat, count in broader_files])
+                logger.info(f"Trial counts before merge: Specific={specific_count}, {category_counts}")
+
+                merged_trials = merge_trials(all_trial_sets)
+                total_before_merge = sum(len(ts) for ts in all_trial_sets)
+                duplicates_removed = total_before_merge - len(merged_trials)
+                logger.info(f"After merging: {len(merged_trials)} unique trials (removed {duplicates_removed} duplicates, {duplicates_removed/total_before_merge*100:.1f}% duplication rate)")
+
+                # Save merged trials to file
+                merged_filename = f"{disease.replace(' ', '_').lower()}_with_broader_trials.json"
+                trials_file = os.path.join(os.path.dirname(first_file), merged_filename)
+
+                with open(trials_file, "w") as f:
+                    json.dump(merged_trials, f, indent=2)
+                logger.info(f"Saved merged trials to: {trials_file}")
         else:
             # Just download trials for specific disease
             success, trials_file = download_active_trials_for_disease(disease, None)

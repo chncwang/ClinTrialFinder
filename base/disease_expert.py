@@ -10,7 +10,7 @@ from base.utils import parse_json_response, read_input_file
 
 def extract_disease_from_record(
     clinical_record: str, gpt_client: GPTClient, avoid_specific_disease: bool = False
-) -> Tuple[str, float]:
+) -> Tuple[str | List[str], float]:
     """
     Extracts the primary disease or condition from a clinical record using GPT.
 
@@ -20,7 +20,10 @@ def extract_disease_from_record(
     - avoid_specific_disease (bool): If True, extracts broader disease categories instead of specific disease names
 
     Returns:
-    - tuple[str | None, float]: A tuple containing the extracted disease name (or None if not found) and the cost of the API call
+    - tuple[str | List[str], float]: A tuple containing:
+        - If avoid_specific_disease=False: single disease name string
+        - If avoid_specific_disease=True: list of broader disease category strings
+        - Cost of the API call
     """
     prompt = (
         "Extract the primary disease or medical condition from the following clinical record. "
@@ -38,17 +41,16 @@ def extract_disease_from_record(
         disease_name = completion.strip()
         logger.info(f"Extracted disease name: {disease_name}")
 
-        # If broader disease is requested, get parent categories and use the first one
+        # If broader disease is requested, get parent categories and return ALL of them
         if avoid_specific_disease:
             categories, broader_cost = get_parent_disease_categories(disease_name, gpt_client)
             cost += broader_cost
             if categories and len(categories) > 0:
-                broader_disease = categories[0]
-                logger.info(f"Using broader disease category: {broader_disease} (from specific: {disease_name})")
-                return broader_disease, cost
+                logger.info(f"Using broader disease categories: {categories} (from specific: {disease_name})")
+                return categories, cost
             else:
                 logger.warning(f"No broader categories found for {disease_name}, using original disease")
-                return disease_name, cost
+                return [disease_name], cost
 
         return disease_name, cost
     except Exception as extraction_error:
