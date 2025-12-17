@@ -140,7 +140,7 @@ def download_trials(args: argparse.Namespace, condition: Optional[str] = None, o
             output_file = os.path.join(project_root, f"{args.specific_trial}.json")
 
     # Build the scrapy command
-    cmd = "python -m scrapy crawl clinical_trials"
+    cmd = "python3 -m scrapy crawl clinical_trials"
 
     # Add condition if provided
     if condition:
