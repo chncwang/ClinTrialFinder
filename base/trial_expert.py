@@ -2373,6 +2373,8 @@ def process_trials_with_conditions(
     output_path: str,
     gpt_filter: Optional["GPTTrialFilter"] = None,
     refresh_cache: bool = False,
+    checkpoint_interval: int = 100,
+    resume_from_checkpoint: bool = False,
 ) -> Tuple[float, int]:
     """Process trials with given conditions and save results.
 
@@ -2382,14 +2384,37 @@ def process_trials_with_conditions(
         output_path: Path to save output files
         gpt_filter: Optional GPTTrialFilter instance for condition evaluation
         refresh_cache: Whether to refresh the cache of GPT responses
+        checkpoint_interval: Save checkpoint every N trials (default: 100, 0 = no checkpointing)
+        resume_from_checkpoint: Whether to resume from existing checkpoint if available
     Returns:
         Tuple of (total API cost, number of eligible trials)
     """
+    import os
+
     filtered_trials: List[Dict[str, Any]] = []
     excluded_trials: List[Dict[str, Any]] = []
     total_trials = len(trials)
     total_cost = 0.0
     eligible_count = 0
+    start_index = 0
+
+    # Define checkpoint file path
+    checkpoint_path = output_path.replace(".json", "_checkpoint.json")
+
+    # Try to load checkpoint if resuming
+    if resume_from_checkpoint and os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, "r") as f:
+                checkpoint_data = json.load(f)
+            start_index = checkpoint_data.get("last_processed_index", 0)
+            total_cost = checkpoint_data.get("total_cost", 0.0)
+            eligible_count = checkpoint_data.get("eligible_count", 0)
+            filtered_trials = checkpoint_data.get("filtered_trials", [])
+            excluded_trials = checkpoint_data.get("excluded_trials", [])
+            logger.info(f"Resuming from checkpoint: processed {start_index}/{total_trials} trials, {eligible_count} eligible, cost ${total_cost:.2f}")
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint from {checkpoint_path}: {str(e)}, starting from beginning")
+            start_index = 0
 
     if conditions:
         if not gpt_filter:
@@ -2400,6 +2425,9 @@ def process_trials_with_conditions(
         logger.info(f"Processing {total_trials} trials with conditions: {conditions}")
 
         for trial_index, trial in enumerate(trials, 1):
+            # Skip trials that were already processed (if resuming from checkpoint)
+            if trial_index <= start_index:
+                continue
             logger.info(
                 f"Processing trial {trial_index}/{total_trials}: {trial.identification.nct_id}"
             )
@@ -2453,6 +2481,22 @@ def process_trials_with_conditions(
             logger.info(
                 f"Eligible trials so far: {eligible_count}/{trial_index} processed, total cost: ${total_cost:.2f}"
             )
+
+            # Save checkpoint periodically
+            if checkpoint_interval > 0 and trial_index % checkpoint_interval == 0:
+                checkpoint_data = {
+                    "last_processed_index": trial_index,
+                    "total_cost": total_cost,
+                    "eligible_count": eligible_count,
+                    "filtered_trials": filtered_trials,
+                    "excluded_trials": excluded_trials,
+                }
+                try:
+                    with open(checkpoint_path, "w") as f:
+                        json.dump(checkpoint_data, f, indent=2)
+                    logger.info(f"Checkpoint saved at trial {trial_index}/{total_trials}")
+                except Exception as e:
+                    logger.warning(f"Failed to save checkpoint: {str(e)}")
     else:
         logger.info(
             "No conditions provided - keeping all trials that passed other filters"
@@ -2473,5 +2517,13 @@ def process_trials_with_conditions(
     logger.info(f"Filtered trials saved to {output_path}")
     if conditions and excluded_path:
         logger.info(f"Excluded trials saved to {excluded_path}")
+
+    # Clean up checkpoint file on successful completion
+    if os.path.exists(checkpoint_path):
+        try:
+            os.remove(checkpoint_path)
+            logger.info(f"Checkpoint file deleted after successful completion")
+        except Exception as e:
+            logger.warning(f"Failed to delete checkpoint file: {str(e)}")
 
     return total_cost, eligible_count

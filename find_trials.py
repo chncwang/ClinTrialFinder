@@ -129,8 +129,7 @@ def filter_analyze_and_rank_trials(
     clinical_record: str,
     gpt_client: GPTClient,
     perplexity_client: PerplexityClient,
-    output_file: str,
-    max_results: Optional[int] = None
+    output_file: str
 ) -> tuple[int, float]:
     """
     Filter, analyze, and rank clinical trials based on conditions.
@@ -142,7 +141,6 @@ def filter_analyze_and_rank_trials(
         gpt_client: Initialized GPT client
         perplexity_client: Initialized Perplexity client
         output_file: Path to save results
-        max_results: Maximum number of results to return (None = all)
 
     Returns:
         Tuple of (number of recommended trials, total cost)
@@ -172,6 +170,8 @@ def filter_analyze_and_rank_trials(
             conditions=conditions,
             output_path=filtered_file,
             gpt_filter=gpt_filter,
+            checkpoint_interval=args.checkpoint_interval,
+            resume_from_checkpoint=args.resume,
         )
         logger.info(f"Found {eligible_count} eligible trials (cost: ${filter_cost:.2f})")
 
@@ -229,11 +229,6 @@ def filter_analyze_and_rank_trials(
         logger.info(f"Ranking completed (cost: ${ranking_cost:.2f})")
         logger.info(f"Total cost: ${total_cost:.2f}")
 
-        # Apply max_results limit if specified
-        if max_results:
-            ranked_trials = ranked_trials[:max_results]
-            logger.info(f"Limited results to top {max_results} trials")
-
         # Convert to dictionaries for serialization
         ranked_trials_dict = [trial.to_dict() for trial in ranked_trials]
 
@@ -275,9 +270,6 @@ Examples:
   # With inline text
   python find_trials.py --clinical-record "Patient with stage 3 lung cancer..." --output results.json
 
-  # Limit results
-  python find_trials.py --clinical-record patient.txt --output results.csv --max-results 10
-
   # Verbose logging
   python find_trials.py --clinical-record patient.txt --output results.csv --verbose
         """
@@ -297,11 +289,6 @@ Examples:
 
     # Optional arguments
     parser.add_argument(
-        '--max-results',
-        type=int,
-        help='Maximum number of results to return (default: all recommended trials)'
-    )
-    parser.add_argument(
         '--openai-api-key',
         help='OpenAI API key (default: from OPENAI_API_KEY environment variable)'
     )
@@ -318,6 +305,17 @@ Examples:
         '--verbose',
         action='store_true',
         help='Enable verbose logging'
+    )
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume from checkpoint if available (for interrupted runs)'
+    )
+    parser.add_argument(
+        '--checkpoint-interval',
+        type=int,
+        default=100,
+        help='Save checkpoint every N trials (default: 100, 0 = no checkpointing)'
     )
 
     args = parser.parse_args()
@@ -449,8 +447,7 @@ Examples:
             clinical_record,
             gpt_client,
             perplexity_client,
-            args.output,
-            args.max_results
+            args.output
         )
 
         # Calculate elapsed time
