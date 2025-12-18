@@ -71,6 +71,8 @@ class GPTClient:
         max_retries: int = 5,
         cache_dir: str = ".cache",
         strict_cache_mode: bool = False,
+        rate_limit_delay: float = 0.5,
+        timeout: float = 900.0,
     ):
         """
         Initialize the GPT client.
@@ -82,6 +84,8 @@ class GPTClient:
             max_retries: Maximum number of retry attempts for failed calls
             cache_dir: Directory to store cache files
             strict_cache_mode: If True, throws exception when cache is not hit (assumes all cache should hit)
+            rate_limit_delay: Delay in seconds after each API call to avoid rate limiting (default: 0.5s)
+            timeout: Timeout in seconds for API requests (default: 900s / 15 minutes)
 
         Raises:
             RuntimeError: If attempting to create a second instance of GPTClient
@@ -89,21 +93,24 @@ class GPTClient:
         if GPTClient._instance is not None:
             raise RuntimeError("GPTClient is a singleton class. Only one instance can be created.")
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, timeout=timeout)
         self.cache = PromptCache(cache_dir=cache_dir, max_size=cache_size)
         self.default_temperature = temperature
         self.max_retries = max_retries
         self.strict_cache_mode = strict_cache_mode
+        self.rate_limit_delay = rate_limit_delay
+        self.timeout = timeout
         self._cache_lock = threading.RLock()  # Add a reentrant lock for thread safety
         self.cache_hits = 0
         self.cache_misses = 0
         self.api_calls = 0
+        self._last_api_call_time = 0.0  # Track last API call for rate limiting
 
         # Set the singleton instance
         GPTClient._instance = self
 
         logger.info(
-            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}"
+            f"GPTClient initialized with cache size {cache_size} in directory {cache_dir}, strict_cache_mode={strict_cache_mode}, rate_limit_delay={rate_limit_delay}s, timeout={timeout}s"
         )
 
     def call_gpt(
@@ -199,6 +206,15 @@ class GPTClient:
             api_time = time.time() - api_start_time
             logger.info(f"GPTClient.call_gpt: API call completed in {api_time:.3f}s")
 
+            # Rate limiting: sleep after API call to avoid hitting rate limits
+            if self.rate_limit_delay > 0:
+                time_since_last_call = time.time() - self._last_api_call_time
+                if time_since_last_call < self.rate_limit_delay:
+                    sleep_time = self.rate_limit_delay - time_since_last_call
+                    logger.debug(f"GPTClient.call_gpt: Rate limiting - sleeping for {sleep_time:.3f}s")
+                    time.sleep(sleep_time)
+                self._last_api_call_time = time.time()
+
             result = response.choices[0].message.content
 
             cache_set_start = time.time()
@@ -290,8 +306,15 @@ class GPTClient:
                     )
                     raise
 
+                # Special handling for timeout errors
+                if "timed out" in str(retry_error).lower() or "timeout" in str(retry_error).lower():
+                    # Use longer backoff for timeout errors to allow API to recover
+                    backoff_time = min(2**(attempt + 3), 120)  # Start with 8s, max 120s
+                    logger.warning(
+                        f"GPTClient.call_with_retry: Timeout error on attempt {attempt+1}, using extended backoff: {backoff_time}s"
+                    )
                 # Special handling for 404 errors (API endpoint temporarily unavailable)
-                if "404" in str(retry_error) or "Not Found" in str(retry_error):
+                elif "404" in str(retry_error) or "Not Found" in str(retry_error):
                     # Use longer backoff for 404 errors as they might indicate temporary API issues
                     backoff_time = min(2**(attempt + 2), 60)  # Start with 4s, max 60s
                     logger.warning(
