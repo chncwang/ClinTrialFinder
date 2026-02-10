@@ -2096,7 +2096,7 @@ Plain JSON output:"""
             response, cost = self._call_gpt_with_retry(
                 user_prompt,
                 system_prompt,
-                model=self.model,
+                model="gpt-4.1-mini",
             )
 
             # Parse response
