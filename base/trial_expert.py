@@ -562,6 +562,8 @@ class CriterionEvaluation:
     criterion: str
     reason: str
     eligibility: float
+    label: Optional[str] = None  # TrialGPT-style label: "included"/"not included"/"excluded"/"not excluded"/"not applicable"/"not enough information"
+    criterion_type: str = "inclusion"  # "inclusion" or "exclusion"
 
 
 @dataclass
@@ -2054,7 +2056,9 @@ Patient Conditions to Evaluate:
                         criterion_evaluations.append(CriterionEvaluation(
                             criterion=criterion,
                             reason="Subgroup-specific criterion (automatically satisfied)",
-                            eligibility=1.0
+                            eligibility=1.0,
+                            label="not applicable",
+                            criterion_type="inclusion"
                         ))
                     continue
             else:
@@ -2087,10 +2091,13 @@ Patient Conditions to Evaluate:
 
                 # Collect evaluation for LLM aggregation (use max probability across branches)
                 if use_llm_aggregation:
+                    label = self._convert_probability_to_label(branch_max_prob, "inclusion")
                     criterion_evaluations.append(CriterionEvaluation(
                         criterion=criterion,
                         reason=f"OR criterion with {len(or_branches)} branches, max probability: {branch_max_prob}",
-                        eligibility=branch_max_prob
+                        eligibility=branch_max_prob,
+                        label=label,
+                        criterion_type="inclusion"
                     ))
 
                 # Check if any condition failed all branches
@@ -2130,10 +2137,13 @@ Patient Conditions to Evaluate:
 
                 # Collect evaluation for LLM aggregation
                 if use_llm_aggregation:
+                    label = self._convert_probability_to_label(probability, "inclusion")
                     criterion_evaluations.append(CriterionEvaluation(
                         criterion=criterion,
                         reason=reason,
-                        eligibility=probability
+                        eligibility=probability,
+                        label=label,
+                        criterion_type="inclusion"
                     ))
 
                 if probability <= 0.0:
@@ -2212,94 +2222,192 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             ]
             return any(re.search(pattern, criterion, re.IGNORECASE) for pattern in subgroup_patterns), 0.0
 
+    def _convert_probability_to_label(
+        self,
+        probability: float,
+        criterion_type: str = "inclusion"
+    ) -> str:
+        """
+        Convert eligibility probability to TrialGPT-style categorical label.
+
+        Args:
+            probability: Eligibility probability [0.0-1.0]
+            criterion_type: "inclusion" or "exclusion"
+
+        Returns:
+            Label string matching TrialGPT format
+        """
+        if criterion_type == "inclusion":
+            if probability >= 0.8:
+                return "included"
+            elif probability <= 0.2:
+                return "not included"
+            else:
+                return "not enough information"
+        else:  # exclusion
+            if probability >= 0.8:
+                return "not excluded"
+            elif probability <= 0.2:
+                return "excluded"
+            else:
+                return "not enough information"
+
+    def _calculate_matching_score(
+        self,
+        criterion_evaluations: List[CriterionEvaluation]
+    ) -> float:
+        """
+        Calculate matching score from criterion labels using TrialGPT's formula.
+
+        Reference: https://github.com/ncbi-nlp/TrialGPT/blob/main/trialgpt_ranking/rank_results.py
+
+        Formula:
+            score = included/(included + not_inc + no_info + eps) - (1 if not_inc>0 else 0) - (1 if excluded>0 else 0)
+
+        Args:
+            criterion_evaluations: List of criterion evaluations with labels
+
+        Returns:
+            Matching score (can be negative, range roughly [-2, 1])
+        """
+        eps = 1e-9
+
+        # Count inclusion labels
+        included = 0
+        not_inc = 0
+        no_info_inc = 0
+
+        # Count exclusion labels
+        excluded = 0
+
+        for eval in criterion_evaluations:
+            if not eval.label:
+                continue
+
+            label = eval.label.lower()
+
+            if eval.criterion_type == "inclusion":
+                if label == "included":
+                    included += 1
+                elif label == "not included":
+                    not_inc += 1
+                elif label == "not enough information":
+                    no_info_inc += 1
+                # "not applicable" is not counted
+            else:  # exclusion
+                if label == "excluded":
+                    excluded += 1
+                # Other exclusion labels don't affect score
+
+        # Compute matching score (TrialGPT formula)
+        score = included / (included + not_inc + no_info_inc + eps)
+
+        if not_inc > 0:
+            score -= 1
+
+        if excluded > 0:
+            score -= 1
+
+        return score
+
     def _aggregate_criteria_with_llm(
         self,
         criterion_evaluations: List[CriterionEvaluation],
         conditions: List[str],
         trial_title: str,
+        trial_summary: str,
         refresh_cache: bool = False,
-    ) -> Tuple[float, str, float]:
+    ) -> Tuple[float, float, float, str, str, float]:
         """
-        Use LLM to holistically aggregate per-criterion scores into a final eligibility score.
-        This implements TrialGPT's approach of reviewing all criterion scores to produce
-        a more robust final score that doesn't zero out due to single criterion failures.
+        Use LLM to aggregate per-criterion scores using TrialGPT's exact R+E approach.
+
+        Implements TrialGPT's aggregation stage which outputs:
+        - R (Relevance): 0-100 scale for patient-trial relevance
+        - E (Eligibility): -R to R scale for eligibility (bounded by relevance)
+
+        Reference: https://github.com/ncbi-nlp/TrialGPT/blob/main/trialgpt_ranking/TrialGPT.py
 
         Args:
-            criterion_evaluations: List of per-criterion evaluation results
+            criterion_evaluations: List of per-criterion evaluation results with labels
             conditions: Patient conditions being evaluated
             trial_title: Title of the clinical trial
+            trial_summary: Brief summary of the trial
             refresh_cache: Whether to refresh the cache
 
         Returns:
-            Tuple of (final_eligibility_score, reasoning, cost)
+            Tuple of (matching_score, relevance_R, eligibility_E, relevance_explanation, eligibility_explanation, cost)
         """
-        # Build a structured summary of all criterion evaluations
-        criteria_summary = []
-        for i, eval in enumerate(criterion_evaluations, 1):
-            status = "PASS" if eval.eligibility > 0.5 else "FAIL" if eval.eligibility == 0.0 else "PARTIAL"
-            criteria_summary.append(
-                f"{i}. [{status}] Score: {eval.eligibility:.2f}\n"
-                f"   Criterion: {eval.criterion}\n"
-                f"   Reason: {eval.reason}"
+        # Format criterion evaluations in TrialGPT's format
+        criteria_text_lines = []
+        for i, eval in enumerate(criterion_evaluations):
+            # Use label if available, otherwise infer from probability
+            label = eval.label if eval.label else self._convert_probability_to_label(
+                eval.eligibility, eval.criterion_type
             )
 
-        criteria_text = "\n\n".join(criteria_summary)
+            criteria_text_lines.append(
+                f"{eval.criterion_type} criterion {i}: {eval.criterion}\n"
+                f"\tPatient relevance: {eval.reason}\n"
+                f"\tPatient eligibility: {label}"
+            )
+
+        criteria_text = "\n".join(criteria_text_lines)
         conditions_text = ", ".join(conditions)
 
-        prompt = f"""You are evaluating a patient's overall eligibility for a clinical trial by holistically reviewing per-criterion evaluation results.
+        # Build patient note (simplified - just join conditions)
+        patient_note = "\n".join(conditions)
 
-Trial Title: {trial_title}
+        # TrialGPT's exact system prompt
+        system_prompt = """You are a helpful assistant for clinical trial recruitment. You will be given a patient note, a clinical trial, and the patient eligibility predictions for each criterion.
+Your task is to output two scores, a relevance score (R) and an eligibility score (E), between the patient and the clinical trial.
+First explain the consideration for determining patient-trial relevance. Predict the relevance score R (0~100), which represents the overall relevance between the patient and the clinical trial. R=0 denotes the patient is totally irrelevant to the clinical trial, and R=100 denotes the patient is exactly relevant to the clinical trial.
+Then explain the consideration for determining patient-trial eligibility. Predict the eligibility score E (-R~R), which represents the patient's eligibility to the clinical trial. Note that -R <= E <= R (the absolute value of eligibility cannot be higher than the relevance), where E=-R denotes that the patient is ineligible (not included by any inclusion criteria, or excluded by all exclusion criteria), E=R denotes that the patient is eligible (included by all inclusion criteria, and not excluded by any exclusion criteria), E=0 denotes the patient is neutral (i.e., no relevant information for all inclusion and exclusion criteria).
+Please output a JSON dict formatted as Dict{"relevance_explanation": Str, "relevance_score_R": Float, "eligibility_explanation": Str, "eligibility_score_E": Float}."""
 
-Patient Conditions: {conditions_text}
+        # TrialGPT's exact user prompt format
+        user_prompt = f"""Here is the patient note:
+{patient_note}
 
-Per-Criterion Evaluation Results:
+Here is the clinical trial description:
+Title: {trial_title}
+Target conditions: {conditions_text}
+Summary: {trial_summary}
+
+Here are the criterion-level eligibility prediction:
 {criteria_text}
 
-Instructions:
-1. Review all criterion scores holistically
-2. Consider whether criterion failures are absolute exclusions or negotiable
-3. A score of 0.0 typically means complete failure, 1.0 means complete pass, values in between indicate partial match or uncertainty
-4. Consider the overall disease match and trial suitability despite individual criterion failures
-5. For patients with comorbidities (e.g., on hemodialysis), don't zero out trials just because of one organ function criterion if the primary disease criteria match well
-6. Output a final eligibility score [0.0-1.0] representing overall trial suitability
-7. Provide brief reasoning for your score
-
-Output your response as JSON with the following format:
-{{
-    "final_score": <float between 0.0 and 1.0>,
-    "reasoning": "<brief explanation of your scoring decision>"
-}}"""
-
-        system_role = "You are a medical expert evaluating clinical trial eligibility with a holistic, patient-centered approach."
+Plain JSON output:"""
 
         try:
             response, cost = self._call_gpt(
-                prompt=prompt,
-                system_role=system_role,
+                prompt=user_prompt,
+                system_role=system_prompt,
                 model="gpt-4.1-mini",
-                temperature=0.1,
+                temperature=0,  # TrialGPT uses temperature=0
                 refresh_cache=refresh_cache,
             )
 
             # Parse the JSON response
             result = json.loads(response)
-            final_score = float(result.get("final_score", 0.0))
-            reasoning = result.get("reasoning", "No reasoning provided")
+            relevance_R = float(result.get("relevance_score_R", 0))
+            eligibility_E = float(result.get("eligibility_score_E", 0))
+            relevance_explanation = result.get("relevance_explanation", "")
+            eligibility_explanation = result.get("eligibility_explanation", "")
 
-            # Ensure score is in valid range
-            final_score = max(0.0, min(1.0, final_score))
+            # Calculate matching score from criterion labels
+            matching_score = self._calculate_matching_score(criterion_evaluations)
 
             logger.info(
-                f"LLM aggregation result: score={final_score:.3f}, reasoning={reasoning}"
+                f"TrialGPT aggregation: matching={matching_score:.3f}, R={relevance_R}, E={eligibility_E}"
             )
 
-            return final_score, reasoning, cost
+            return matching_score, relevance_R, eligibility_E, relevance_explanation, eligibility_explanation, cost
 
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             logger.error(f"Error parsing LLM aggregation response: {e}. Response: {response}")
-            # Fallback to min aggregation if LLM fails
-            min_score = min([eval.eligibility for eval in criterion_evaluations]) if criterion_evaluations else 0.0
-            return min_score, f"LLM aggregation failed, using min score: {min_score}", cost
+            # Fallback: use matching score only
+            matching_score = self._calculate_matching_score(criterion_evaluations)
+            return matching_score, 0.0, 0.0, "Aggregation failed", "Aggregation failed", cost
 
     def evaluate_trial(
         self,
@@ -2402,36 +2510,50 @@ Output your response as JSON with the following format:
 
         # Track the final inclusion score (will be used for overall probability calculation)
         final_inclusion_score = inclusion_probability
-        llm_reasoning = None
+        trialgpt_score = None
+        trialgpt_reasoning = None
 
         # If using LLM aggregation and we have criterion evaluations, aggregate them
         if use_llm_aggregation and criterion_evaluations:
             logger.info(
-                f"evaluate_trial: Using LLM aggregation for {trial.identification.nct_id} "
+                f"evaluate_trial: Using TrialGPT aggregation for {trial.identification.nct_id} "
                 f"with {len(criterion_evaluations)} criterion evaluations"
             )
-            llm_score, llm_reasoning, llm_cost = self._aggregate_criteria_with_llm(
-                criterion_evaluations, conditions, trial.identification.brief_title, refresh_cache
+
+            # Get trial summary (use brief_summary if available, otherwise empty string)
+            trial_summary = ""
+            if hasattr(trial.description, 'brief_summary') and trial.description.brief_summary:
+                trial_summary = trial.description.brief_summary[:500]  # Limit to 500 chars like TrialGPT
+
+            matching_score, relevance_R, eligibility_E, rel_explanation, eli_explanation, llm_cost = self._aggregate_criteria_with_llm(
+                criterion_evaluations, conditions, trial.identification.brief_title, trial_summary, refresh_cache
             )
             total_cost += llm_cost
-            final_inclusion_score = llm_score
+
+            # Calculate TrialGPT's feature combination score: matching_score + (R + E) / 100
+            agg_score = (relevance_R + eligibility_E) / 100
+            trialgpt_score = matching_score + agg_score
+            trialgpt_reasoning = f"Matching={matching_score:.2f}, Agg={agg_score:.2f} | R={relevance_R}, E={eligibility_E}"
+
+            # Use TrialGPT score for eligibility decision (unnormalized, can be negative)
+            final_inclusion_score = trialgpt_score
 
             logger.info(
-                f"evaluate_trial: LLM aggregation result for {trial.identification.nct_id}: "
-                f"score={llm_score:.3f}, reasoning={llm_reasoning}"
+                f"evaluate_trial: TrialGPT result for {trial.identification.nct_id}: "
+                f"final_score={trialgpt_score:.3f}, matching={matching_score:.3f}, R={relevance_R}, E={eligibility_E}"
             )
 
-            # Use LLM score instead of min-aggregation result
-            # Only fail if LLM score is very low (threshold: 0.1)
-            if llm_score <= 0.1:
+            # Use threshold for eligibility: scores <= -1.0 are ineligible
+            # This is roughly equivalent to having not_inc>0 or excluded>0 with low R+E
+            if trialgpt_score <= -1.0:
                 failure = TrialFailureReason(
                     type="inclusion_criterion",
-                    message="Failed LLM aggregation (holistic eligibility too low)",
-                    failure_details=llm_reasoning,
+                    message="Failed TrialGPT aggregation (score too low)",
+                    failure_details=trialgpt_reasoning,
                 )
                 logger.info(
                     f"evaluate_trial: Trial {trial.identification.nct_id} failed "
-                    f"LLM aggregation with score {llm_score:.3f}"
+                    f"TrialGPT aggregation with score {trialgpt_score:.3f}"
                 )
                 return False, total_cost, failure
             # Otherwise, continue with exclusion criteria check (trial is eligible so far)
