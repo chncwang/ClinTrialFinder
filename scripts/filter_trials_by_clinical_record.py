@@ -53,6 +53,13 @@ def main():
         action="store_true",
         help="Refresh the cache of GPT responses",
     )
+    parser.add_argument(
+        "--use-trialgpt-approach",
+        action="store_true",
+        default=False,
+        dest="use_trialgpt_approach",
+        help="Use TrialGPT's two-stage approach: (1) Batch criterion matching, (2) R+E aggregation scoring. Evaluates ALL criteria in one prompt (Stage 1) then aggregates with Relevance (R: 0-100) + Eligibility (E: -R to R) scoring (Stage 2).",
+    )
 
     args = parser.parse_args()
 
@@ -97,6 +104,7 @@ def main():
             args.output,
             gpt_filter,
             refresh_cache=args.refresh_cache,
+            use_trialgpt_approach=args.use_trialgpt_approach,
         )
 
         # Log final results

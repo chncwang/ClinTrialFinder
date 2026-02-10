@@ -88,6 +88,7 @@ def filter_specific_trial(
     cache_size: int = 100000,
     refresh_cache: bool = False,
     subgroup_aware: bool = True,
+    use_trialgpt_approach: bool = False,
 ) -> Dict[str, Any]:
     """
     Filter a specific clinical trial by NCT ID against a clinical record.
@@ -100,6 +101,7 @@ def filter_specific_trial(
         cache_size: Size of the GPT response cache
         refresh_cache: Whether to refresh the cache
         subgroup_aware: Whether to enable subgroup awareness in filtering
+        use_trialgpt_approach: Whether to use TrialGPT's two-stage approach (batch matching + R+E aggregation)
 
     Returns:
         Dictionary containing the filtering results
@@ -157,7 +159,7 @@ def filter_specific_trial(
     logger.info("=" * 40)
 
     is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-        trial, history_items, refresh_cache
+        trial, history_items, refresh_cache, use_trialgpt_approach
     )
 
     # Prepare results
@@ -244,6 +246,13 @@ def main():
         action="store_true",
         help="Disable subgroup awareness in filtering (default: enabled)",
     )
+    parser.add_argument(
+        "--use-trialgpt-approach",
+        action="store_true",
+        default=False,
+        dest="use_trialgpt_approach",
+        help="Use TrialGPT's two-stage approach: (1) Batch criterion matching, (2) R+E aggregation scoring. Evaluates ALL criteria in one prompt (Stage 1) then aggregates with Relevance (R: 0-100) + Eligibility (E: -R to R) scoring (Stage 2).",
+    )
 
     args = parser.parse_args()
 
@@ -275,6 +284,7 @@ def main():
             cache_size=args.cache_size,
             refresh_cache=args.refresh_cache,
             subgroup_aware=subgroup_aware,
+            use_trialgpt_approach=args.use_trialgpt_approach,
         )
 
         # Save results if output file specified

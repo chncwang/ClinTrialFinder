@@ -2892,6 +2892,7 @@ def process_trials_with_conditions(
     output_path: str,
     gpt_filter: Optional["GPTTrialFilter"] = None,
     refresh_cache: bool = False,
+    use_trialgpt_approach: bool = False,
 ) -> Tuple[float, int]:
     """Process trials with given conditions and save results.
 
@@ -2901,6 +2902,7 @@ def process_trials_with_conditions(
         output_path: Path to save output files
         gpt_filter: Optional GPTTrialFilter instance for condition evaluation
         refresh_cache: Whether to refresh the cache of GPT responses
+        use_trialgpt_approach: Whether to use TrialGPT's two-stage approach (batch matching + R+E aggregation)
     Returns:
         Tuple of (total API cost, number of eligible trials)
     """
@@ -2924,7 +2926,7 @@ def process_trials_with_conditions(
             )
 
             is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-                trial, conditions, refresh_cache
+                trial, conditions, refresh_cache, use_trialgpt_approach
             )
             total_cost += cost
 

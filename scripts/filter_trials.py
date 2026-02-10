@@ -91,6 +91,13 @@ def main():
         default=8,
         help="Maximum number of retry attempts for GPT API calls (default: 8)",
     )
+    parser.add_argument(
+        "--use-trialgpt-approach",
+        action="store_true",
+        default=False,
+        dest="use_trialgpt_approach",
+        help="Use TrialGPT's two-stage approach: (1) Batch criterion matching, (2) R+E aggregation scoring. Evaluates ALL criteria in one prompt (Stage 1) then aggregates with Relevance (R: 0-100) + Eligibility (E: -R to R) scoring (Stage 2).",
+    )
 
     args = parser.parse_args()
 
@@ -162,7 +169,7 @@ def main():
 
     # Process trials with conditions and save results
     total_cost, _ = process_trials_with_conditions(
-        trials, args.conditions, args.output, gpt_filter
+        trials, args.conditions, args.output, gpt_filter, use_trialgpt_approach=args.use_trialgpt_approach
     )
 
     if args.conditions:

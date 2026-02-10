@@ -130,7 +130,8 @@ def filter_analyze_and_rank_trials(
     gpt_client: GPTClient,
     perplexity_client: PerplexityClient,
     output_file: str,
-    max_results: Optional[int] = None
+    max_results: Optional[int] = None,
+    use_trialgpt_approach: bool = False
 ) -> tuple[int, float]:
     """
     Filter, analyze, and rank clinical trials based on conditions.
@@ -143,6 +144,7 @@ def filter_analyze_and_rank_trials(
         perplexity_client: Initialized Perplexity client
         output_file: Path to save results
         max_results: Maximum number of results to return (None = all)
+        use_trialgpt_approach: Whether to use TrialGPT's two-stage approach
 
     Returns:
         Tuple of (number of recommended trials, total cost)
@@ -172,6 +174,7 @@ def filter_analyze_and_rank_trials(
             conditions=conditions,
             output_path=filtered_file,
             gpt_filter=gpt_filter,
+            use_trialgpt_approach=use_trialgpt_approach,
         )
         logger.info(f"Found {eligible_count} eligible trials (cost: ${filter_cost:.2f})")
 
@@ -319,6 +322,13 @@ Examples:
         action='store_true',
         help='Enable verbose logging'
     )
+    parser.add_argument(
+        '--use-trialgpt-approach',
+        action='store_true',
+        default=False,
+        dest='use_trialgpt_approach',
+        help="Use TrialGPT's two-stage approach: (1) Batch criterion matching, (2) R+E aggregation scoring",
+    )
 
     args = parser.parse_args()
 
@@ -433,7 +443,8 @@ Examples:
             gpt_client,
             perplexity_client,
             args.output,
-            args.max_results
+            args.max_results,
+            args.use_trialgpt_approach
         )
 
         # Calculate elapsed time
