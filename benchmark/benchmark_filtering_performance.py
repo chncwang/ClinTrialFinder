@@ -1045,7 +1045,7 @@ class FilteringBenchmark:
                         cost: float
                         failure_reason: Optional[TrialFailureReason]
                         is_eligible, cost, failure_reason = gpt_filter.evaluate_trial(
-                            trial, conditions, refresh_cache=False, use_llm_aggregation=use_llm_aggregation
+                            trial, conditions, refresh_cache=False, use_trialgpt_approach=use_trialgpt_approach
                         )
                         if is_eligible:
                             suitability_probability = 1.0
@@ -1102,7 +1102,7 @@ class FilteringBenchmark:
             logger.error(f"Error processing patient {patient_id}: {str(e)}")
             raise e
 
-    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None, title_only: bool = False, specific_trial_id: Optional[str] = None, use_llm_aggregation: bool = False) -> Dict[str, Any]:
+    def run_benchmark(self, gpt_filter: GPTTrialFilter, max_patients: Optional[int] = None, output_path: Optional[str] = None, title_only: bool = False, specific_trial_id: Optional[str] = None, use_trialgpt_approach: bool = False) -> Dict[str, Any]:
         """
         Run the complete benchmark.
 
@@ -1112,7 +1112,7 @@ class FilteringBenchmark:
             output_path: Path to the output file for error case export
             title_only: Whether to use title-only evaluation instead of full trial evaluation
             specific_trial_id: If provided, only evaluate this specific trial ID (must be used with single patient)
-            use_llm_aggregation: Whether to use TrialGPT's LLM aggregation instead of min-aggregation
+            use_trialgpt_approach: Whether to use TrialGPT's two-stage approach (batch matching + R+E aggregation) instead of min-aggregation
         Returns:
             Dictionary with overall benchmark results
         """
@@ -1829,10 +1829,11 @@ def main():
         help="Disable subgroup awareness during filtering (default: enabled). When enabled, subgroup-specific criteria are treated as satisfied to prevent valid trials from being excluded."
     )
     parser.add_argument(
-        "--use-llm-aggregation",
+        "--use-trialgpt-approach",
         action="store_true",
         default=False,
-        help="Use LLM-based aggregation (TrialGPT approach) instead of min-aggregation. The LLM reviews all per-criterion scores holistically to produce a final eligibility score, making the system more robust to single criterion failures."
+        dest="use_trialgpt_approach",
+        help="Use TrialGPT's two-stage approach: (1) Batch criterion matching with categorical labels, (2) R+E aggregation scoring. This evaluates ALL criteria in one prompt (Stage 1) then aggregates with Relevance (R: 0-100) + Eligibility (E: -R to R) scoring (Stage 2), matching TrialGPT's exact implementation."
     )
 
     args = parser.parse_args()
@@ -2162,7 +2163,7 @@ def main():
     gpt_client = benchmark.gpt_client
     gpt_filter = GPTTrialFilter(gpt_client, subgroup_aware=args.subgroup_aware)
 
-    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only, args.trial_id, args.use_llm_aggregation)
+    results = benchmark.run_benchmark(gpt_filter, args.max_patients, str(output_path), args.title_only, args.trial_id, args.use_trialgpt_approach)
 
     # Save results
     with open(output_path, 'w') as f:

@@ -2009,8 +2009,176 @@ Patient Conditions to Evaluate:
         return failed_conditions_str, reasons_str
 
 
+    def _evaluate_criteria_batch_trialgpt(
+        self,
+        criteria_list: List[str],
+        criteria_type: str,  # "inclusion" or "exclusion"
+        conditions: List[str],
+        trial_title: str,
+        trial_conditions: List[str],
+        refresh_cache: bool = False,
+    ) -> Tuple[List[CriterionEvaluation], float]:
+        """
+        Evaluate ALL criteria in one batch using TrialGPT's approach.
+
+        This matches TrialGPT's Stage 1 (Matching) which evaluates all criteria
+        in a single prompt and returns categorical labels for each.
+
+        Reference: https://github.com/ncbi-nlp/TrialGPT/blob/main/trialgpt_matching/TrialGPT.py
+
+        Args:
+            criteria_list: List of criteria to evaluate
+            criteria_type: "inclusion" or "exclusion"
+            conditions: Patient conditions
+            trial_title: Trial title
+            trial_conditions: Trial target diseases/conditions
+            refresh_cache: Whether to refresh cache
+
+        Returns:
+            Tuple of (criterion_evaluations, cost)
+        """
+        if not criteria_list:
+            return [], 0.0
+
+        # Format patient note with sentence IDs (TrialGPT format)
+        patient_with_ids = ""
+        sentence_id = 0
+        for condition in conditions:
+            # Split into sentences and add IDs
+            sentences = condition.replace(". ", ".\n").split("\n")
+            for sent in sentences:
+                sent = sent.strip()
+                if sent:
+                    patient_with_ids += f"{sentence_id}. {sent}\n"
+                    sentence_id += 1
+
+        # Format criteria with indices (TrialGPT format)
+        criteria_text = ""
+        for idx, criterion in enumerate(criteria_list):
+            criteria_text += f"{idx}. {criterion}\n"
+
+        # Build TrialGPT's exact matching prompt
+        system_prompt = f"""You are a helpful assistant for clinical trial recruitment. Your task is to compare a given patient note and the {criteria_type} criteria of a clinical trial to determine the patient's eligibility at the criterion level.
+"""
+        if criteria_type == "inclusion":
+            system_prompt += "The factors that allow someone to participate in a clinical study are called inclusion criteria. They are based on characteristics such as age, gender, the type and stage of a disease, previous treatment history, and other medical conditions.\n"
+        else:
+            system_prompt += "The factors that disqualify someone from participating are called exclusion criteria. They are based on characteristics such as age, gender, the type and stage of a disease, previous treatment history, and other medical conditions.\n"
+
+        system_prompt += f"""You should check the {criteria_type} criteria one-by-one, and output the following three elements for each criterion:
+\tElement 1. For each {criteria_type} criterion, briefly generate your reasoning process: First, judge whether the criterion is not applicable (not very common), where the patient does not meet the premise of the criterion. Then, check if the patient note contains direct evidence. If so, judge whether the patient meets or does not meet the criterion. If there is no direct evidence, try to infer from existing evidence, and answer one question: If the criterion is true, is it possible that a good patient note will miss such information? If impossible, then you can assume that the criterion is not true. Otherwise, there is not enough information.
+\tElement 2. If there is relevant information, you must generate a list of relevant sentence IDs in the patient note. If there is no relevant information, you must annotate an empty list.
+\tElement 3. Classify the patient eligibility for this specific {criteria_type} criterion: """
+
+        if criteria_type == "inclusion":
+            system_prompt += 'the label must be chosen from {"not applicable", "not enough information", "included", "not included"}. "not applicable" should only be used for criteria that are not applicable to the patient. "not enough information" should be used where the patient note does not contain sufficient information for making the classification. Try to use as less "not enough information" as possible because if the note does not mention a medically important fact, you can assume that the fact is not true for the patient. "included" denotes that the patient meets the inclusion criterion, while "not included" means the reverse.\n'
+        else:
+            system_prompt += 'the label must be chosen from {"not applicable", "not enough information", "excluded", "not excluded"}. "not applicable" should only be used for criteria that are not applicable to the patient. "not enough information" should be used where the patient note does not contain sufficient information for making the classification. Try to use as less "not enough information" as possible because if the note does not mention a medically important fact, you can assume that the fact is not true for the patient. "excluded" denotes that the patient meets the exclusion criterion and should be excluded in the trial, while "not excluded" means the reverse.\n'
+
+        system_prompt += 'You should output only a JSON dict exactly formatted as: dict{str(criterion_number): list[str(element_1_brief_reasoning), list[int(element_2_sentence_id)], str(element_3_eligibility_label)]}.'
+
+        # Build trial info
+        trial_info = f"Title: {trial_title}\n"
+        if trial_conditions:
+            trial_info += f"Target diseases: {', '.join(trial_conditions)}\n"
+        trial_info += f"{criteria_type.capitalize()} criteria:\n{criteria_text}"
+
+        user_prompt = f"""Here is the patient note, each sentence is led by a sentence_id:
+{patient_with_ids}
+
+Here is the clinical trial:
+{trial_info}
+
+Plain JSON output:"""
+
+        # Call GPT with TrialGPT's exact prompt (temperature=0)
+        try:
+            response, cost = self._call_gpt_with_retry(
+                user_prompt,
+                system_prompt,
+                model=self.model,
+            )
+
+            # Parse response
+            if isinstance(response, dict):
+                matching_results = response
+            else:
+                # Clean up response
+                clean_response = response.strip().strip("`").strip("json").strip()
+                matching_results = json.loads(clean_response)
+
+            # Convert to CriterionEvaluation objects
+            criterion_evaluations = []
+            for idx, criterion in enumerate(criteria_list):
+                idx_str = str(idx)
+                if idx_str in matching_results and isinstance(matching_results[idx_str], list):
+                    preds = matching_results[idx_str]
+                    if len(preds) == 3:
+                        reasoning = preds[0] if isinstance(preds[0], str) else ""
+                        # sentence_ids = preds[1]  # Not used currently
+                        label = preds[2] if isinstance(preds[2], str) else "not enough information"
+
+                        # Convert label to probability for compatibility
+                        if criteria_type == "inclusion":
+                            if label.lower() == "included":
+                                prob = 1.0
+                            elif label.lower() == "not included":
+                                prob = 0.0
+                            else:  # not applicable or not enough information
+                                prob = 0.5
+                        else:  # exclusion
+                            if label.lower() == "excluded":
+                                prob = 0.0  # Excluded means ineligible
+                            elif label.lower() == "not excluded":
+                                prob = 1.0
+                            else:
+                                prob = 0.5
+
+                        criterion_evaluations.append(CriterionEvaluation(
+                            criterion=criterion,
+                            reason=reasoning,
+                            eligibility=prob,
+                            label=label.lower(),
+                            criterion_type=criteria_type
+                        ))
+                    else:
+                        # Malformed response for this criterion
+                        criterion_evaluations.append(CriterionEvaluation(
+                            criterion=criterion,
+                            reason="Malformed response",
+                            eligibility=0.5,
+                            label="not enough information",
+                            criterion_type=criteria_type
+                        ))
+                else:
+                    # Missing result for this criterion
+                    criterion_evaluations.append(CriterionEvaluation(
+                        criterion=criterion,
+                        reason="Missing from batch response",
+                        eligibility=0.5,
+                        label="not enough information",
+                        criterion_type=criteria_type
+                    ))
+
+            return criterion_evaluations, cost
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.error(f"Error parsing TrialGPT batch response: {e}. Response: {response}")
+            # Fallback: return all as "not enough information"
+            criterion_evaluations = [
+                CriterionEvaluation(
+                    criterion=criterion,
+                    reason="Batch evaluation failed",
+                    eligibility=0.5,
+                    label="not enough information",
+                    criterion_type=criteria_type
+                )
+                for criterion in criteria_list
+            ]
+            return criterion_evaluations, cost
+
     def _evaluate_inclusion_criteria(
-        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str, use_llm_aggregation: bool = False
+        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str, use_trialgpt_approach: bool = False
     ) -> Tuple[float, Optional[Tuple[str, str, str]], float, List[CriterionEvaluation]]:
         """
         Evaluate a list of inclusion criteria against given conditions.
@@ -2019,14 +2187,14 @@ Patient Conditions to Evaluate:
             inclusion_criteria: List of inclusion criteria to evaluate
             conditions: List of conditions to check against
             trial_title: Title of the clinical trial
-            use_llm_aggregation: Whether to collect evaluations for LLM aggregation
+            use_trialgpt_approach: Whether to use TrialGPT's batch evaluation approach
 
         Returns:
             Tuple of (
                 overall_probability: float,
                 failure_reason: Optional[Tuple[str, str, str]],  # (condition, criterion, reason) if failed
                 total_cost: float,
-                criterion_evaluations: List[CriterionEvaluation]  # List of per-criterion evaluations for LLM aggregation
+                criterion_evaluations: List[CriterionEvaluation]  # List of per-criterion evaluations for TrialGPT aggregation
             )
         """
         total_cost = 0.0
@@ -2052,7 +2220,7 @@ Patient Conditions to Evaluate:
                     logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Treating subgroup-specific criterion as satisfied")
                     overall_probability *= 1.0  # No penalty for subgroup criteria
                     # Collect evaluation for LLM aggregation
-                    if use_llm_aggregation:
+                    if use_trialgpt_approach:
                         criterion_evaluations.append(CriterionEvaluation(
                             criterion=criterion,
                             reason="Subgroup-specific criterion (automatically satisfied)",
@@ -2090,7 +2258,7 @@ Patient Conditions to Evaluate:
                 total_cost += branch_cost
 
                 # Collect evaluation for LLM aggregation (use max probability across branches)
-                if use_llm_aggregation:
+                if use_trialgpt_approach:
                     label = self._convert_probability_to_label(branch_max_prob, "inclusion")
                     criterion_evaluations.append(CriterionEvaluation(
                         criterion=criterion,
@@ -2136,7 +2304,7 @@ Patient Conditions to Evaluate:
                 total_cost += cost
 
                 # Collect evaluation for LLM aggregation
-                if use_llm_aggregation:
+                if use_trialgpt_approach:
                     label = self._convert_probability_to_label(probability, "inclusion")
                     criterion_evaluations.append(CriterionEvaluation(
                         criterion=criterion,
@@ -2414,7 +2582,7 @@ Plain JSON output:"""
         trial: ClinicalTrial,
         conditions: list[str],
         refresh_cache: bool = False,
-        use_llm_aggregation: bool = False,
+        use_trialgpt_approach: bool = False,
     ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
         Evaluate a trial's eligibility based on title, inclusion criteria, and exclusion criteria.
@@ -2423,7 +2591,7 @@ Plain JSON output:"""
             trial: The clinical trial to evaluate
             conditions: List of conditions to check against
             refresh_cache: Whether to refresh the cache
-            use_llm_aggregation: Whether to use LLM-based aggregation (TrialGPT approach) instead of min-aggregation
+            use_trialgpt_approach: Whether to use TrialGPT's two-stage approach: (1) batch criterion matching, (2) R+E aggregation scoring, instead of min-aggregation
 
         Returns:
             (is_eligible, total_cost, failure_reason)
@@ -2500,11 +2668,47 @@ Plain JSON output:"""
             return False, title_cost, failure
 
         # 3) Evaluate the inclusion criteria
-        inclusion_probability, inclusion_failure_reason, inclusion_cost, criterion_evaluations = (
-            self._evaluate_inclusion_criteria(
-                inclusion_criteria, conditions, trial.identification.brief_title, use_llm_aggregation
+        if use_trialgpt_approach:
+            # Use TrialGPT's batch evaluation approach
+            logger.info(
+                f"evaluate_trial: Using TrialGPT batch evaluation for {trial.identification.nct_id} "
+                f"with {len(inclusion_criteria)} inclusion criteria"
             )
-        )
+
+            # Get trial conditions for batch prompt
+            trial_conditions = trial.description.conditions if hasattr(trial.description, 'conditions') else []
+
+            criterion_evaluations, inclusion_cost = self._evaluate_criteria_batch_trialgpt(
+                inclusion_criteria,
+                "inclusion",
+                conditions,
+                trial.identification.brief_title,
+                trial_conditions,
+                refresh_cache
+            )
+
+            # Calculate min-aggregation score from batch results for compatibility
+            inclusion_probability = min([eval.eligibility for eval in criterion_evaluations]) if criterion_evaluations else 0.0
+
+            # Check if any criterion failed completely
+            inclusion_failure_reason = None
+            if inclusion_probability <= 0.0:
+                # Find first failed criterion
+                for eval in criterion_evaluations:
+                    if eval.eligibility <= 0.0:
+                        inclusion_failure_reason = (
+                            ", ".join(conditions),
+                            eval.criterion,
+                            eval.reason
+                        )
+                        break
+        else:
+            # Use traditional criterion-by-criterion evaluation
+            inclusion_probability, inclusion_failure_reason, inclusion_cost, criterion_evaluations = (
+                self._evaluate_inclusion_criteria(
+                    inclusion_criteria, conditions, trial.identification.brief_title, use_trialgpt_approach
+                )
+            )
 
         total_cost = title_cost + inclusion_cost
 
@@ -2513,8 +2717,8 @@ Plain JSON output:"""
         trialgpt_score = None
         trialgpt_reasoning = None
 
-        # If using LLM aggregation and we have criterion evaluations, aggregate them
-        if use_llm_aggregation and criterion_evaluations:
+        # If using TrialGPT approach and we have criterion evaluations, aggregate them
+        if use_trialgpt_approach and criterion_evaluations:
             logger.info(
                 f"evaluate_trial: Using TrialGPT aggregation for {trial.identification.nct_id} "
                 f"with {len(criterion_evaluations)} criterion evaluations"
@@ -2594,11 +2798,44 @@ Plain JSON output:"""
                 )
 
                 # Evaluate exclusion criteria
-                exclusion_probability, exclusion_failure_reason, exclusion_cost = (
-                    self._evaluate_exclusion_criteria(
-                        exclusion_criteria, conditions, trial.identification.brief_title
+                if use_trialgpt_approach:
+                    # Use TrialGPT's batch evaluation for exclusion criteria
+                    logger.info(
+                        f"evaluate_trial: Using TrialGPT batch evaluation for {trial.identification.nct_id} "
+                        f"with {len(exclusion_criteria)} exclusion criteria"
                     )
-                )
+
+                    trial_conditions = trial.description.conditions if hasattr(trial.description, 'conditions') else []
+
+                    exclusion_evaluations, exclusion_cost = self._evaluate_criteria_batch_trialgpt(
+                        exclusion_criteria,
+                        "exclusion",
+                        conditions,
+                        trial.identification.brief_title,
+                        trial_conditions,
+                        refresh_cache
+                    )
+
+                    # Add exclusion evaluations to criterion_evaluations for aggregation
+                    criterion_evaluations.extend(exclusion_evaluations)
+
+                    # Check if patient meets any exclusion criterion (excluded)
+                    exclusion_failure_reason = None
+                    for eval in exclusion_evaluations:
+                        if eval.label and eval.label.lower() == "excluded":
+                            exclusion_failure_reason = (
+                                ", ".join(conditions),
+                                eval.criterion,
+                                eval.reason
+                            )
+                            break
+                else:
+                    # Traditional criterion-by-criterion evaluation
+                    exclusion_probability, exclusion_failure_reason, exclusion_cost = (
+                        self._evaluate_exclusion_criteria(
+                            exclusion_criteria, conditions, trial.identification.brief_title
+                        )
+                    )
 
                 total_cost += exclusion_cost
 
