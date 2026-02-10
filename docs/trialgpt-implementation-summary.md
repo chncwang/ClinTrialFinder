@@ -2,11 +2,26 @@
 
 ## What Was Implemented
 
-We have successfully implemented **Option A: Exact TrialGPT Replication** for fair paper comparison.
+We have successfully implemented **Option A: Exact TrialGPT Replication** for fair paper comparison, including batch criterion evaluation.
 
 ### Implementation Details
 
-#### 1. Updated Data Structures
+#### 1. Batch Criterion Evaluation (TrialGPT Stage 1: Matching)
+
+**NEW: `_evaluate_criteria_batch_trialgpt()`** - Evaluates ALL criteria in ONE prompt:
+- Separate batch calls for inclusion and exclusion (matches TrialGPT)
+- Uses TrialGPT's exact matching prompt
+- Formats patient notes with sentence IDs (e.g., "0. Patient is 65 years old...")
+- Outputs JSON dict: `{criterion_number: [reasoning, sentence_ids, label]}`
+- Temperature = 0 (deterministic)
+
+**Key Difference from Previous Implementation:**
+- ❌ OLD: Evaluated criteria one-by-one (many API calls)
+- ✅ NEW: Evaluates ALL criteria in one batch prompt (2-3 API calls total)
+
+This matches TrialGPT's approach from `trialgpt_matching/TrialGPT.py`
+
+#### 2. Updated Data Structures
 
 **`CriterionEvaluation` dataclass** (`base/trial_expert.py`):
 ```python
@@ -74,7 +89,7 @@ trialgpt_score = matching_score + agg_score
 
 ### Command-Line Flag
 
-The implementation is controlled by the `--use-llm-aggregation` flag in the benchmark script:
+The implementation is controlled by the `--use-trialgpt-approach` flag in the benchmark script:
 
 ```bash
 # Default: min-aggregation (original CTF approach)
@@ -88,7 +103,7 @@ python benchmark/benchmark_filtering_performance.py \
     --api-key <your-api-key> \
     --patient-id 17 \
     --max-patients 1 \
-    --use-llm-aggregation
+    --use-trialgpt-approach
 ```
 
 ### Testing Patient 17 (Hemodialysis Edge Case)
@@ -111,7 +126,7 @@ python benchmark/benchmark_filtering_performance.py \
     --patient-id 17 \
     --dataset-path dataset/trec_2021 \
     --output results/patient17_llm_agg.json \
-    --use-llm-aggregation
+    --use-trialgpt-approach
 ```
 
 **Expected result:** Trials score 0.2-0.5 instead of 0.0, nDCG@10 improves from 0.069 → > 0.4
@@ -130,7 +145,7 @@ python benchmark/benchmark_filtering_performance.py \
     --api-key $OPENAI_API_KEY \
     --max-patients 20 \
     --output results/20patients_llm_agg.json \
-    --use-llm-aggregation
+    --use-trialgpt-approach
 ```
 
 ## Expected Performance Improvements
@@ -165,7 +180,7 @@ This implementation matches the original TrialGPT repository exactly:
    - Updated all `CriterionEvaluation()` calls to include labels
 
 2. **`benchmark/benchmark_filtering_performance.py`**
-   - Added `--use-llm-aggregation` argument
+   - Added `--use-trialgpt-approach` argument
    - Updated `run_benchmark()` signature
    - Pass parameter to `evaluate_trial()` call
 
@@ -179,7 +194,7 @@ This implementation matches the original TrialGPT repository exactly:
 ## Next Steps
 
 1. **Test on Patient 17:**
-   - Run with and without `--use-llm-aggregation`
+   - Run with and without `--use-trialgpt-approach`
    - Verify improved handling of renal function failures
    - Check that zero-score rate drops from 57% to < 10%
 
@@ -193,12 +208,48 @@ This implementation matches the original TrialGPT repository exactly:
    - Show that per-criterion evaluation + LLM aggregation > either alone
    - Address reviewer concern: "Why not use TrialGPT's approach?"
 
+## TrialGPT's Two-Stage Approach (What Actually Runs)
+
+When `--use-trialgpt-approach` is used, the system follows TrialGPT's exact flow:
+
+**Stage 1: Batch Matching (2 API calls)**
+1. Call 1: Evaluate ALL inclusion criteria in one prompt
+   - Input: Patient note with sentence IDs + all inclusion criteria
+   - Output: JSON with label + reasoning for each criterion
+   - Model: gpt-4.1-mini, temperature=0
+
+2. Call 2: Evaluate ALL exclusion criteria in one prompt
+   - Input: Patient note with sentence IDs + all exclusion criteria
+   - Output: JSON with label + reasoning for each criterion
+   - Model: gpt-4.1-mini, temperature=0
+
+**Stage 2: Aggregation (1 API call)**
+3. Call 3: Aggregate all criterion results into R+E scores
+   - Input: Trial summary + formatted criterion-level predictions
+   - Output: Relevance (R: 0-100) + Eligibility (E: -R to R) with explanations
+   - Model: gpt-4.1-mini, temperature=0
+
+**Feature Combination:**
+```python
+final_score = matching_score + (R + E) / 100
+```
+
+**Total: 3 API calls per trial** (vs many calls in criterion-by-criterion approach)
+
+## API Cost Comparison
+
+- **Min-aggregation (CTF):** N+1 API calls per trial (N = number of criteria + 1 for title)
+- **TrialGPT approach:** 3 API calls per trial (inclusion batch + exclusion batch + aggregation)
+- **Cost impact:** TrialGPT is more efficient for trials with many criteria (>2), less efficient for trials with few criteria
+
 ## Commits
 
 - `2712c8f` - Add LLM aggregation parameter to evaluate_trial method
 - `977a49d` - Document TrialGPT's LLM aggregation prompts and approach
 - `1d89556` - Update TrialGPT documentation with exact prompts from official repo
 - `7942c47` - Implement exact TrialGPT aggregation (Option A)
-- `fb12953` - Add --use-llm-aggregation flag to benchmark script
+- `fb12953` - Add --use-trialgpt-approach flag to benchmark script
+- `bda4eda` - Add implementation summary documentation
+- `af56bc7` - Rename to use_trialgpt_approach and implement batch evaluation
 
 Branch: `feature/trialgpt-llm-aggregation`
