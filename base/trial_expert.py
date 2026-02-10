@@ -2873,9 +2873,22 @@ Plain JSON output:"""
 
         # If overall probability is zero or near zero but no explicit failure_reason
         if overall_probability <= 0.0:
-            raise RuntimeError(
-                "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
-            )
+            # Handle TrialGPT scores that are negative but above -1.0 threshold
+            if use_trialgpt_approach and final_inclusion_score < 0:
+                failure = TrialFailureReason(
+                    type="inclusion_criterion",
+                    message=f"Failed TrialGPT aggregation (negative score: {final_inclusion_score:.3f})",
+                    failure_details=f"TrialGPT final score: {final_inclusion_score:.3f}",
+                )
+                logger.info(
+                    f"evaluate_trial: Trial {trial.identification.nct_id} failed "
+                    f"with negative TrialGPT score {final_inclusion_score:.3f}"
+                )
+                return False, total_cost, failure
+            else:
+                raise RuntimeError(
+                    "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
+                )
 
         # Otherwise, the trial is eligible
         logger.info(
