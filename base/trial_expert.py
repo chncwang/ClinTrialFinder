@@ -2008,8 +2008,8 @@ Patient Conditions to Evaluate:
 
 
     def _evaluate_inclusion_criteria(
-        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str
-    ) -> Tuple[float, Optional[Tuple[str, str, str]], float]:
+        self, inclusion_criteria: List[str], conditions: List[str], trial_title: str, use_llm_aggregation: bool = False
+    ) -> Tuple[float, Optional[Tuple[str, str, str]], float, List[CriterionEvaluation]]:
         """
         Evaluate a list of inclusion criteria against given conditions.
 
@@ -2017,18 +2017,22 @@ Patient Conditions to Evaluate:
             inclusion_criteria: List of inclusion criteria to evaluate
             conditions: List of conditions to check against
             trial_title: Title of the clinical trial
+            use_llm_aggregation: Whether to collect evaluations for LLM aggregation
 
         Returns:
             Tuple of (
                 overall_probability: float,
                 failure_reason: Optional[Tuple[str, str, str]],  # (condition, criterion, reason) if failed
-                total_cost: float
+                total_cost: float,
+                criterion_evaluations: List[CriterionEvaluation]  # List of per-criterion evaluations for LLM aggregation
             )
         """
         total_cost = 0.0
         overall_probability = 1.0
         # Tracks the reason for trial failure: (failed_condition, failed_criterion, failure_reason)
         failure_reason: Optional[Tuple[str, str, str]] = None
+        # Collect all criterion evaluations for LLM aggregation
+        criterion_evaluations: List[CriterionEvaluation] = []
 
         for criterion in inclusion_criteria:
             logger.info(
@@ -2045,6 +2049,13 @@ Patient Conditions to Evaluate:
                     # This prevents valid trials from being wrongly excluded due to subgroup-specific requirements
                     logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Treating subgroup-specific criterion as satisfied")
                     overall_probability *= 1.0  # No penalty for subgroup criteria
+                    # Collect evaluation for LLM aggregation
+                    if use_llm_aggregation:
+                        criterion_evaluations.append(CriterionEvaluation(
+                            criterion=criterion,
+                            reason="Subgroup-specific criterion (automatically satisfied)",
+                            eligibility=1.0
+                        ))
                     continue
             else:
                 logger.info(f"GPTTrialFilter.evaluate_inclusion_criteria: Subgroup awareness disabled, evaluating all criteria normally")
@@ -2073,6 +2084,14 @@ Patient Conditions to Evaluate:
                     or_branches, conditions, trial_title
                 )
                 total_cost += branch_cost
+
+                # Collect evaluation for LLM aggregation (use max probability across branches)
+                if use_llm_aggregation:
+                    criterion_evaluations.append(CriterionEvaluation(
+                        criterion=criterion,
+                        reason=f"OR criterion with {len(or_branches)} branches, max probability: {branch_max_prob}",
+                        eligibility=branch_max_prob
+                    ))
 
                 # Check if any condition failed all branches
                 if branch_max_prob <= 0.0:
@@ -2109,6 +2128,14 @@ Patient Conditions to Evaluate:
                 overall_probability *= probability
                 total_cost += cost
 
+                # Collect evaluation for LLM aggregation
+                if use_llm_aggregation:
+                    criterion_evaluations.append(CriterionEvaluation(
+                        criterion=criterion,
+                        reason=reason,
+                        eligibility=probability
+                    ))
+
                 if probability <= 0.0:
                     failure_reason = (
                         ", ".join(most_relevant_conditions),
@@ -2121,7 +2148,7 @@ Patient Conditions to Evaluate:
             raise RuntimeError(
                 "Illegal state: overall_probability <= 0.0 but no failure reason was recorded"
             )
-        return overall_probability, failure_reason, total_cost
+        return overall_probability, failure_reason, total_cost, criterion_evaluations
 
     def _is_subgroup_specific_criterion(self, criterion: str) -> Tuple[bool, float]:
         """
@@ -2185,11 +2212,101 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             ]
             return any(re.search(pattern, criterion, re.IGNORECASE) for pattern in subgroup_patterns), 0.0
 
+    def _aggregate_criteria_with_llm(
+        self,
+        criterion_evaluations: List[CriterionEvaluation],
+        conditions: List[str],
+        trial_title: str,
+        refresh_cache: bool = False,
+    ) -> Tuple[float, str, float]:
+        """
+        Use LLM to holistically aggregate per-criterion scores into a final eligibility score.
+        This implements TrialGPT's approach of reviewing all criterion scores to produce
+        a more robust final score that doesn't zero out due to single criterion failures.
+
+        Args:
+            criterion_evaluations: List of per-criterion evaluation results
+            conditions: Patient conditions being evaluated
+            trial_title: Title of the clinical trial
+            refresh_cache: Whether to refresh the cache
+
+        Returns:
+            Tuple of (final_eligibility_score, reasoning, cost)
+        """
+        # Build a structured summary of all criterion evaluations
+        criteria_summary = []
+        for i, eval in enumerate(criterion_evaluations, 1):
+            status = "PASS" if eval.eligibility > 0.5 else "FAIL" if eval.eligibility == 0.0 else "PARTIAL"
+            criteria_summary.append(
+                f"{i}. [{status}] Score: {eval.eligibility:.2f}\n"
+                f"   Criterion: {eval.criterion}\n"
+                f"   Reason: {eval.reason}"
+            )
+
+        criteria_text = "\n\n".join(criteria_summary)
+        conditions_text = ", ".join(conditions)
+
+        prompt = f"""You are evaluating a patient's overall eligibility for a clinical trial by holistically reviewing per-criterion evaluation results.
+
+Trial Title: {trial_title}
+
+Patient Conditions: {conditions_text}
+
+Per-Criterion Evaluation Results:
+{criteria_text}
+
+Instructions:
+1. Review all criterion scores holistically
+2. Consider whether criterion failures are absolute exclusions or negotiable
+3. A score of 0.0 typically means complete failure, 1.0 means complete pass, values in between indicate partial match or uncertainty
+4. Consider the overall disease match and trial suitability despite individual criterion failures
+5. For patients with comorbidities (e.g., on hemodialysis), don't zero out trials just because of one organ function criterion if the primary disease criteria match well
+6. Output a final eligibility score [0.0-1.0] representing overall trial suitability
+7. Provide brief reasoning for your score
+
+Output your response as JSON with the following format:
+{{
+    "final_score": <float between 0.0 and 1.0>,
+    "reasoning": "<brief explanation of your scoring decision>"
+}}"""
+
+        system_role = "You are a medical expert evaluating clinical trial eligibility with a holistic, patient-centered approach."
+
+        try:
+            response, cost = self._call_gpt(
+                prompt=prompt,
+                system_role=system_role,
+                model="gpt-4.1-mini",
+                temperature=0.1,
+                refresh_cache=refresh_cache,
+            )
+
+            # Parse the JSON response
+            result = json.loads(response)
+            final_score = float(result.get("final_score", 0.0))
+            reasoning = result.get("reasoning", "No reasoning provided")
+
+            # Ensure score is in valid range
+            final_score = max(0.0, min(1.0, final_score))
+
+            logger.info(
+                f"LLM aggregation result: score={final_score:.3f}, reasoning={reasoning}"
+            )
+
+            return final_score, reasoning, cost
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.error(f"Error parsing LLM aggregation response: {e}. Response: {response}")
+            # Fallback to min aggregation if LLM fails
+            min_score = min([eval.eligibility for eval in criterion_evaluations]) if criterion_evaluations else 0.0
+            return min_score, f"LLM aggregation failed, using min score: {min_score}", cost
+
     def evaluate_trial(
         self,
         trial: ClinicalTrial,
         conditions: list[str],
         refresh_cache: bool = False,
+        use_llm_aggregation: bool = False,
     ) -> Tuple[bool, float, Optional[TrialFailureReason]]:
         """
         Evaluate a trial's eligibility based on title, inclusion criteria, and exclusion criteria.
@@ -2197,6 +2314,8 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
         Args:
             trial: The clinical trial to evaluate
             conditions: List of conditions to check against
+            refresh_cache: Whether to refresh the cache
+            use_llm_aggregation: Whether to use LLM-based aggregation (TrialGPT approach) instead of min-aggregation
 
         Returns:
             (is_eligible, total_cost, failure_reason)
@@ -2273,16 +2392,51 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             return False, title_cost, failure
 
         # 3) Evaluate the inclusion criteria
-        inclusion_probability, inclusion_failure_reason, inclusion_cost = (
+        inclusion_probability, inclusion_failure_reason, inclusion_cost, criterion_evaluations = (
             self._evaluate_inclusion_criteria(
-                inclusion_criteria, conditions, trial.identification.brief_title
+                inclusion_criteria, conditions, trial.identification.brief_title, use_llm_aggregation
             )
         )
 
         total_cost = title_cost + inclusion_cost
 
-        # If it failed on an inclusion criterion
-        if inclusion_failure_reason is not None:
+        # Track the final inclusion score (will be used for overall probability calculation)
+        final_inclusion_score = inclusion_probability
+        llm_reasoning = None
+
+        # If using LLM aggregation and we have criterion evaluations, aggregate them
+        if use_llm_aggregation and criterion_evaluations:
+            logger.info(
+                f"evaluate_trial: Using LLM aggregation for {trial.identification.nct_id} "
+                f"with {len(criterion_evaluations)} criterion evaluations"
+            )
+            llm_score, llm_reasoning, llm_cost = self._aggregate_criteria_with_llm(
+                criterion_evaluations, conditions, trial.identification.brief_title, refresh_cache
+            )
+            total_cost += llm_cost
+            final_inclusion_score = llm_score
+
+            logger.info(
+                f"evaluate_trial: LLM aggregation result for {trial.identification.nct_id}: "
+                f"score={llm_score:.3f}, reasoning={llm_reasoning}"
+            )
+
+            # Use LLM score instead of min-aggregation result
+            # Only fail if LLM score is very low (threshold: 0.1)
+            if llm_score <= 0.1:
+                failure = TrialFailureReason(
+                    type="inclusion_criterion",
+                    message="Failed LLM aggregation (holistic eligibility too low)",
+                    failure_details=llm_reasoning,
+                )
+                logger.info(
+                    f"evaluate_trial: Trial {trial.identification.nct_id} failed "
+                    f"LLM aggregation with score {llm_score:.3f}"
+                )
+                return False, total_cost, failure
+            # Otherwise, continue with exclusion criteria check (trial is eligible so far)
+        # If not using LLM aggregation, use traditional min-aggregation logic
+        elif inclusion_failure_reason is not None:
             (condition_failed, criterion_failed, reason) = inclusion_failure_reason
             failure = TrialFailureReason(
                 type="inclusion_criterion",
@@ -2355,7 +2509,8 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
 
         # Calculate overall probability
-        overall_probability = title_probability * inclusion_probability
+        # Use final_inclusion_score which is either the LLM aggregation score or traditional min-aggregation score
+        overall_probability = title_probability * final_inclusion_score
 
         # If overall probability is zero or near zero but no explicit failure_reason
         if overall_probability <= 0.0:
@@ -2364,6 +2519,11 @@ Is this criterion subgroup-specific? Respond with only "YES" or "NO" in plain te
             )
 
         # Otherwise, the trial is eligible
+        logger.info(
+            f"evaluate_trial: Trial {trial.identification.nct_id} is eligible with "
+            f"overall_probability={overall_probability:.3f} "
+            f"(title={title_probability:.3f}, inclusion={final_inclusion_score:.3f})"
+        )
         return True, total_cost, None
 
 
