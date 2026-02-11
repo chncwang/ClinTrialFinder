@@ -2869,7 +2869,13 @@ Plain JSON output:"""
 
         # Calculate overall probability
         # Use final_inclusion_score which is either the LLM aggregation score or traditional min-aggregation score
-        overall_probability = title_probability * final_inclusion_score
+        if use_trialgpt_approach:
+            # For TrialGPT: title screening is a binary pre-filter (pass/fail), not a scoring factor
+            # Once a trial passes title screening, use only the TrialGPT score (matching + R+E)
+            overall_probability = final_inclusion_score
+        else:
+            # For baseline: multiply title probability with inclusion score
+            overall_probability = title_probability * final_inclusion_score
 
         # If overall probability is zero or near zero but no explicit failure_reason
         if overall_probability <= 0.0:
@@ -2891,11 +2897,18 @@ Plain JSON output:"""
                 )
 
         # Otherwise, the trial is eligible
-        logger.info(
-            f"evaluate_trial: Trial {trial.identification.nct_id} is eligible with "
-            f"overall_probability={overall_probability:.3f} "
-            f"(title={title_probability:.3f}, inclusion={final_inclusion_score:.3f})"
-        )
+        if use_trialgpt_approach:
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} is eligible with "
+                f"TrialGPT_score={overall_probability:.3f} "
+                f"(title_passed={title_probability:.3f}, matching+R+E={final_inclusion_score:.3f})"
+            )
+        else:
+            logger.info(
+                f"evaluate_trial: Trial {trial.identification.nct_id} is eligible with "
+                f"overall_probability={overall_probability:.3f} "
+                f"(title={title_probability:.3f}, inclusion={final_inclusion_score:.3f})"
+            )
         return True, total_cost, None
 
 
