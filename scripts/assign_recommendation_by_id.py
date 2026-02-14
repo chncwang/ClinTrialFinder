@@ -3,7 +3,6 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -29,59 +28,19 @@ logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
 
 def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
     """Fetch clinical trial data directly from ClinicalTrials.gov."""
-    # Create a temporary file to store the spider output
-    with tempfile.NamedTemporaryFile(
-        mode="w+", suffix=".json", delete=False
-    ) as tmp_file:
-        temp_output = tmp_file.name
-        logger.info(f"Using temporary file: {temp_output}")
+    from base.trial_downloader import TrialDownloader
 
     try:
-        # Import scrapy components here to avoid circular imports
-        from scrapy.crawler import CrawlerProcess
-        from scrapy.utils.project import get_project_settings
-        from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
-            ClinicalTrialsSpider,
-        )
-
-        # Configure and run the spider with minimal settings
-        settings = get_project_settings()
-        settings.set("DOWNLOAD_DELAY", 1)
-        settings.set(
-            "USER_AGENT",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-        )
-
-        process = CrawlerProcess(settings)
-        process.crawl(
-            ClinicalTrialsSpider, specific_trial=nct_id, output_file=temp_output
-        )
-        process.start()  # This will block until the crawl is complete
-
-        # Read the results
-        content = ""
-        try:
-            with open(temp_output, "r") as f:
-                content = f.read().strip()
-                if not content:
-                    logger.error("No data was written to the output file")
-                    return []
-                logger.debug(f"fetch_trial_data: Read content: {content[:200]}...")
-                return json.loads(content)
-        except FileNotFoundError:
-            logger.error(f"fetch_trial_data: Output file not found: {temp_output}")
+        downloader = TrialDownloader()
+        trial_data = downloader.fetch_by_nct_id(nct_id)
+        if trial_data:
+            return [trial_data]
+        else:
+            logger.error("No data was returned from the API")
             return []
-        except json.JSONDecodeError as e:
-            logger.error(f"fetch_trial_data: Failed to parse spider output: {e}")
-            logger.error(f"fetch_trial_data: Content of output file: {content[:200]}...")
-            return []
-
-    finally:
-        # Clean up the temporary file
-        try:
-            Path(temp_output).unlink(missing_ok=True)
-        except Exception as e:
-            logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
+    except Exception as e:
+        logger.error(f"Failed to fetch trial data: {e}")
+        return []
 
 
 def assign_recommendation_to_trial(

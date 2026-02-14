@@ -1,5 +1,5 @@
 """
-Script to download clinical trials using the scrapy crawler.
+Script to download clinical trials from ClinicalTrials.gov API.
 
 Usage:
     python -m scripts.download_trials --condition "disease name" [options]
@@ -17,14 +17,13 @@ Options:
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple, Optional, Any, Dict
 
-# Import the disease expert module for broader categories
 from base.disease_expert import get_parent_disease_categories
 from base.gpt_client import GPTClient
+from base.trial_downloader import TrialDownloader
 
 
 def parse_arguments():
@@ -122,11 +121,8 @@ def get_output_filename(condition: str, args: argparse.Namespace) -> str:
 
 
 def download_trials(args: argparse.Namespace, condition: Optional[str] = None, output_file: Optional[str] = None) -> Tuple[bool, Optional[str]]:
-    """Download clinical trials using scrapy."""
-    # Get the project root directory and change to crawler directory
+    """Download clinical trials using the ClinicalTrials.gov API."""
     project_root = Path(__file__).resolve().parent.parent
-    crawler_dir = project_root / "clinical_trial_crawler"
-    os.chdir(crawler_dir)
 
     # Use provided condition or from args
     condition = condition or args.condition
@@ -139,56 +135,34 @@ def download_trials(args: argparse.Namespace, condition: Optional[str] = None, o
             # For specific trials, use the trial ID as filename
             output_file = os.path.join(project_root, f"{args.specific_trial}.json")
 
-    # Build the scrapy command
-    cmd = "python -m scrapy crawl clinical_trials"
-
-    # Add condition if provided
-    if condition:
-        cmd += f' -a condition="{condition}"'
-
-    # Add specific trial if provided
-    if args.specific_trial:
-        cmd += f" -a specific_trial={args.specific_trial}"
-
-    # Add exclude completed flag if set
-    if args.exclude_completed:
-        cmd += " -a exclude_completed=true"
-
-    # Add log level
-    cmd += f" --loglevel={args.log_level}"
-
-    # Add output file
-    cmd += f' -O "{output_file}"'
-
-    # Print the command being executing
-    print(f"Executing command: {cmd}")
+    downloader = TrialDownloader(delay=1.0, timeout=30)
 
     try:
-        # Execute the command
-        process = subprocess.Popen(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        stdout, stderr = process.communicate()
-
-        # Get the return code
-        return_code = process.returncode
-
-        # Print any output
-        if stdout:
-            print(stdout.decode())
-        if stderr:
-            print(stderr.decode())
-
-        if return_code == 0:
-            print(f"Command completed successfully.")
-            print(f"Output saved to: {output_file}")
-            return True, output_file
+        if args.specific_trial:
+            print(f"Fetching trial: {args.specific_trial}")
+            trial_data = downloader.fetch_by_nct_id(args.specific_trial)
+            if trial_data:
+                trials = [trial_data]
+            else:
+                print(f"Failed to fetch trial {args.specific_trial}")
+                return False, None
         else:
-            print(f"Command failed with exit code: {return_code}")
-            return False, None
+            print(f"Downloading trials for condition: {condition}")
+            trials = downloader.fetch_by_condition(
+                condition=condition,
+                exclude_completed=args.exclude_completed,
+            )
+
+        # Write output
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(trials, f, indent=2, ensure_ascii=False)
+
+        print(f"Command completed successfully.")
+        print(f"Output saved to: {output_file}")
+        return True, output_file
 
     except Exception as e:
-        print(f"Error executing command: {e}")
+        print(f"Error downloading trials: {e}")
         return False, None
 
 

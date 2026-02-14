@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 import logging
@@ -11,17 +10,13 @@ logger = logging.getLogger(__name__)
 
 # Add parent directory to Python path to import modules
 sys.path.append(str(Path(__file__).parent.parent))
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 
 from base.clinical_trial import ClinicalTrialsParser
 from base.gpt_client import GPTClient
 from base.perplexity import PerplexityClient
 from base.trial_expert import analyze_drugs_and_get_recommendation
+from base.trial_downloader import TrialDownloader
 from base.utils import read_input_file, get_api_key, create_gpt_client
-from clinical_trial_crawler.clinical_trial_crawler.spiders.clinical_trials_spider import (
-    ClinicalTrialsSpider,
-)
 
 # Configure logging using centralized configuration
 from base.logging_config import setup_logging
@@ -33,52 +28,17 @@ logger.info(f"All logs will be written to: {os.path.abspath(log_filename)}")
 
 def fetch_trial_data(nct_id: str) -> List[Dict[str, Any]]:
     """Fetch clinical trial data directly from ClinicalTrials.gov."""
-    # Create a temporary file to store the spider output
-    with tempfile.NamedTemporaryFile(
-        mode="w+", suffix=".json", delete=False
-    ) as tmp_file:
-        temp_output = tmp_file.name
-        logger.info(f"Using temporary file: {temp_output}")
-
     try:
-        # Configure and run the spider with minimal settings
-        settings = get_project_settings()
-        settings.set("DOWNLOAD_DELAY", 1)
-        settings.set(
-            "USER_AGENT",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-        )
-
-        process = CrawlerProcess(settings)
-        process.crawl(
-            ClinicalTrialsSpider, specific_trial=nct_id, output_file=temp_output
-        )
-        process.start()  # This will block until the crawl is complete
-
-        # Read the results
-        content = ""
-        try:
-            with open(temp_output, "r") as f:
-                content = f.read().strip()
-                if not content:
-                    logger.error("No data was written to the output file")
-                    return []
-                logger.debug(f"fetch_trial_data: Read content: {content[:200]}...")
-                return json.loads(content)
-        except FileNotFoundError:
-            logger.error(f"fetch_trial_data: Output file not found: {temp_output}")
+        downloader = TrialDownloader()
+        trial_data = downloader.fetch_by_nct_id(nct_id)
+        if trial_data:
+            return [trial_data]
+        else:
+            logger.error("No data was returned from the API")
             return []
-        except json.JSONDecodeError as e:
-            logger.error(f"fetch_trial_data: Failed to parse spider output: {e}")
-            logger.error(f"fetch_trial_data: Content of output file: {content[:200]}...")
-            return []
-
-    finally:
-        # Clean up the temporary file
-        try:
-            Path(temp_output).unlink(missing_ok=True)
-        except Exception as e:
-            logger.warning(f"Failed to delete temporary file {temp_output}: {e}")
+    except Exception as e:
+        logger.error(f"Failed to fetch trial data: {e}")
+        return []
 
 
 def main():

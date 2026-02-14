@@ -750,83 +750,8 @@ class FilteringBenchmark:
 
     def _extract_trial_data(self, protocol: Dict[str, Any]) -> ClinicalTrial:
         """Extract trial data from protocol section and return ClinicalTrial object."""
-        def safe_get(d: Any, *keys: str, default: Any = None) -> Any:
-            """Safely get nested dictionary values"""
-            for key in keys:
-                if not isinstance(d, dict):
-                    return default
-                d = d.get(str(key), default)  # type: ignore[union-attr]
-                if d is None:
-                    return default
-            return d  # type: ignore[return-value]
-
-        trial_dict = {
-            "identification": {
-                "nct_id": safe_get(protocol, "identificationModule", "nctId"),
-                "url": (
-                    f"https://clinicaltrials.gov/study/{safe_get(protocol, 'identificationModule', 'nctId')}"
-                    if safe_get(protocol, "identificationModule", "nctId")
-                    else None
-                ),
-                "brief_title": safe_get(protocol, "identificationModule", "briefTitle"),
-                "official_title": safe_get(protocol, "identificationModule", "officialTitle"),
-                "acronym": safe_get(protocol, "identificationModule", "acronym"),
-                "org_study_id": safe_get(protocol, "identificationModule", "orgStudyIdInfo", "id"),
-            },
-            "status": {
-                "overall_status": safe_get(protocol, "statusModule", "overallStatus"),
-                "start_date": safe_get(protocol, "statusModule", "startDateStruct", "date"),
-                "completion_date": safe_get(protocol, "statusModule", "completionDateStruct", "date"),
-                "primary_completion_date": safe_get(protocol, "statusModule", "primaryCompletionDateStruct", "date"),
-            },
-            "description": {
-                "brief_summary": safe_get(protocol, "descriptionModule", "briefSummary"),
-                "detailed_description": safe_get(protocol, "descriptionModule", "detailedDescription"),
-                "conditions": safe_get(protocol, "descriptionModule", "conditions"),
-                "keywords": safe_get(protocol, "descriptionModule", "keywords"),
-            },
-            "design": {
-                "study_type": safe_get(protocol, "designModule", "studyType"),
-                "phases": safe_get(protocol, "designModule", "phases", default=[]),
-                "enrollment": safe_get(protocol, "designModule", "enrollmentInfo", "count"),
-                "arms": [
-                    {
-                        "name": safe_get(arm, "label"),
-                        "type": safe_get(arm, "type"),
-                        "description": safe_get(arm, "description"),
-                        "interventions": safe_get(arm, "interventionNames", default=[]),
-                    }
-                    for arm in safe_get(protocol, "armsInterventionsModule", "armGroups", default=[])
-                ],
-            },
-            "eligibility": {
-                "criteria": safe_get(protocol, "eligibilityModule", "eligibilityCriteria"),
-                "gender": safe_get(protocol, "eligibilityModule", "sex"),
-                "minimum_age": safe_get(protocol, "eligibilityModule", "minimumAge"),
-                "maximum_age": safe_get(protocol, "eligibilityModule", "maximumAge"),
-                "healthy_volunteers": safe_get(protocol, "eligibilityModule", "healthyVolunteers"),
-            },
-            "contacts_locations": {
-                "locations": [
-                    {
-                        "facility": safe_get(loc, "facility", "name") or safe_get(loc, "name"),
-                        "city": safe_get(loc, "facility", "city") or safe_get(loc, "city"),
-                        "state": safe_get(loc, "facility", "state") or safe_get(loc, "city"),
-                        "country": safe_get(loc, "facility", "country") or safe_get(loc, "city"),
-                        "status": safe_get(loc, "status"),
-                    }
-                    for loc in safe_get(protocol, "contactsLocationsModule", "locations", default=[])
-                ],
-            },
-            "sponsor": {
-                "lead_sponsor": safe_get(protocol, "sponsorCollaboratorsModule", "leadSponsor", "name"),
-                "collaborators": [
-                    safe_get(collab, "name", default="")
-                    for collab in safe_get(protocol, "sponsorCollaboratorsModule", "collaborators", default=[])
-                ],
-            },
-        }
-
+        from base.trial_downloader import extract_trial_data
+        trial_dict = extract_trial_data(protocol)
         return ClinicalTrial(trial_dict)
 
     def _load_trials(self, trials_file: Path) -> Dict[str, ClinicalTrial]:
