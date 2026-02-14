@@ -14,6 +14,7 @@ Watch our demo video to see ClinTrialFinder in action:
 - **Smart Filtering**: Uses GPT-4.1-mini to evaluate trial eligibility based on:
   - Trial titles
   - Inclusion criteria
+  - Two scoring approaches: **min-aggregation** (default, strict criterion-by-criterion) and **TrialGPT-style** batch evaluation with LLM aggregation (`--use-trialgpt-approach`)
 - **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
 - **Intelligent Recommendations**: Uses GPT-4.1 to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
 - **AI-Powered Ranking**: Uses GPT-4.1 with quicksort algorithm to rank trials from best to worst match for the patient through pairwise comparisons.
@@ -79,6 +80,7 @@ This single command will:
 - `--output`: Output CSV file path (default: trials_YYYYMMDD_HHMMSS.csv)
 - `--max-results`: Maximum number of top trials to include in output (default: no limit)
 - `--broader-disease`: Also search trials for broader disease categories (e.g., "head and neck cancer" for NPC)
+- `--use-trialgpt-approach`: Use TrialGPT-style batch criterion evaluation with LLM aggregation instead of min-aggregation (faster, cheaper, more lenient)
 - `--verbose`: Enable detailed logging to see progress
 
 #### Examples
@@ -97,6 +99,10 @@ python find_trials.py --clinical-record patient.txt --output trials.csv --broade
 # Will search "nasopharyngeal carcinoma" + "head and neck cancer" + "epithelial tumor" + "solid tumor"
 # Automatically merges and deduplicates results
 python find_trials.py --clinical-record npc_patient.txt --output npc_trials.csv --broader-disease
+
+# Use TrialGPT-style evaluation (batch criterion matching + LLM aggregation)
+# Faster and cheaper than default min-aggregation, with more lenient scoring
+python find_trials.py --clinical-record patient.txt --output trials.csv --use-trialgpt-approach --verbose
 ```
 
 #### What You Get
@@ -119,6 +125,7 @@ The output CSV contains 16 columns for each recommended trial:
 
 - **Typical runtime**: 2-4 hours for ~250 trials, 12-14 hours for ~2,000 trials (with --broader-disease)
 - **Cost**: ~$0.01 per trial analyzed (GPT-4.1-mini + Perplexity AI)
+- **With `--use-trialgpt-approach`**: ~2x cheaper and ~33% faster for the filtering stage
 - **Coverage**: --broader-disease typically finds 5-8x more trials than disease-specific search
 
 #### Advanced: Individual Pipeline Steps
@@ -192,6 +199,7 @@ Options:
 - `--phase`: Filter by trial phase (1-4)
 - `--exclude-study-type`: Exclude specific study types
 - `--recommendation-level`: Filter by recommendation level(s) ("Strongly Recommended", "Recommended", "Neutral", "Not Recommended"). Can specify multiple levels at once.
+- `--use-trialgpt-approach`: Use TrialGPT-style batch evaluation with LLM aggregation
 - `--output`: Specify output file path
 - `--cache-size`: Set maximum number of cached responses (default: 10000)
 - `--api-key`: Provide OpenAI API key (alternatively, use OPENAI_API_KEY environment variable)
@@ -229,6 +237,7 @@ Options:
 - `clinical_record.txt`: Path to the clinical record file (required)
 - `trials_file`: Path to the trials JSON file (required)
 - `--output`, `-o`: Output file path for filtered trials (default: filtered_trials_[timestamp].json)
+- `--use-trialgpt-approach`: Use TrialGPT-style batch evaluation with LLM aggregation
 - `--api-key`: OpenAI API key (alternatively, use OPENAI_API_KEY environment variable)
 - `--cache-size`: Size of the GPT response cache (default: 100000)
 
@@ -466,6 +475,32 @@ The ranking process uses a quicksort algorithm with GPT-powered comparisons to d
 - Overall suitability for the patient's situation
 
 Trials are ordered from most suitable (rank 1) to least suitable (rank N) for the patient.
+
+## Scoring Approaches
+
+ClinTrialFinder supports two scoring approaches for trial eligibility evaluation:
+
+### Min-Aggregation (Default)
+
+Evaluates each inclusion/exclusion criterion individually and takes the minimum score. Strict and interpretable — a single failing criterion (score = 0.0) will reject the trial.
+
+- **Strengths**: Higher precision, fewer false positives, clear per-criterion explanations
+- **Best for**: Cases where strict criterion compliance is important
+
+### TrialGPT-Style (`--use-trialgpt-approach`)
+
+Evaluates all criteria in a single batch prompt, then uses a second LLM call to holistically aggregate scores using Relevance (R) and Eligibility (E) scoring. Based on the approach from [TrialGPT (Jin et al., 2024)](https://doi.org/10.1038/s41591-024-02942-x).
+
+- **Strengths**: ~2x cheaper, ~33% faster, higher recall, handles edge cases better
+- **Best for**: Maximizing trial coverage, complex patients with comorbidities
+
+| Metric | Min-Aggregation | TrialGPT-Style |
+|--------|----------------|----------------|
+| API calls/trial | N+1 | 3 |
+| Cost | Baseline | ~2x cheaper |
+| Speed | Baseline | ~33% faster |
+| Precision | Higher | Lower |
+| Recall | Lower | Higher |
 
 ## GPT and Perplexity AI Integration
 
