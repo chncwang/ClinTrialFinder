@@ -146,7 +146,7 @@ Options:
 - `--exclude-completed`: Only include trials that are 'Not Yet Recruiting' or 'Recruiting' (optional)
 - `--output-file`: Output file path (default: {condition}_trials.json)
 - `--specific-trial`: Download a specific trial by NCT ID (required if not using --condition)
-- `--log-level`: Set the Scrapy log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `--log-level`: Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - `--include-broader`: Also download trials for broader disease categories
 - `--openai-api-key`: OpenAI API key for broader category identification (alternatively, use OPENAI_API_KEY environment variable)
 
@@ -599,5 +599,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Uses the ClinicalTrials.gov API v2
 - Powered by OpenAI's GPT
-- Built with Scrapy for web crawling
+- Uses the Python `requests` library for API access
 - Uses Perplexity AI for evidence-based analysis
