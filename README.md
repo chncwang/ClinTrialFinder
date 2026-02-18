@@ -1,12 +1,10 @@
 <img src="ClinTrialFinder-logo.png" alt="ClinTrialFinder Logo" width="300">
 
-ClinTrialFinder is a sophisticated tool for downloading, filtering, analyzing, and ranking clinical trials data from ClinicalTrials.gov. It combines web crawling capabilities with intelligent filtering using GPT-4.1-mini, evidence-based analysis using Perplexity AI, and AI-powered ranking to help researchers and medical professionals find the most relevant and promising clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and uses GPT-4.1-mini to evaluate these conditions against both the trials' titles and inclusion criteria to find relevant matches. It then analyzes the trial in the context of current medical evidence to provide a recommendation level, and finally ranks the trials from best to worst match for the patient using pairwise comparisons.
+ClinTrialFinder is a tool for downloading, filtering, analyzing, and ranking clinical trials from ClinicalTrials.gov. It uses GPT-4.1-mini for eligibility scoring, Perplexity AI for evidence lookup, and suitability-based ranking to help patients and caregivers explore relevant clinical trials. The tool accepts natural language descriptions of conditions (e.g. "early stage breast cancer in women over 50") and evaluates them against trials' titles and inclusion criteria to find relevant matches, then checks each trial against recent medical literature.
 
-## 🎥 Demo Video
+## 🌐 Web App
 
-Watch our demo video to see ClinTrialFinder in action:
-
-[![Watch the video](https://img.youtube.com/vi/iARDMW6vb-w/0.jpg)](https://www.youtube.com/watch?v=iARDMW6vb-w)
+Try ClinTrialFinder at [clintrialfinder.info](http://clintrialfinder.info) — paste a patient description and get ranked trials with evidence summaries. No setup required.
 
 ## Features
 
@@ -16,15 +14,14 @@ Watch our demo video to see ClinTrialFinder in action:
   - Inclusion criteria
   - Two scoring approaches: **min-aggregation** (default, strict criterion-by-criterion) and **TrialGPT-style** batch evaluation with LLM aggregation (`--use-trialgpt-approach`)
 - **Evidence-Based Analysis**: Uses Perplexity AI to gather current medical evidence related to the trial's novel drug and the patient's condition.
-- **Intelligent Recommendations**: Uses GPT-4.1 to provide a recommendation level for each trial based on the patient's condition, trial details, and current medical evidence.
-- **AI-Powered Ranking**: Uses GPT-4.1 with quicksort algorithm to rank trials from best to worst match for the patient through pairwise comparisons.
+- **Suitability Scoring**: Combines eligibility scores and evidence analysis into a 0-100 suitability score for ranking.
 - **Clinical Record Analysis**: Extracts relevant conditions, demographics, and clinical status from patient records using GPT-4.1.
 - **Flexible Search Options**: Filter trials by:
   - Recruitment status
   - Trial phase
   - Study type
   - Custom conditions and criteria
-- **Email Service**: Send clinical summaries via email for instant trial matching without any setup
+- **Web App**: Paste a patient description at [clintrialfinder.info](http://clintrialfinder.info) and get ranked results with evidence summaries
 
 ## System Overview
 
@@ -93,12 +90,8 @@ python find_trials.py --clinical-record patient.txt --output trials.csv
 python find_trials.py --clinical-record patient.txt --output top10.csv --max-results 10 --verbose
 
 # Search both specific and broader disease categories for maximum coverage
+# e.g., for breast cancer, also searches "solid tumor", "carcinoma", etc.
 python find_trials.py --clinical-record patient.txt --output trials.csv --broader-disease --verbose
-
-# Broader disease example: NPC patient
-# Will search "nasopharyngeal carcinoma" + "head and neck cancer" + "epithelial tumor" + "solid tumor"
-# Automatically merges and deduplicates results
-python find_trials.py --clinical-record npc_patient.txt --output npc_trials.csv --broader-disease
 
 # Use TrialGPT-style evaluation (batch criterion matching + LLM aggregation)
 # Faster and cheaper than default min-aggregation, with more lenient scoring
@@ -352,43 +345,6 @@ This feature is particularly useful for:
 2. Standardizing clinical record data for analysis
 3. Identifying key eligibility criteria from patient records
 
-## 📬 Try the Email Service (No Setup Required)
-
-You can now use ClinTrialFinder directly by email — no coding needed.
-
-### ✅ What it does
-
-Just send a clinical summary (plain text) to the AI.
-The system will:
-1. Understand your disease and treatment history
-2. Search trials from ClinicalTrials.gov
-3. Filter and rank based on eligibility and clinical evidence
-4. Reply with a structured summary + a ranked list of trial recommendations (as JSON)
-
-### ✉️ How to use
-
-Send an email to:
-**ai@mail.clintrialfinder.info**
-
-**Subject:** anything you like
-**Body:** your clinical history, for example:
-
-```
-I'm a 47-year-old woman diagnosed with intrahepatic cholangiocarcinoma in Feb 2024.
-Had gemcitabine + cisplatin, then FOLFOX. No metastasis. Looking for clinical trials to prevent recurrence.
-```
-
-### 📎 What you'll receive
-
-A reply email with:
-- Extracted disease + clinical features
-- An attached JSON file with ranked trial recommendations
-
-### 💡 Notes
-- **Language:** currently supports English only
-- **Privacy:** please avoid sending real names or identifiers
-- **Status:** MVP stage — feedback welcome!
-
 ## Output File Formats
 
 The filtering process generates two JSON files:
@@ -540,12 +496,9 @@ Log files are created with timestamps in the format: `filter_trials_YYYYMMDD_HHM
 
 ## Future Work
 
-Future work will:
-
-1. Add support for exclusion criteria evaluation and reporting, enabling comprehensive trial eligibility assessment
-2. Rank the filtered trials by expected outcome by analyzing metrics like PFS (Progression-Free Survival) and ORR (Objective Response Rate) from previous phases of the same drug/treatment to help prioritize more promising trials
-3. Implement title and criteria vectorization for fast semantic search, enabling rapid trial filtering without repeated GPT API calls
-4. Leverage GPT to generate optimized search keywords from patient conditions, enabling more efficient and targeted trial discovery
+1. Add support for exclusion criteria evaluation and reporting
+2. Implement title and criteria vectorization for fast semantic search, reducing API calls
+3. Leverage GPT to generate optimized search keywords from patient conditions
 
 ## Contributing
 
@@ -581,9 +534,9 @@ This software is provided for research and informational purposes only. It is no
 
 ### Data Privacy Notice
 
-- User queries and filtered results may be processed through third-party APIs (OpenAI).
+- User queries and filtered results are processed through third-party APIs (OpenAI, Perplexity AI).
 - Users should not input personally identifiable health information.
-- Review OpenAI's privacy policy regarding data handling.
+- Review OpenAI's and Perplexity's privacy policies regarding data handling.
 
 ### Regulatory Compliance
 
