@@ -377,6 +377,10 @@ def analyze_drugs_and_get_recommendation(
                 logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${drug_cost:.6f}")
 
                 # Classify evidence strength and trigger cross-cancer lookup if low
+                # Only for oncology diseases — cross-cancer evidence is irrelevant for non-cancer conditions
+                if not is_oncology_disease(disease):
+                    continue
+
                 strength: str
                 classify_cost: float
                 strength, classify_cost = classify_evidence_strength(
