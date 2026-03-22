@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 from base.clinical_trial import ClinicalTrial
 from base.disease_expert import extract_disease_from_record, is_oncology_disease
-from base.drug_analyzer import analyze_drug_efficacy
+from base.drug_analyzer import analyze_drug_efficacy, analyze_drug_efficacy_cross_cancer, classify_evidence_strength
 from base.gpt_client import GPTClient
 from base.utils import parse_json_response, save_json_list_file
 
@@ -42,6 +42,7 @@ def build_recommendation_prompt(
     clinical_record: str,
     trial_info: ClinicalTrial,
     drug_analyses: Optional[dict[str, str]] = None,
+    cross_cancer_analyses: Optional[dict[str, str]] = None,
 ) -> str:
     """
     Constructs a prompt for an AI to evaluate patient clinical record against trial information
@@ -51,6 +52,7 @@ def build_recommendation_prompt(
     - clinical_record (str): The patient's clinical record to be evaluated
     - trial_info (ClinicalTrial): The clinical trial information to compare against
     - drug_analyses (dict[str, str]): Optional dictionary mapping drug names to their effectiveness analyses
+    - cross_cancer_analyses (dict[str, str]): Optional dictionary mapping drug names to their cross-cancer effectiveness analyses
 
     Returns:
     - str: A formatted prompt string for the AI.
@@ -77,6 +79,22 @@ def build_recommendation_prompt(
             drug_analysis_str += f"\n{drug}:\n{analysis}\n"
         drug_analysis_str += "</drug_analyses>"
 
+    cross_cancer_str = ""
+    if cross_cancer_analyses:
+        cross_cancer_str = (
+            "\n\n<cross_cancer_evidence>\nCross-Cancer Drug Evidence (results from other cancer types):\n"
+        )
+        for drug, analysis in cross_cancer_analyses.items():
+            cross_cancer_str += f"\n{drug}:\n{analysis}\n"
+        cross_cancer_str += (
+            "\nNote: For novel immunotherapy agents (checkpoint inhibitors, bispecifics, ADCs), "
+            "strong efficacy in other IO-responsive cancers (melanoma, NSCLC, RCC, bladder/urothelial, "
+            "head and neck SCC, MSI-high tumors, Hodgkin lymphoma, HCC, triple-negative breast cancer, NPC) "
+            "is a positive signal for the patient's cancer if it is also IO-responsive. "
+            "Consider cross-cancer evidence as supportive when disease-specific data is limited."
+            "\n</cross_cancer_evidence>"
+        )
+
     return (
         "<task>Assess if this clinical trial would be beneficial for the patient. "
         "Analyze published research and clinical evidence on similar drugs and treatments to inform your recommendation. "
@@ -95,6 +113,7 @@ def build_recommendation_prompt(
         f'<clinical_record>\nClinical Record:\n"{clinical_record}"\n</clinical_record>\n\n'
         f'<trial_info>\nTrial Information:\n"{trial_info_str}"\n</trial_info>'
         f"{drug_analysis_str}"
+        f"{cross_cancer_str}"
     )
 
 
@@ -300,6 +319,7 @@ def analyze_drugs_and_get_recommendation(
     """
     total_cost = 0.0
     drug_analyses: dict[str, str] = {}
+    cross_cancer_analyses: dict[str, str] = {}
 
     # Extract disease from clinical record
     disease: str
@@ -356,8 +376,38 @@ def analyze_drugs_and_get_recommendation(
                         )
                 logger.info(f"analyze_drugs_and_get_recommendation: Cost: ${drug_cost:.6f}")
 
+                # Classify evidence strength and trigger cross-cancer lookup if low
+                strength: str
+                classify_cost: float
+                strength, classify_cost = classify_evidence_strength(
+                    drug, disease, analysis, gpt_client
+                )
+                total_cost += classify_cost
+
+                if strength == "low":
+                    logger.info(
+                        f"analyze_drugs_and_get_recommendation: Low evidence for {drug} in {disease}, "
+                        f"fetching cross-cancer evidence"
+                    )
+                    cross_analysis: str
+                    cross_citations: List[str]
+                    cross_cost: float
+                    cross_analysis, cross_citations, cross_cost = analyze_drug_efficacy_cross_cancer(
+                        drug, perplexity_client
+                    )
+                    total_cost += cross_cost
+
+                    if cross_analysis:
+                        cross_cancer_analyses[drug] = cross_analysis
+                        logger.info(
+                            f"analyze_drugs_and_get_recommendation: Cross-cancer analysis for {drug}: "
+                            f"{cross_analysis[:200]}..."
+                        )
+
     # Generate recommendation
-    prompt: str = build_recommendation_prompt(clinical_record, trial, drug_analyses)
+    prompt: str = build_recommendation_prompt(
+        clinical_record, trial, drug_analyses, cross_cancer_analyses or None
+    )
     logger.info(
         f"analyze_drugs_and_get_recommendation: Recommendation Prompt:\n{prompt}"
     )
