@@ -1736,6 +1736,24 @@ When exclusion criteria specify time-based requirements (e.g., "within X weeks",
 - Key: Focus on WHEN treatment ENDED, not when it started
 - If no treatment end date specified, give benefit of doubt if treatment clearly in the past
 
+DRUG CLASS / MECHANISM OF ACTION - Do NOT confuse different drug classes:
+When exclusion criteria reference a specific drug class (e.g., "topoisomerase I inhibitor", "PARP inhibitor", "CDK4/6 inhibitor"):
+- You MUST verify that the patient's actual medications belong to that EXACT drug class by mechanism of action
+- Do NOT pattern-match on partial words like "inhibitor" or "therapy" — check the specific mechanism
+- Common drug class distinctions (frequently confused):
+  * Topoisomerase I inhibitors: irinotecan, topotecan, belotecan, deruxtecan (DXd), exatecan, SN-38, camptothecin derivatives
+  * Topoisomerase II inhibitors: etoposide, doxorubicin, epirubicin, mitoxantrone
+  * Taxanes (microtubule stabilizers): docetaxel, paclitaxel, cabazitaxel, nab-paclitaxel — these are NOT topoisomerase inhibitors
+  * Platinum agents: cisplatin, carboplatin, oxaliplatin — these are NOT inhibitors of any enzyme
+  * Antimetabolites: gemcitabine, capecitabine, 5-FU, methotrexate, pemetrexed
+  * Anti-EGFR antibodies: nimotuzumab, cetuximab — these are NOT kinase inhibitors
+  * Multi-target TKIs: anlotinib, sunitinib, lenvatinib — these are tyrosine kinase inhibitors
+  * PD-1/PD-L1 inhibitors (immune checkpoint): tislelizumab, toripalimab, pembrolizumab, nivolumab
+  * RANKL inhibitors: denosumab — this is NOT a chemotherapy agent
+- If none of the patient's medications belong to the excluded drug class → set exclusion_applies to 0.0
+- Example: Exclusion says "prior topoisomerase I inhibitor" + Patient received docetaxel, cisplatin, gemcitabine
+  → None of these are topoisomerase I inhibitors → do NOT exclude
+
 If in doubt about any of these considerations, default to exclusion_applies = 0.0 (benefit of the doubt).
 
 IMPORTANT: You must respond with a complete, properly formatted JSON object containing exactly these fields:
@@ -2128,6 +2146,18 @@ Patient Conditions to Evaluate:
             system_prompt += 'the label must be chosen from {"not applicable", "not enough information", "included", "not included"}. "not applicable" should only be used for criteria that are not applicable to the patient. "not enough information" should be used where the patient note does not contain sufficient information for making the classification. Try to use as less "not enough information" as possible because if the note does not mention a medically important fact, you can assume that the fact is not true for the patient. "included" denotes that the patient meets the inclusion criterion, while "not included" means the reverse.\n'
         else:
             system_prompt += 'the label must be chosen from {"not applicable", "not enough information", "excluded", "not excluded"}. "not applicable" should only be used for criteria that are not applicable to the patient. "not enough information" should be used where the patient note does not contain sufficient information for making the classification. Try to use as less "not enough information" as possible because if the note does not mention a medically important fact, you can assume that the fact is not true for the patient. "excluded" denotes that the patient meets the exclusion criterion and should be excluded in the trial, while "not excluded" means the reverse.\n'
+            system_prompt += """
+IMPORTANT GUIDANCE FOR EXCLUSION EVALUATION:
+
+DRUG CLASS / MECHANISM OF ACTION - Do NOT confuse different drug classes:
+When a criterion references a specific drug class (e.g., "topoisomerase I inhibitor"), verify the patient's actual medications belong to that EXACT class by mechanism of action. Do NOT pattern-match on partial words.
+Key distinctions: Topoisomerase I inhibitors (irinotecan, topotecan, camptothecin derivatives) are completely different from taxanes/microtubule stabilizers (docetaxel, paclitaxel), platinum agents (cisplatin, carboplatin), antimetabolites (gemcitabine, capecitabine), checkpoint inhibitors (tislelizumab, toripalimab), or TKIs (anlotinib). If none of the patient's medications belong to the excluded drug class, label as "not excluded".
+
+WASHOUT PERIOD / TIME-BASED CRITERIA:
+When a criterion specifies time-based requirements (e.g., "within X weeks"), compare against the patient's documented treatment end dates. If the patient's last relevant treatment ended LONGER AGO than the washout period, label as "not excluded". Focus on WHEN treatment ENDED, not when it started.
+
+Be conservative: only label "excluded" when evidence is clear, explicit, and unambiguous. Give benefit of the doubt otherwise.
+"""
 
         system_prompt += 'You should output only a JSON dict exactly formatted as: dict{str(criterion_number): list[str(element_1_brief_reasoning), list[int(element_2_sentence_id)], str(element_3_eligibility_label)]}.'
 
